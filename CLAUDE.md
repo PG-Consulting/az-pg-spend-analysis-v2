@@ -93,7 +93,7 @@ new-solution/
 ├── staticwebapp.config.json     # Config routing SWA
 │
 ├── blueprints/
-│   ├── projects_bp.py           # CRUD setores + projetos (8 endpoints)
+│   ├── projects_bp.py           # CRUD setores + projetos (9 endpoints, incl. DeleteSector)
 │   ├── classification_bp.py     # SubmitJob, GetStatus, GetJobResults (3 endpoints)
 │   ├── review_bp.py             # ReclassifyItems, ApproveClassifications (2 endpoints)
 │   ├── knowledge_bp.py          # KB projeto + setor: CRUD, coverage, versões, import/export, promote (19 endpoints)
@@ -142,7 +142,7 @@ new-solution/
 │   ├── test_kb_retriever.py     # 18 testes — retrieve, batch, representative, enriched selection
 │   ├── test_knowledge_base.py   # 41 testes — CRUD, dedup, versioning, coverage, sector KB CRUD, merge, promote
 │   ├── test_core_classification.py # 15 testes — two-phase KB learning, merged KB pipeline (mock LLM)
-│   ├── test_project_manager.py  # 24 testes — slugify, sector/project CRUD, use_sector_kb, resolve_hierarchy
+│   ├── test_project_manager.py  # 29 testes — slugify, sector/project CRUD, delete_sector, use_sector_kb, resolve_hierarchy
 │   └── test_utils.py            # 8 testes — safe_json_dumps, get_models_dir
 │
 ├── pytest.ini                   # Config pytest (testpaths, addopts)
@@ -283,7 +283,7 @@ npm run dev    # http://localhost:3000
 ### Testes
 
 ```bash
-# Backend — 148 testes (pytest, ~7s)
+# Backend — 153 testes (pytest, ~4s)
 python3 -m pytest tests/ -v
 
 # Frontend — 23 testes (Jest + React Testing Library, ~1.3s)
@@ -526,6 +526,9 @@ A aba "Analisar" usa layout **chat-first** com flex vertical (não scroll geral)
 - **KnowledgeSlideOver com abas**: O `KnowledgeSlideOver` em `components/taxonomy/` abre como painel lateral e contém duas abas internas: "Projeto" (`KnowledgeTab`) e "Setor ({display_name})" (`SectorKnowledgeTab`). Estado `kbTab: 'project' | 'sector'` em `taxonomy.tsx`. Se `use_sector_kb === false`, a aba Setor mostra empty state.
 - **Smart Context RAG**: O subsistema `frontend/src/lib/smart-context/` (5 arquivos) implementa RAG client-side para o Copilot: `entity-extractor.ts` parseia intenções, `intent-router.ts` roteia, `execution-engine.ts` executa sobre itens classificados. Tipos: COUNT, TOP_N, DISTRIBUTION, TERM_SEARCH, CATEGORY_LOOKUP, etc.
 - **UI components library**: `components/ui/` contém 17+ componentes reutilizáveis. Novos no redesign: `SlideOver` (painel lateral), `Input`/`Select`/`Textarea` (formulários), `FilterDropdown` (filtros multi-select), `AiAvatar` (avatar do Copilot), `StickyFooter` (rodapé fixo). Todos seguem design tokens.
+- **`delete_sector()` com proteção**: `project_manager.py` — se `force=False` e há projetos no setor, levanta `ValueError` com lista de project_ids. Se `force=True`, deleta todos os projetos primeiro (`shutil.rmtree` em cada um) e depois o setor. Endpoint `DELETE /api/DeleteSector?sectorName=xxx&force=false` retorna 409 (conflito) quando há projetos sem force. Frontend mostra `ConfirmDialog` com lista dos projetos afetados.
+- **ProjectSelect mostra setores vazios**: `bySector` em `ProjectSelect.tsx` inclui todos os setores (via `useMemo` com `sectors` + `projects`), não apenas os que têm projetos. Setores vazios mostram "Nenhum projeto" em itálico. Botão de excluir setor sempre visível ao lado do header do grupo (`text-white/15`, hover vermelho).
+- **`hierarchy_source` enviado na criação**: `CreateProjectModal` mapeia `hierarchyOption` (`upload`→`own`, `inherit`→`inherited`, `none`→`padrao`) e envia `hierarchy_source` ao backend. Sem esse mapeamento, o backend defaulta para `"own"` e o `EditProjectModal` mostra "Hierarquia: Própria" incorretamente.
 
 ### Problemas Conhecidos
 
@@ -580,3 +583,5 @@ Ver `docs/DEPLOYMENT.md` para guia completo.
 | 2026-02-20 | Entradas `_origin === 'both'` apareciam com checkbox para promoção ao setor | `KnowledgeTable` tratava apenas `_origin === 'sector'` como somente leitura; entradas existentes em ambos os KBs ficavam selecionáveis | Expandido `isSector` para incluir `'both'`; `handleSelectAllProject` e header checkbox filtram apenas `_origin === 'project'` |
 | 2026-02-20 | KB do setor sem CRUD na UI (100% read-only) | Só existia `PromoteToSectorKB` como escrita; consultor não conseguia editar/deletar/limpar entradas | +9 endpoints backend (Update, Delete, Rollback, Add, Coverage, Versions, Export, Import para setor) + `SectorKnowledgeTab` no frontend com gestão completa |
 | 2026-02-20 | KB do setor sempre mesclada sem opção de desabilitar | Merge automático hardcoded em `worker_helpers.py` e `review_bp.py`; projetos não podiam usar KB isolada | Toggle `use_sector_kb` no `project_config.json` (default true); condicional em worker, reclassificação e cobertura; toggle switch no Create/EditProjectModal |
+| 2026-02-24 | Sem forma de excluir setores via API ou UI | Só existia `DeleteProject`; setores vazios não apareciam no dropdown | `delete_sector()` com proteção force/no-force; endpoint `DELETE /api/DeleteSector`; `ProjectSelect` mostra todos os setores + botão excluir; `ConfirmDialog` com lista de projetos afetados |
+| 2026-02-24 | Hierarquia sempre "Própria" no EditProjectModal | `CreateProjectModal` não enviava `hierarchy_source`; backend defaultava para `"own"` | Adicionado mapeamento `hierarchyOption` → `hierarchy_source` (`upload`→`own`, `inherit`→`inherited`, `none`→`padrao`) no `handleCreate()` |
