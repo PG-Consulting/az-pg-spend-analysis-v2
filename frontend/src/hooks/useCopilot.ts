@@ -65,6 +65,11 @@ const saveChatToStorage = (sessionId: string, messages: Message[]) => {
 interface UseCopilotProps {
     /** The currently active taxonomy session, or null if none selected */
     activeSession: any | null
+    /**
+     * When false, sendUserMessage returns early with a locked message
+     * and isLocked is true. Defaults to false.
+     */
+    reviewCompleted?: boolean
 }
 
 /** Return type for the useCopilot hook */
@@ -91,6 +96,8 @@ interface UseCopilotReturn {
     generateExecutiveSummary: () => Promise<void>
     /** Resets the chat state (loading flags and input) */
     resetChat: () => void
+    /** True when the Copilot is locked because reviewCompleted is false */
+    isLocked: boolean
 }
 
 // ============================================
@@ -115,8 +122,9 @@ interface UseCopilotReturn {
  * } = useCopilot({ activeSession })
  * ```
  */
-export function useCopilot({ activeSession }: UseCopilotProps): UseCopilotReturn {
+export function useCopilot({ activeSession, reviewCompleted = false }: UseCopilotProps): UseCopilotReturn {
     const sessionId = activeSession?.sessionId || null
+    const isLocked = !reviewCompleted
 
     // State - initialized from localStorage
     const [copilotMessages, setCopilotMessages] = useState<Message[]>([])
@@ -319,6 +327,18 @@ ${userMsg}`
     }
 
     const sendUserMessage = async (overrideMessage?: string | any) => {
+        // Gate: Copilot is locked until the review is completed
+        if (isLocked) {
+            const lockedMsg: Message = {
+                from: 'bot',
+                text: 'Complete a revisão primeiro para usar o Copilot.',
+                timestamp: new Date()
+            }
+            const updatedMessages = [...copilotMessages, lockedMsg]
+            updateMessages(updatedMessages)
+            return
+        }
+
         // Robust check: overrideMessage might be a MouseEvent if called from onClick={sendUserMessage}
         let msgToSend: string = '';
         if (typeof overrideMessage === 'string') {
@@ -509,6 +529,7 @@ ${JSON.stringify(contextData, null, 2)}
         sendSilentMessage,
         injectMessage,
         generateExecutiveSummary,
-        resetChat
+        resetChat,
+        isLocked,
     }
 }

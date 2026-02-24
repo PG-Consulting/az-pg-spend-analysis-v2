@@ -10,13 +10,11 @@ import os
 import json
 import shutil
 from datetime import datetime
-import sys
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score
-from src.preprocessing import build_tfidf_vectorizer
-from src.taxonomy_engine import normalize_text
+from src.preprocessing import build_tfidf_vectorizer, normalize_text
 
 def train_model_core(
     df: pd.DataFrame,

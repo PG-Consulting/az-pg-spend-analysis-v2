@@ -1,122 +1,252 @@
-
+"""
+Core classification pipeline for spend analysis.
+Supports two paths:
+1. Legacy ML path: ML -> Dictionary -> LLM fallback (for sectors with trained models)
+2. New LLM-direct path (Two-Phase):
+   Phase 1: KB direct match (sim >= 0.90) — no LLM call needed
+   Phase 2: LLM with enriched per-batch KB examples -> hierarchy validation
+"""
 import logging
-import pandas as pd
-from typing import Dict, List, Optional, Union
-import json
-import time
+from typing import Optional
 
-# Import your existing classifiers
-from src.ml_classifier import load_model_for_sector, predict_batch
-from src.hybrid_classifier import classify_hybrid
-from src.llm_classifier import classify_items_with_llm
+logger = logging.getLogger(__name__)
+
+# Two-phase KB learning thresholds
+KB_DIRECT_MATCH_THRESHOLD = 0.90    # Min similarity to use KB classification directly (no LLM)
+KB_ENRICHED_EXAMPLE_MIN_SIM = 0.30  # Min similarity to include as enriched example for LLM
+KB_ENRICHED_MAX_EXAMPLES = 20       # Max enriched examples per LLM batch
+
 
 def process_dataframe_chunk(
-    df_chunk: pd.DataFrame,
-    sector: str,
+    df_chunk,
     desc_column: str,
-    hierarchy: Optional[Dict] = None,
-    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None,
+    sector: str = "Padrão",
+    models_dir: str = None,
+    custom_hierarchy=None,
     client_context: str = "",
-    use_llm: bool = True,
-    hierarchy_lookup=None
-) -> List[Dict]:
+    few_shot_examples: list = None,
+    hierarchy_lookup=None,
+    use_legacy_ml: bool = False,
+    project_id: str = None,
+    user_instruction: str = None,
+    kb_retriever=None,
+) -> list:
     """
-    Process a chunk of dataframe rows using the hybrid classification pipeline.
-    This function is decoupled from Azure Functions HTTP context.
+    Classify a DataFrame chunk.
+
+    Pipeline:
+    1. If use_legacy_ml=True and sector has trained model: ML -> Dict -> LLM fallback
+    2. Otherwise: Two-Phase LLM-direct with KB learning:
+       Phase 1: KB direct match (sim >= 0.90) — instant, no LLM
+       Phase 2: LLM with enriched per-batch examples from KB
+    3. Hierarchy validation (if custom_hierarchy provided)
+
+    Returns list of dicts with keys: description, N1, N2, N3, N4, source, confidence
     """
-    
-    results = []
-    
-    # 1. Load Models for Sector
-    try:
-        vectorizer, classifier, label_encoder, patterns_by_n4, terms_by_n4, taxonomy_by_n4, loaded_hierarchy = load_model_for_sector(sector)
-        # Use provided hierarchy if available, otherwise use loaded
-        effective_hierarchy = hierarchy or custom_hierarchy or loaded_hierarchy
-    except Exception as e:
-        logging.error(f"Failed to load models for sector {sector}: {e}")
-        # Return error results for this chunk
-        return [{"status": "Erro", "LLM_Explanation": f"Model load error: {str(e)}"} for _ in range(len(df_chunk))]
+    descriptions = df_chunk[desc_column].astype(str).tolist()
 
-    # 2. Iterate and Classify (First Pass - Hybrid)
-    # Using the same logic as ProcessTaxonomy
-    total_items = len(df_chunk)
-    
-    # Pre-calculate normalized descriptions if not present
-    if "_desc_norm" not in df_chunk.columns:
-        from src.preprocessing import normalize_text
-        df_chunk["_desc_norm"] = df_chunk[desc_column].apply(normalize_text)
+    if use_legacy_ml and sector and sector != "Padrão":
+        results = _legacy_ml_pipeline(df_chunk, sector, desc_column, models_dir, custom_hierarchy, hierarchy_lookup)
+    else:
+        results = _llm_direct_pipeline(
+            descriptions, sector, client_context, custom_hierarchy,
+            few_shot_examples, hierarchy_lookup, user_instruction,
+            kb_retriever=kb_retriever,
+        )
 
-    # First pass: Local / ML classification
-    # We disable LLM fallback here to batch it later
-    chunk_results = []
-    for idx, row in df_chunk.iterrows():
-        desc_orig = str(row[desc_column])
-        desc_norm = str(row["_desc_norm"])
-        
-        result = classify_hybrid(
-            description=desc_orig,
-            sector=sector,
-            dict_patterns=patterns_by_n4,
-            dict_terms=terms_by_n4,
-            dict_taxonomy=taxonomy_by_n4,
-            desc_norm=desc_norm,
-            vectorizer=vectorizer,
-            classifier=classifier,
-            label_encoder=label_encoder,
-            hierarchy=effective_hierarchy,
-            use_llm_fallback=False, 
-            client_context=client_context
-        ).to_dict()
-        
-        # Keep track of original description for LLM pass
-        result["_desc_original"] = desc_orig
-        chunk_results.append(result)
+    return results
 
-    # 3. Second Pass: Batch LLM for "Nenhum"
-    if use_llm:
-        unclassified_indices = [i for i, res in enumerate(chunk_results) if res['status'] == 'Nenhum']
-        
-        if unclassified_indices:
-            logging.info(f"[Chunk] Sending {len(unclassified_indices)} items to LLM...")
-            unclassified_descs = [chunk_results[i]["_desc_original"] for i in unclassified_indices]
-            
-            try:
-                llm_batch_results = classify_items_with_llm(
-                    unclassified_descs,
-                    sector=sector,
-                    client_context=client_context,
-                    custom_hierarchy=effective_hierarchy
+
+def _llm_direct_pipeline(
+    descriptions: list,
+    sector: str,
+    client_context: str,
+    custom_hierarchy,
+    few_shot_examples: list,
+    hierarchy_lookup,
+    user_instruction: str = None,
+    kb_retriever=None,
+) -> list:
+    """Two-Phase LLM-direct path:
+
+    Phase 1: KB direct match — items with similarity >= KB_DIRECT_MATCH_THRESHOLD
+             are classified instantly from KB (no LLM call).
+    Phase 2: Remaining items sent to LLM with enriched per-batch examples
+             (relevant KB matches for this specific batch, not global).
+    """
+    from src.llm_classifier import classify_items_with_llm
+    from src.hierarchy_validator import validate_and_correct
+    from src.kb_retriever import KBRetriever
+
+    results = [None] * len(descriptions)
+    remaining_indices = []
+
+    # ── PHASE 1: Direct KB match ──
+    batch_matches = None
+    if kb_retriever and kb_retriever.matrix is not None:
+        batch_matches = kb_retriever.retrieve_batch(descriptions, top_k=3)
+
+        for i, (desc, matches) in enumerate(zip(descriptions, batch_matches)):
+            best = matches[0] if matches else None
+            # Only use KB direct match if: high similarity AND complete classification (no "Não Identificado")
+            if (
+                best
+                and best["_similarity"] >= KB_DIRECT_MATCH_THRESHOLD
+                and all(
+                    best.get(lvl, "").strip() not in ("", "Não Identificado", "Nao Identificado")
+                    for lvl in ("N1", "N2", "N3", "N4")
                 )
-                
-                # Merge results (skip LLM failures that return "Não Identificado")
-                _UNCLASSIFIED = {"Não Identificado", "Nao Identificado", ""}
-                for i, res in enumerate(llm_batch_results):
-                    if res.get("N1") and res.get("N1") not in _UNCLASSIFIED:
-                        target_idx = unclassified_indices[i]
-                        chunk_results[target_idx].update({
-                            "N1": res.get("N1", ""),
-                            "N2": res.get("N2", ""),
-                            "N3": res.get("N3", ""),
-                            "N4": res.get("N4", ""),
-                            "status": "Único",
-                            "ml_confidence": res.get("confidence", 0.0),
-                            "classification_source": "LLM (Batch)"
-                        })
-            except Exception as e:
-                logging.error(f"[Chunk] LLM batch failed: {e}")
+            ):
+                results[i] = {
+                    "description": desc,
+                    "N1": best.get("N1", "Não Identificado"),
+                    "N2": best.get("N2", "Não Identificado"),
+                    "N3": best.get("N3", "Não Identificado"),
+                    "N4": best.get("N4", "Não Identificado"),
+                    "source": "KB (Direct Match)",
+                    "confidence": round(best["_similarity"], 3),
+                }
+            else:
+                remaining_indices.append(i)
+    else:
+        remaining_indices = list(range(len(descriptions)))
 
-        # Pass 4: Validação e correção de hierarquia (pós-processamento genérico)
-        if custom_hierarchy and hierarchy_lookup:
-            from src.hierarchy_validator import validate_and_correct
-            chunk_results, val_stats = validate_and_correct(
-                chunk_results, custom_hierarchy, lookup=hierarchy_lookup
+    kb_direct_count = len(descriptions) - len(remaining_indices)
+    if kb_direct_count > 0:
+        logger.info(
+            f"KB direct match: {kb_direct_count}/{len(descriptions)} items "
+            f"({kb_direct_count / len(descriptions) * 100:.0f}%)"
+        )
+
+    # ── PHASE 2: LLM for items without direct match ──
+    if remaining_indices:
+        remaining_descs = [descriptions[i] for i in remaining_indices]
+
+        # Select enriched examples based on partial matches for this batch
+        enriched_examples = None
+        if batch_matches:
+            relevant_matches = [batch_matches[i] for i in remaining_indices]
+            enriched_examples = KBRetriever.select_enriched_examples(
+                relevant_matches, max_examples=KB_ENRICHED_MAX_EXAMPLES
             )
-            logging.info(f"[Chunk] Hierarchy validation: exact={val_stats['exact_match']}, "
-                         f"shift={val_stats['level_shift']}, fuzzy={val_stats['partial_fuzzy']}, "
-                         f"n4rev={val_stats['n4_reverse']}, nomatch={val_stats['no_match']}")
 
-    # Cleanup temporary fields
-    for res in chunk_results:
-        res.pop("_desc_original", None)
+        # Fallback to global representative examples if no enriched matches
+        if not enriched_examples and few_shot_examples:
+            enriched_examples = KBRetriever.select_representative_examples(
+                few_shot_examples, max_k=10
+            )
 
-    return chunk_results
+        llm_results = classify_items_with_llm(
+            remaining_descs,
+            sector=sector or "Padrão",
+            client_context=client_context,
+            custom_hierarchy=custom_hierarchy,
+            few_shot_examples=enriched_examples,
+            user_instruction=user_instruction,
+        )
+
+        # Merge LLM results back into correct positions
+        for j, orig_idx in enumerate(remaining_indices):
+            if j < len(llm_results) and llm_results[j]:
+                r = llm_results[j]
+                results[orig_idx] = {
+                    "description": descriptions[orig_idx],
+                    "N1": r.get("N1", "Não Identificado"),
+                    "N2": r.get("N2", "Não Identificado"),
+                    "N3": r.get("N3", "Não Identificado"),
+                    "N4": r.get("N4", "Não Identificado"),
+                    "source": r.get("source", "LLM (Batch)"),
+                    "confidence": r.get("confidence", 0.0),
+                }
+            else:
+                results[orig_idx] = {
+                    "description": descriptions[orig_idx],
+                    "N1": "Não Identificado", "N2": "Não Identificado",
+                    "N3": "Não Identificado", "N4": "Não Identificado",
+                    "source": "None", "confidence": 0.0,
+                }
+
+    # Hierarchy validation on ALL results (KB direct + LLM)
+    if custom_hierarchy and hierarchy_lookup:
+        results, stats = validate_and_correct(results, custom_hierarchy, lookup=hierarchy_lookup)
+        logger.info(f"Hierarchy validation stats: {stats}")
+
+    # Zero confidence for incomplete classifications (any N-level is "Não Identificado")
+    _incomplete = ("", "Não Identificado", "Nao Identificado")
+    for r in results:
+        if r and any(r.get(lvl, "") in _incomplete for lvl in ("N1", "N2", "N3", "N4")):
+            r["confidence"] = 0.0
+
+    return results
+
+
+def _legacy_ml_pipeline(df_chunk, sector: str, desc_column: str, models_dir: str, custom_hierarchy, hierarchy_lookup) -> list:
+    """Legacy path: Hybrid ML+Dictionary+LLM pipeline (from v2)."""
+    # Import hybrid classifier (v2 compatible)
+    try:
+        from src.hybrid_classifier import classify_hybrid
+        from src.ml_classifier import load_model_for_sector
+        from src.hierarchy_validator import validate_and_correct
+    except ImportError as e:
+        logger.error(f"Legacy ML pipeline import error: {e}")
+        descriptions = df_chunk[desc_column].astype(str).tolist()
+        return [{
+            "description": d, "N1": "Não Identificado", "N2": "Não Identificado",
+            "N3": "Não Identificado", "N4": "Não Identificado",
+            "status": "Nenhum", "source": "None", "confidence": 0.0, "matched_terms": []
+        } for d in descriptions]
+
+    results = []
+    # Pass 1 & 2: ML + Dictionary per row (no LLM yet)
+    ml_model, dict_patterns = load_model_for_sector(sector, models_dir)
+    none_indices = []
+
+    for idx, row in df_chunk.iterrows():
+        desc = str(row[desc_column])
+        try:
+            classification = classify_hybrid(desc, ml_model, dict_patterns, use_llm_fallback=False)
+            result = {
+                "description": desc,
+                "N1": classification.N1 or "Não Identificado",
+                "N2": classification.N2 or "Não Identificado",
+                "N3": classification.N3 or "Não Identificado",
+                "N4": classification.N4 or "Não Identificado",
+                "status": classification.status,
+                "source": classification.source,
+                "confidence": classification.confidence,
+                "matched_terms": classification.matched_terms or [],
+            }
+        except Exception as e:
+            logger.error(f"classify_hybrid error for '{desc}': {e}")
+            result = {
+                "description": desc, "N1": "Não Identificado", "N2": "Não Identificado",
+                "N3": "Não Identificado", "N4": "Não Identificado",
+                "status": "Nenhum", "source": "None", "confidence": 0.0, "matched_terms": []
+            }
+        results.append(result)
+        if result["status"] == "Nenhum":
+            none_indices.append(len(results) - 1)
+
+    # Pass 2: Batch LLM for "Nenhum" items
+    if none_indices:
+        from src.llm_classifier import classify_items_with_llm
+        none_descs = [results[i]["description"] for i in none_indices]
+        llm_results = classify_items_with_llm(none_descs, sector=sector, custom_hierarchy=custom_hierarchy)
+        for j, i in enumerate(none_indices):
+            if j < len(llm_results) and llm_results[j]:
+                r = llm_results[j]
+                results[i].update({
+                    "N1": r.get("N1", "Não Identificado"),
+                    "N2": r.get("N2", "Não Identificado"),
+                    "N3": r.get("N3", "Não Identificado"),
+                    "N4": r.get("N4", "Não Identificado"),
+                    "status": r.get("status", "Único"),
+                    "source": r.get("source", "LLM (Batch)"),
+                    "confidence": r.get("confidence", 0.0),
+                })
+
+    # Pass 3: Hierarchy validation
+    if custom_hierarchy and hierarchy_lookup:
+        results, stats = validate_and_correct(results, custom_hierarchy, lookup=hierarchy_lookup)
+
+    return results

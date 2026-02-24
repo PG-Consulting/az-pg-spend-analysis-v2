@@ -252,7 +252,7 @@ export const executeIntent = (
 
             // STATUS / METRICS OVERRIDE
             if (entities.status) {
-                groupLevel = 'Match_Type' as any;
+                groupLevel = 'status' as any;
                 // If checking specific status, we might want to filter? 
                 // Actually, distribution usually asks for breakdown. 
                 // If user asks "Percentage of Unique", providing distribution of Match_Type answers it.
@@ -377,18 +377,20 @@ export const executeIntent = (
         if (intent === IntentType.CATEGORY_LOOKUP || (entities.category && intent === IntentType.UNKNOWN)) {
             if (!entities.category) return null;
 
-            const uniqueCat = scopeItems.filter((i: any) => i.Match_Type === 'Único').length
-            const ambiguousCat = scopeItems.filter((i: any) => i.Match_Type === 'Ambíguo').length
-            const noneCat = scopeItems.filter((i: any) => i.Match_Type === 'Nenhum' || !i.Match_Type).length
+            const classifiedCount = scopeItems.filter((i: any) =>
+                i.N1 && i.N1 !== 'Não Identificado' &&
+                i.N4 && i.N4 !== 'Não Identificado'
+            ).length
+            const unclassifiedCount = totalScope - classifiedCount
 
             return {
                 data: {
                     type: 'category_lookup',
                     category: entities.category,
                     total: totalScope,
-                    stats: { unique: uniqueCat, ambiguous: ambiguousCat, unclassified: noneCat }
+                    stats: { classified: classifiedCount, unclassified: unclassifiedCount }
                 },
-                text: `Category: '${entities.category}'. Total: ${totalScope}. Unique: ${uniqueCat}, Ambiguous: ${ambiguousCat}, Unclassified: ${noneCat}.`,
+                text: `Category: '${entities.category}'. Total: ${totalScope}. Classified: ${classifiedCount}, Unclassified: ${unclassifiedCount}.`,
                 instructions: "Provide this overview summary of the category status.",
                 relevantItems: scopeItems.slice(0, 10)
             }

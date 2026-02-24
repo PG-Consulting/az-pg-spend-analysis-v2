@@ -1,16 +1,22 @@
 import React from 'react'
 import { colors, tw } from '@/lib/design-tokens'
+import type { ReviewState } from '@/lib/types'
 
 export interface Session {
     sessionId: string
     filename: string
     sector: string
-    timestamp: string
+    timestamp: string | number
     summary?: any
     analytics?: any
     items?: any[]
     downloadUrl?: string
     downloadFilename?: string
+    // Review state fields (optional for backward compatibility)
+    reviewState?: ReviewState
+    projectId?: string | null
+    // Background job status (v3)
+    jobStatus?: 'PENDING' | 'PROCESSING' | 'CLASSIFIED' | 'ERROR'
 }
 
 interface SessionSidebarProps {
@@ -20,6 +26,9 @@ interface SessionSidebarProps {
     onNewUpload: () => void
     onClearHistory?: () => void
     onDeleteSession?: (sessionId: string) => void
+    // Project filter props (optional)
+    projectId?: string | null
+    onFilterByProject?: (pid: string | null) => void
 }
 
 export default function SessionSidebar({
@@ -28,32 +37,63 @@ export default function SessionSidebar({
     onSessionSelect,
     onNewUpload,
     onClearHistory,
-    onDeleteSession
+    onDeleteSession,
+    projectId,
+    onFilterByProject,
 }: SessionSidebarProps) {
+    // Filter sessions by project if a projectId filter is active
+    const displayedSessions = projectId
+        ? sessions.filter(s => s.projectId === projectId)
+        : sessions
+
     return (
-        <div className="w-72 bg-gradient-to-b from-[#1c0957] via-[#180847] to-[#120535] border-r border-white/10 flex flex-col h-full shrink-0 relative z-30 shadow-2xl">
-            {/* Logo Area - Fixed height to align with main header */}
-            <div className="h-[72px] px-6 flex items-center border-b border-white/15 bg-[#1c0957]/80 backdrop-blur-sm shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)]">
-                <div className="flex items-center gap-3 h-10">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#38bec9] shadow-[0_0_12px_rgba(56,190,201,0.6)] animate-pulse" />
-                    <span className="font-bold tracking-tight text-white">HISTÓRICO</span>
+        <div className="flex flex-col h-full min-h-0">
+            {/* History section header */}
+            <div className="px-5 py-2.5 flex items-center justify-between border-b border-white/10 bg-white/[0.03] shrink-0">
+                <div className="flex items-center gap-2.5">
+                    <div className="w-2 h-2 rounded-full bg-[#38a8f5] shadow-[0_0_8px_rgba(56,190,201,0.5)] animate-pulse shrink-0" />
+                    <span className="text-xs font-bold tracking-widest text-white/60 uppercase">Histórico</span>
                 </div>
+                {/* Clear project filter button */}
+                {projectId && onFilterByProject && (
+                    <button
+                        onClick={() => onFilterByProject(null)}
+                        title="Mostrar todas as sessões"
+                        className="shrink-0 p-1 rounded-md text-white/50 hover:text-white/80 hover:bg-white/10 transition-colors"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                )}
             </div>
 
-            {/* Sessions List - Inset visual effect */}
-            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-2 custom-scrollbar bg-gradient-to-b from-transparent via-white/[0.02] to-transparent">
-                {sessions.length === 0 ? (
+            {/* Active project filter indicator */}
+            {projectId && (
+                <div className="px-3 py-1.5 bg-white/5 border-b border-white/10 flex items-center gap-1.5">
+                    <svg className="w-3 h-3 text-[#38a8f5] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                    </svg>
+                    <span className="text-xs text-white/50 truncate">Filtrado por projeto</span>
+                </div>
+            )}
+
+            {/* Sessions List */}
+            <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5 custom-scrollbar">
+                {displayedSessions.length === 0 ? (
                     <div className="text-center py-10 px-4">
                         <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4 text-white/20 shadow-inner">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                             </svg>
                         </div>
-                        <p className="text-sm text-white/50 font-medium">Nenhuma sessão recente</p>
+                        <p className="text-sm text-white/50 font-medium">
+                            {projectId ? 'Nenhuma sessão neste projeto' : 'Nenhuma sessão recente'}
+                        </p>
                         <p className="text-xs text-white/30 mt-1">Faça upload para começar</p>
                     </div>
                 ) : (
-                    sessions.map((session) => (
+                    displayedSessions.map((session) => (
                         <SessionItem
                             key={session.sessionId}
                             session={session}
@@ -65,24 +105,8 @@ export default function SessionSidebar({
                 )}
             </div>
 
-            {/* Footer Actions - Elevated with top shadow */}
-            <div className="p-4 border-t border-white/15 bg-[#1c0957]/90 backdrop-blur-sm shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.4)]">
-                <button
-                    onClick={onNewUpload}
-                    className="w-full h-11 flex items-center justify-center gap-2 bg-gradient-to-r from-[#38bec9] to-[#14919b] hover:from-[#4dd0d9] hover:to-[#38bec9] text-white rounded-xl font-medium shadow-lg shadow-[#38bec9]/20 hover:shadow-[#38bec9]/40 transition-all duration-300 mb-3 group"
-                >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-5 w-5 group-hover:scale-110 transition-transform"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Nova Taxonomia</span>
-                </button>
-
+            {/* Footer Actions */}
+            <div className="p-4 border-t border-white/10 bg-white/[0.03] shrink-0">
                 {onClearHistory && (
                     <button
                         onClick={onClearHistory}
@@ -131,6 +155,29 @@ interface SessionItemProps {
     onDelete?: () => void
 }
 
+/** Returns a review status badge element, or null for 'pending' (no badge shown). */
+function ReviewBadge({ reviewState }: { reviewState?: ReviewState }) {
+    if (!reviewState || reviewState === 'pending') return null
+
+    if (reviewState === 'in_progress') {
+        return (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-yellow-400/20 text-yellow-300 border border-yellow-400/30">
+                Em revisão
+            </span>
+        )
+    }
+
+    // completed
+    return (
+        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-mint-300/20 text-mint-300 border border-mint-300/30">
+            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            Revisado
+        </span>
+    )
+}
+
 function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps) {
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation() // Prevent selecting the session
@@ -141,14 +188,14 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
         <button
             onClick={onClick}
             className={`w-full text-left p-3 rounded-xl transition-all duration-200 group relative ${isActive
-                ? 'bg-white/15 backdrop-blur-sm border-l-2 border-[#38bec9]'
+                ? 'bg-white/15 backdrop-blur-sm border-l-2 border-[#38a8f5]'
                 : 'hover:bg-white/10 border-l-2 border-transparent'
                 }`}
         >
             <div className="flex items-start gap-3">
                 {/* File Icon */}
                 <div className={`mt-0.5 p-2 rounded-lg transition-colors ${isActive
-                    ? 'bg-[#38bec9]/20 text-[#38bec9]'
+                    ? 'bg-[#38a8f5]/20 text-[#38a8f5]'
                     : 'bg-white/10 text-white/50 group-hover:text-white/70'
                     }`}>
                     <svg
@@ -167,7 +214,7 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
                         }`}>
                         {session.filename}
                     </p>
-                    <p className={`text-xs mt-0.5 ${isActive ? 'text-[#38bec9]' : 'text-white/50'
+                    <p className={`text-xs mt-0.5 ${isActive ? 'text-[#38a8f5]' : 'text-white/50'
                         }`}>
                         {session.sector}
                     </p>
@@ -179,11 +226,37 @@ function SessionItem({ session, isActive, onClick, onDelete }: SessionItemProps)
                             minute: '2-digit'
                         })}
                     </p>
+                    {/* Background job progress */}
+                    {(session.jobStatus === 'PENDING' || session.jobStatus === 'PROCESSING') && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                            <svg className="w-3 h-3 text-[#38a8f5] animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            <span className="text-[10px] text-[#38a8f5]">
+                                {session.jobStatus === 'PROCESSING' ? 'Classificando...' : 'Na fila...'}
+                            </span>
+                        </div>
+                    )}
+                    {session.jobStatus === 'ERROR' && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                            <svg className="w-3 h-3 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span className="text-[10px] text-red-400">Erro no processamento</span>
+                        </div>
+                    )}
+                    {/* Review status badge */}
+                    {session.reviewState && session.reviewState !== 'pending' && !session.jobStatus && (
+                        <div className="mt-1.5">
+                            <ReviewBadge reviewState={session.reviewState} />
+                        </div>
+                    )}
                 </div>
 
                 {/* Active Indicator */}
                 {isActive && (
-                    <div className="w-2 h-2 rounded-full bg-[#38bec9] animate-pulse mt-2"></div>
+                    <div className="w-2 h-2 rounded-full bg-[#38a8f5] animate-pulse mt-2"></div>
                 )}
             </div>
 

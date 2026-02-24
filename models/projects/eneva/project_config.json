@@ -1,0 +1,13 @@
+{
+  "project_id": "eneva",
+  "display_name": "Eneva",
+  "sector": "energia-eletrica",
+  "client_context": "",
+  "custom_hierarchy": null,
+  "hierarchy_source": "own",
+  "hierarchy_filename": null,
+  "kb_seed_from": null,
+  "created_at": "2026-02-19T01:01:18.194367+00:00",
+  "updated_at": "2026-02-19T01:01:18.194367+00:00",
+  "few_shot_max_examples": 5
+}

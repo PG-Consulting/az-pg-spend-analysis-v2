@@ -9,14 +9,13 @@ This module provides the ML-based classification functionality with:
 
 import joblib
 import json
+import logging
 import os
 from typing import List, Tuple, Dict, Optional
 import numpy as np
-import sys
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.preprocessing import normalize_text
+
+logger = logging.getLogger(__name__)
 
 
 # Global cache for loaded models (per sector)
@@ -36,10 +35,10 @@ def clear_model_cache(sector: str = None):
         sector = sector.lower().strip()
         if sector in _MODEL_CACHE:
             del _MODEL_CACHE[sector]
-            print(f"Cleared model cache for sector '{sector}'")
+            logger.info(f"Cleared model cache for sector '{sector}'")
     else:
         _MODEL_CACHE = {}
-        print("Cleared all model caches")
+        logger.info("Cleared all model caches")
 
 
 def load_model(sector: str = "varejo", models_dir: str = "models") -> Tuple:
@@ -80,7 +79,7 @@ def load_model(sector: str = "varejo", models_dir: str = "models") -> Tuple:
             f"Please train models for this sector first."
         )
     
-    print(f"Loading ML model for sector '{sector}' from {sector_model_dir}/...")
+    logger.info(f"Loading ML model for sector '{sector}' from {sector_model_dir}/...")
     
     # Initialize cache for this sector
     if sector not in _MODEL_CACHE:
@@ -94,25 +93,25 @@ def load_model(sector: str = "varejo", models_dir: str = "models") -> Tuple:
     # Load vectorizer
     vectorizer_path = os.path.join(sector_model_dir, "tfidf_vectorizer.pkl")
     _MODEL_CACHE[sector]['vectorizer'] = joblib.load(vectorizer_path)
-    print(f"  [SUCCESS] Loaded vectorizer")
-    
+    logger.info(f"  [SUCCESS] Loaded vectorizer")
+
     # Load classifier
     classifier_path = os.path.join(sector_model_dir, "classifier.pkl")
     _MODEL_CACHE[sector]['classifier'] = joblib.load(classifier_path)
-    print(f"  [SUCCESS] Loaded classifier")
-    
+    logger.info(f"  [SUCCESS] Loaded classifier")
+
     # Load label encoder
     encoder_path = os.path.join(sector_model_dir, "label_encoder.pkl")
     _MODEL_CACHE[sector]['label_encoder'] = joblib.load(encoder_path)
-    print(f"  [SUCCESS] Loaded label encoder ({len(_MODEL_CACHE[sector]['label_encoder'].classes_)} classes)")
-    
+    logger.info(f"  [SUCCESS] Loaded label encoder ({len(_MODEL_CACHE[sector]['label_encoder'].classes_)} classes)")
+
     # Load hierarchy mapping
     hierarchy_path = os.path.join(sector_model_dir, "n4_hierarchy.json")
     with open(hierarchy_path, 'r', encoding='utf-8') as f:
         _MODEL_CACHE[sector]['hierarchy'] = json.load(f)
-    print(f"  [SUCCESS] Loaded hierarchy mapping")
-    
-    print(f"ML model for sector '{sector}' loaded successfully!")
+    logger.info(f"  [SUCCESS] Loaded hierarchy mapping")
+
+    logger.info(f"ML model for sector '{sector}' loaded successfully!")
     
     return (
         _MODEL_CACHE[sector]['vectorizer'],
@@ -122,25 +121,31 @@ def load_model(sector: str = "varejo", models_dir: str = "models") -> Tuple:
     )
 
 
-def load_model_for_sector(sector: str) -> Tuple:
+def load_model_for_sector(sector: str, models_dir: str = None) -> Tuple:
     """
     Load ALL model components for a sector, including ML models and Dictionary patterns.
-    
+
     This matches the signature expected by core_classification.py:
-    vectorizer, classifier, label_encoder, patterns, terms, taxonomy, hierarchy
+        ml_model, dict_patterns = load_model_for_sector(sector, models_dir)
+    where:
+        ml_model      = (vectorizer, classifier, label_encoder, hierarchy)
+        dict_patterns = (patterns, terms, taxonomy)
     """
     import pandas as pd
     from src.taxonomy_engine import build_patterns
-    
+
+    if models_dir is None:
+        models_dir = "models"
+
     # 1. Load ML Model (Standard)
     try:
         if sector.strip().capitalize() == "Padrão":
              # Padrão usually uses LLM only, but we return Nones for ML
              vectorizer, classifier, label_encoder, hierarchy = None, None, None, None
         else:
-             vectorizer, classifier, label_encoder, hierarchy = load_model(sector)
+             vectorizer, classifier, label_encoder, hierarchy = load_model(sector, models_dir)
     except Exception as e:
-        print(f"Warning: ML model not found for {sector}: {e}")
+        logger.warning(f"Warning: ML model not found for {sector}: {e}")
         vectorizer, classifier, label_encoder, hierarchy = None, None, None, None
 
     # 2. Load Dictionary Patterns (Default)
@@ -162,7 +167,7 @@ def load_model_for_sector(sector: str) -> Tuple:
             
     if dict_path:
         try:
-            print(f"Loading dictionary from {dict_path} for sector {sector}...")
+            logger.info(f"Loading dictionary from {dict_path} for sector {sector}...")
             # We assume the dictionary file has sheets. We need to find the right logical subset?
             # Actually build_patterns takes a DataFrame.
             # Usually the dictionary file has ALL sectors. We need to filter?
@@ -199,11 +204,13 @@ def load_model_for_sector(sector: str) -> Tuple:
                 _MODEL_CACHE[sector]['patterns'] = (patterns, terms, taxonomy)
                 
         except Exception as e:
-            print(f"Failed to load dictionary patterns: {e}")
+            logger.error(f"Failed to load dictionary patterns: {e}")
     else:
-        print("Spend_Taxonomy.xlsx not found. Running without dictionary patterns.")
+        logger.warning("Spend_Taxonomy.xlsx not found. Running without dictionary patterns.")
 
-    return vectorizer, classifier, label_encoder, patterns, terms, taxonomy, hierarchy
+    ml_model = (vectorizer, classifier, label_encoder, hierarchy)
+    dict_patterns = (patterns, terms, taxonomy)
+    return ml_model, dict_patterns
 
 
 def predict(
@@ -326,25 +333,25 @@ predict_batch = predict
 
 if __name__ == "__main__":
     # Test the classifier
-    print("Testing ML Classifier...")
-    print("=" * 60)
-    
+    logger.info("Testing ML Classifier...")
+    logger.info("=" * 60)
+
     # Example texts
     test_texts = [
         "CAFE GRAOS 1KG",
         "ETIQUETA ADESIVA BRANCA",
         "FRETE RODOVIARIO SAO PAULO"
     ]
-    
-    print("\nTest predictions:")
-    print("-" * 60)
-    
+
+    logger.info("\nTest predictions:")
+    logger.info("-" * 60)
+
     for text in test_texts:
         result = predict_single(text)
-        print(f"\nText: {text}")
-        print(f"Predicted N4: {result['n4_predicted']}")
-        print(f"Confidence: {result['confidence']:.4f}")
-        print(f"Hierarchy: {result['N1']} > {result['N2']} > {result['N3']} > {result['N4']}")
-        print(f"Top 3 candidates:")
+        logger.info(f"\nText: {text}")
+        logger.info(f"Predicted N4: {result['n4_predicted']}")
+        logger.info(f"Confidence: {result['confidence']:.4f}")
+        logger.info(f"Hierarchy: {result['N1']} > {result['N2']} > {result['N3']} > {result['N4']}")
+        logger.info("Top 3 candidates:")
         for j, cand in enumerate(result['top_candidates'], 1):
-            print(f"  {j}. {cand['N4']} (conf: {cand['confidence']:.4f})")
+            logger.info(f"  {j}. {cand['N4']} (conf: {cand['confidence']:.4f})")

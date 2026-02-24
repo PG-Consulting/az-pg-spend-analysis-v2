@@ -72,25 +72,30 @@ def get_azure_openai_config():
     }
 
 def classify_items_with_llm(
-    descriptions: List[str], 
-    sector: str = "Padrão", 
-    client_context: str = "", 
-    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None
+    descriptions: List[str],
+    sector: str = "Padrão",
+    client_context: str = "",
+    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None,
+    few_shot_examples: list = None,
+    user_instruction: str = None,
 ) -> List[Dict[str, str]]:
     """
     Classifies a list of item descriptions using Azure OpenAI.
-    
+
     Args:
         descriptions: List of text descriptions to classify.
         sector: The industry sector to provide context (e.g. 'Varejo', 'Educacional').
         client_context: Additional context about the client/project (e.g. 'Dengo - Chocolate').
         custom_hierarchy: Optional dictionary containing the allowed categories (N1-N4).
-        
+        few_shot_examples: Optional list of confirmed examples from the consultant KB.
+            Each entry is a dict with keys: description, N1, N2, N3, N4.
+        user_instruction: Optional freeform instruction from the consultant (highest priority).
+
     Returns:
         List of dicts with keys: N1, N2, N3, N4, confidence, explanation
     """
     config = get_azure_openai_config()
-    
+
     # Validation
     if not config["endpoint"] or not config["api_key"] or config["api_key"] == "SUA-CHAVE-AQUI":
         logging.warning("Azure OpenAI keys not configured. Skipping LLM classification.")
@@ -99,23 +104,27 @@ def classify_items_with_llm(
     # Prepare batch prompt (process in chunks if needed, here we assume small batches or separate calls)
     # For a list, we might want to process all at once if small, or loop.
     # To keep response structured, we'll ask for JSON.
-    
+
     results = [None] * len(descriptions)
-    
-    # Process in larger batches (50 items) and use parallel threads
-    chunk_size = 100 # Batch grande melhora consistência (itens similares no mesmo contexto)
+
+    # Process in larger batches (100 items) and use parallel threads
+    chunk_size = 100  # Batch grande melhora consistência (itens similares no mesmo contexto)
     chunks = []
     for i in range(0, len(descriptions), chunk_size):
         chunks.append((i, descriptions[i:i + chunk_size]))
-    
+
     logging.info(f"Starting aggressive parallel LLM classification ({len(chunks)} chunks)...")
-    
+
     with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_chunk = {
-            executor.submit(_call_openai_api, chunk_items, config, sector, client_context, custom_hierarchy): chunk_start 
+            executor.submit(
+                _call_openai_api,
+                chunk_items, config, sector, client_context, custom_hierarchy,
+                few_shot_examples, user_instruction
+            ): chunk_start
             for chunk_start, chunk_items in chunks
         }
-        
+
         for future in as_completed(future_to_chunk):
             chunk_start = future_to_chunk[future]
             try:
@@ -132,7 +141,7 @@ def classify_items_with_llm(
                     idx = chunk_start + offset
                     if idx < len(results):
                         results[idx] = _create_manual_fallback("Erro no processamento paralelo")
-        
+
     return [r if r is not None else _create_manual_fallback("Falha no mapeamento", "Falha Crítica no Processamento") for r in results]
 
 def _create_empty_result():
@@ -143,20 +152,22 @@ def _create_empty_result():
     }
 
 def _call_openai_api(
-    items: List[str], 
-    config: Dict, 
-    sector: str = "Padrão", 
-    client_context: str = "", 
-    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None
+    items: List[str],
+    config: Dict,
+    sector: str = "Padrão",
+    client_context: str = "",
+    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None,
+    few_shot_examples: list = None,
+    user_instruction: str = None,
 ) -> List[Dict]:
     """Helper to call the API for a chunk of items."""
-    
+
     # Construct the system message
     client_info = f"para o cliente: {client_context}" if client_context else ""
-    
+
     # Construct the system message using the User's specific "Consultant" persona
-    client_name = client_context if client_context else "ACNE" # Default placeholder if not provided
-    
+    client_name = client_context if client_context else "ACNE"  # Default placeholder if not provided
+
     # System message SEPARADO para hierarquia customizada vs padrão
     if custom_hierarchy:
         compact_tree = _format_hierarchy_compact(custom_hierarchy)
@@ -201,6 +212,28 @@ def _call_openai_api(
             "IMPORTANTE: Retorne a resposta APENAS no formato JSON abaixo (array de objetos), sem markdown. "
             "Exemplo de Saída:\n"
             '[{"item": "Tubo PVC 10mm", "N1": "MRO", "N2": "Materiais de Construção", "N3": "Produtos Sanitários", "N4": "Tubos", "confidence": 0.95}, ...]'
+        )
+
+    # Add few-shot examples if provided
+    if few_shot_examples:
+        examples_text = "\n".join([
+            f'- "{ex["description"]}" → N1: {ex["N1"]}, N2: {ex["N2"]}, N3: {ex["N3"]}, N4: {ex["N4"]}'
+            for ex in few_shot_examples
+            if ex.get("N1") and ex.get("N4")
+        ])
+        if examples_text:
+            system_message += (
+                f"\n\nEXEMPLOS CONFIRMADOS PELO CONSULTOR (use como referência prioritária):\n"
+                f"{examples_text}\n"
+                "Estes exemplos foram validados manualmente pelo consultor. "
+                "Para itens similares, priorize estas classificações."
+            )
+
+    # Add user instruction if provided
+    if user_instruction:
+        system_message += (
+            f"\n\nINSTRUÇÃO ESPECÍFICA DO CONSULTOR (prioridade máxima, sobrepõe qualquer outro critério):\n"
+            f"{user_instruction}\n"
         )
 
     user_content = "Classifique os seguintes itens:\n" + "\n".join([f"- {item}" for item in items])

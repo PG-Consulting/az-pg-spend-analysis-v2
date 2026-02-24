@@ -6,40 +6,40 @@
 
 @layer base {
   :root {
-    /* Strategic Control Tower Theme */
+    /* Procurement Garage Brand Theme */
 
-    /* Primary - Deep Navy Blue */
-    --navy-900: #102a43;
-    --navy-800: #243b53;
-    --navy-700: #334e68;
-    --navy-600: #486581;
-    --navy-500: #627d98;
+    /* Accent - Cyan Blue */
+    --accent: #0693e3;
+    --accent-hover: #0576b8;
+    --accent-light: #eff8ff;
 
-    /* Accent - Electric Cyan */
-    --cyan-500: #14919b;
-    --cyan-400: #38bec9;
-    --cyan-300: #54d1db;
+    /* AI - Purple */
+    --ai: #9b51e0;
+    --ai-hover: #7c3aed;
 
-    /* Backgrounds */
-    --bg-primary: #F5F7FA;
-    --bg-secondary: #EDF2F7;
-    --bg-card: #FFFFFF;
-    --bg-sidebar: #102a43;
+    /* Mint - Success */
+    --mint: #7bdcb5;
+    --mint-dark: #2db17f;
+
+    /* Navy - Sidebar / Brand Anchor */
+    --navy: #1c0957;
+    --navy-dark: #0e0330;
 
     /* Text */
-    --text-primary: #102a43;
+    --text-primary: #32373c;
     --text-secondary: #486581;
-    --text-muted: #829ab1;
 
-    /* Legacy brand (for logo compatibility) */
-    --pg-blue: #1B75BB;
-    --pg-turquoise: #00A99D;
+    /* Backgrounds */
+    --bg-primary: #F8FAFC;
+    --bg-secondary: #F1F5F9;
+    --bg-card: #FFFFFF;
+    --bg-sidebar: #1c0957;
 
     /* Shadows */
-    --shadow-card: 0 4px 20px rgba(16, 42, 67, 0.08);
-    --shadow-lg: 0 8px 30px rgba(16, 42, 67, 0.12);
-    --shadow-input: 0 2px 8px rgba(16, 42, 67, 0.06);
-    --shadow-glow: 0 0 20px rgba(20, 145, 155, 0.4);
+    --shadow-card: 0 4px 20px rgba(28, 9, 87, 0.06);
+    --shadow-lg: 0 8px 30px rgba(28, 9, 87, 0.10);
+    --shadow-input: 0 2px 8px rgba(28, 9, 87, 0.04);
+    --shadow-glow: 0 0 20px rgba(6, 147, 227, 0.4);
 
     /* Effects */
     --blur-glass: blur(12px);
@@ -74,7 +74,7 @@ a {
 }
 
 /* ============================================ */
-/* SCROLLBAR - Navy/Cyan theme */
+/* SCROLLBAR - Navy/Accent theme */
 /* ============================================ */
 
 ::-webkit-scrollbar {
@@ -88,12 +88,12 @@ a {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--navy-500);
+  background: #627d98;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--cyan-500);
+  background: var(--accent);
 }
 
 /* ============================================ */
@@ -107,7 +107,7 @@ a {
 }
 
 .glass-dark {
-  background: rgba(16, 42, 67, 0.85);
+  background: rgba(28, 9, 87, 0.85);
   backdrop-filter: var(--blur-glass);
   -webkit-backdrop-filter: var(--blur-glass);
 }
@@ -117,14 +117,14 @@ a {
 /* ============================================ */
 
 .gradient-text {
-  background: linear-gradient(135deg, var(--cyan-500) 0%, var(--cyan-400) 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--ai) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .gradient-text-brand {
-  background: linear-gradient(135deg, var(--pg-blue) 0%, var(--pg-turquoise) 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--ai) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -137,7 +137,7 @@ a {
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
 
   to {
@@ -149,7 +149,7 @@ a {
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(16px);
   }
 
   to {
@@ -162,11 +162,11 @@ a {
 
   0%,
   100% {
-    box-shadow: 0 0 15px rgba(20, 145, 155, 0.3);
+    box-shadow: 0 0 20px rgba(6, 147, 227, 0.3);
   }
 
   50% {
-    box-shadow: 0 0 25px rgba(20, 145, 155, 0.5);
+    box-shadow: 0 0 40px rgba(6, 147, 227, 0.6);
   }
 }
 
@@ -192,11 +192,11 @@ a {
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.5s ease-out forwards;
+  animation: fadeIn 0.3s ease-out forwards;
 }
 
 .animate-slideUp {
-  animation: slideUp 0.4s ease-out forwards;
+  animation: slideUp 0.3s ease-out forwards;
 }
 
 .animate-pulse-glow {
@@ -232,15 +232,11 @@ a {
 /* FLOATING CARD UTILITY */
 /* ============================================ */
 
-/* ============================================ */
-/* FLOATING CARD UTILITY */
-/* ============================================ */
-
 .floating-card {
   background: var(--bg-card);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-card);
-  border: 1px solid rgba(16, 42, 67, 0.08);
+  border: 1px solid rgba(28, 9, 87, 0.06);
 }
 
 .floating-card:hover {
@@ -255,11 +251,11 @@ a {
   background: var(--bg-card);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-card);
-  border: 1px solid rgba(16, 42, 67, 0.08);
+  border: 1px solid rgba(28, 9, 87, 0.06);
   transition: all 0.2s ease;
 }
 
 .input-spotlight:focus-within {
-  box-shadow: var(--shadow-lg), 0 0 0 3px rgba(56, 190, 201, 0.15);
-  border-color: var(--cyan-400);
+  box-shadow: var(--shadow-lg), 0 0 0 3px rgba(6, 147, 227, 0.15);
+  border-color: var(--accent);
 }

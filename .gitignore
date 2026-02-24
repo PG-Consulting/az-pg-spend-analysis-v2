@@ -28,6 +28,9 @@ dist/
 models/*/dataset_master.csv
 models/*/versions/
 
+# v3: KB version snapshots (rollback data, grows over time)
+models/**/kb_versions/
+
 # Runtime job data (created during processing, not source code)
 models/taxonomy_jobs/
 
@@ -43,6 +46,7 @@ CLAUDE.md
 .DS_Store
 
 # ==== AZURE / AZURITE ====
+AzuriteConfig
 __blobstorage__/
 __queuestorage__/
 __tablestorage__/
@@ -61,6 +65,9 @@ coverage/
 
 # ==== DATA FILES ====
 *.xlsx
+
+# ==== BUILD ARTIFACTS ====
+frontend/tsconfig.tsbuildinfo
 
 # ==== CACHE ====
 /models/cache

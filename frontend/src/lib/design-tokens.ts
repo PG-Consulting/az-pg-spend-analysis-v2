@@ -1,201 +1,110 @@
 /**
- * Design Tokens - Strategic Control Tower Theme
- * 
- * A modern, clean, technological design system for Spend Analysis.
- * Inspired by corporate trust and control tower aesthetics.
+ * Design Tokens — Procurement Garage Brand
+ *
+ * Cyan-blue (#0693e3) + Purple (#9b51e0) signature gradient
+ * Navy sidebar (#1c0957) as brand anchor
+ * Mint (#7bdcb5) for success states
  */
 
-// ============================================
-// STRATEGIC CONTROL TOWER PALETTE
-// ============================================
-
 export const colors = {
-    // Primary - Deep Navy Blue (Corporate Trust)
     navy: {
-        50: '#f0f4f8',
-        100: '#d9e2ec',
-        200: '#bcccdc',
-        300: '#9fb3c8',
-        400: '#829ab1',
-        500: '#627d98',
-        600: '#486581',
-        700: '#334e68',
-        800: '#243b53',
-        900: '#102a43',  // Primary sidebar/buttons
+        50: '#f0f4f8', 100: '#d9e2ec', 200: '#bcccdc', 300: '#9fb3c8',
+        400: '#829ab1', 500: '#627d98', 600: '#486581', 700: '#334e68',
+        800: '#1c0957', 900: '#0e0330',
     },
-
-    // Accent - Electric Cyan (AI/Active states)
-    cyan: {
-        50: '#e0fcff',
-        100: '#bef8fd',
-        200: '#87eaf2',
-        300: '#54d1db',
-        400: '#38bec9',
-        500: '#14919b',  // Primary accent
-        600: '#0e7c86',
-        700: '#0a6c74',
-        800: '#084c61',
-        900: '#044e54',
+    accent: {
+        50: '#eff8ff', 100: '#d9efff', 200: '#b3dfff', 300: '#7ac8ff',
+        400: '#38a8f5', 500: '#0693e3', 600: '#0576b8', 700: '#045d94',
+        800: '#034d7a', 900: '#023f65',
     },
-
-    // Background
-    background: {
-        primary: '#F5F7FA',      // Off-white main area
-        secondary: '#EDF2F7',    // Slightly darker sections
-        card: '#FFFFFF',         // White floating cards
-        sidebar: '#102a43',      // Deep Navy sidebar
-        sidebarHover: '#1a3a54', // Sidebar item hover
+    ai: {
+        50: '#f6f0ff', 100: '#ede0ff', 200: '#d4b8ff', 300: '#b88aff',
+        400: '#9b51e0', 500: '#7c3aed', 600: '#6525c4',
     },
-
-    // Text
+    mint: {
+        50: '#eefbf5', 100: '#d4f6e8', 200: '#a8edd1', 300: '#7bdcb5',
+        400: '#4fc89a', 500: '#2db17f', 600: '#1f8f66',
+    },
     text: {
-        primary: '#102a43',      // Navy for headings
-        secondary: '#486581',    // Muted for body
-        light: '#829ab1',        // Light gray
+        primary: '#32373c',
+        secondary: '#486581',
+        light: '#829ab1',
         white: '#FFFFFF',
         muted: '#9fb3c8',
     },
-
-    // Status Colors
+    background: {
+        primary: '#F8FAFC',
+        secondary: '#F1F5F9',
+        card: '#FFFFFF',
+        sidebar: '#1c0957',
+    },
     status: {
-        success: '#0e7c86',      // Cyan for success
+        success: '#2db17f',
         warning: '#f0b429',
         error: '#e12d39',
-        info: '#2186eb',
+        info: '#0693e3',
     },
-
-    // Legacy Brand (for logo compatibility)
-    brand: {
-        blue: '#1B75BB',
-        turquoise: '#00A99D',
-    },
-
-    // Grays
-    gray: {
-        50: '#f9fafb',
-        100: '#f3f4f6',
-        200: '#e5e7eb',
-        300: '#d1d5db',
-        400: '#9ca3af',
-        500: '#6b7280',
-        600: '#4b5563',
-        700: '#374151',
-        800: '#1f2937',
-        900: '#111827',
-    }
 } as const
-
-// ============================================
-// GRADIENTS
-// ============================================
 
 export const gradients = {
-    // Primary navy gradient
-    navy: 'from-[#102a43] to-[#243b53]',
-    navyReverse: 'from-[#243b53] to-[#102a43]',
-
-    // Cyan accent gradient
-    cyan: 'from-[#14919b] to-[#38bec9]',
-    cyanSubtle: 'from-[#14919b]/10 to-[#38bec9]/10',
-
-    // Legacy brand gradient (for compatibility)
-    brand: 'from-[#1B75BB] to-[#00A99D]',
-
-    // Sidebar gradient
-    sidebar: 'from-[#102a43] to-[#0d2136]',
+    signature: 'from-[#0693e3] to-[#9b51e0]',
+    signatureHover: 'from-[#0576b8] to-[#7c3aed]',
+    sidebar: 'from-[#1c0957] via-[#180847] to-[#120535]',
+    accent: 'from-[#0693e3] to-[#38a8f5]',
+    accentSubtle: 'from-[#0693e3]/10 to-[#38a8f5]/10',
+    mint: 'from-[#2db17f] to-[#7bdcb5]',
+    ai: 'from-[#9b51e0] to-[#b88aff]',
 } as const
-
-// ============================================
-// SHADOWS
-// ============================================
 
 export const shadows = {
-    // Card shadows (soft, professional)
-    sm: '0 1px 3px rgba(16, 42, 67, 0.08)',
-    md: '0 4px 12px rgba(16, 42, 67, 0.10)',
-    lg: '0 8px 24px rgba(16, 42, 67, 0.12)',
-    xl: '0 12px 40px rgba(16, 42, 67, 0.15)',
-
-    // Floating card shadow (for main content)
-    card: '0 4px 20px rgba(16, 42, 67, 0.08)',
-
-    // Input spotlight shadow
-    input: '0 2px 8px rgba(16, 42, 67, 0.06)',
-    inputFocus: '0 0 0 3px rgba(20, 145, 155, 0.15)',
-
-    // Cyan glow for AI states
-    glow: '0 0 20px rgba(20, 145, 155, 0.4)',
-    glowSubtle: '0 0 12px rgba(20, 145, 155, 0.2)',
+    sm: '0 1px 3px rgba(28, 9, 87, 0.06)',
+    md: '0 4px 12px rgba(28, 9, 87, 0.08)',
+    lg: '0 8px 24px rgba(28, 9, 87, 0.10)',
+    xl: '0 12px 40px rgba(28, 9, 87, 0.14)',
+    card: '0 4px 20px rgba(28, 9, 87, 0.06)',
+    input: '0 2px 8px rgba(28, 9, 87, 0.04)',
+    inputFocus: '0 0 0 3px rgba(6, 147, 227, 0.15)',
+    glow: '0 0 20px rgba(6, 147, 227, 0.4)',
+    glowSubtle: '0 0 12px rgba(6, 147, 227, 0.2)',
+    glowAi: '0 0 20px rgba(155, 81, 224, 0.4)',
 } as const
-
-// ============================================
-// TAILWIND CLASS COMBINATIONS
-// ============================================
 
 export const tw = {
-    // Glassmorphism effects
     glass: 'bg-white/80 backdrop-blur-sm border border-white/50',
     glassStrong: 'bg-white/95 backdrop-blur-xl border border-gray-100',
-    glassDark: 'bg-[#102a43]/80 backdrop-blur-sm border border-white/10',
-
-    // Gradient text
-    gradientText: 'bg-gradient-to-r from-[#14919b] to-[#38bec9] bg-clip-text text-transparent',
-    navyText: 'text-[#102a43]',
-
-    // Button variants - Navy primary
-    buttonPrimary: 'bg-[#102a43] text-white hover:bg-[#243b53] transition-all duration-200 shadow-md hover:shadow-lg',
-    buttonCyan: 'bg-gradient-to-r from-[#14919b] to-[#38bec9] text-white hover:shadow-lg transition-all duration-200',
-    buttonSecondary: 'bg-white border border-gray-200 text-[#486581] hover:bg-gray-50 hover:border-gray-300 transition-colors',
-    buttonGhost: 'text-[#486581] hover:text-[#102a43] hover:bg-gray-100 transition-colors',
-
-    // Card styles - Floating white cards
-    card: 'bg-white rounded-2xl shadow-[0_4px_20px_rgba(16,42,67,0.08)] border border-gray-100',
-    cardHover: 'hover:shadow-[0_8px_30px_rgba(16,42,67,0.12)] hover:translate-y-[-2px] transition-all duration-300',
-
-    // Sidebar styles
+    glassDark: 'bg-[#1c0957]/80 backdrop-blur-sm border border-white/10',
+    gradientText: 'bg-gradient-to-r from-[#0693e3] to-[#9b51e0] bg-clip-text text-transparent',
+    buttonPrimary: 'bg-accent-500 text-white hover:bg-accent-600 active:scale-[0.98] transition-all duration-200 shadow-md hover:shadow-lg',
+    buttonSecondary: 'bg-white border border-gray-200 text-primary-600 hover:bg-gray-50 hover:border-gray-300 transition-colors',
+    buttonGhost: 'text-primary-500 hover:text-primary-700 hover:bg-gray-100 transition-colors',
+    buttonAi: 'bg-gradient-to-r from-[#0693e3] to-[#9b51e0] text-white hover:shadow-lg active:scale-[0.98] transition-all duration-200',
+    buttonMint: 'bg-mint-500 text-white hover:bg-mint-600 active:scale-[0.98] transition-all duration-200',
+    card: 'bg-white rounded-2xl shadow-[0_4px_20px_rgba(28,9,87,0.06)] border border-gray-100',
+    cardHover: 'hover:shadow-[0_8px_30px_rgba(28,9,87,0.10)] hover:translate-y-[-2px] transition-all duration-300',
     sidebarItem: 'text-white/70 hover:text-white hover:bg-white/10 transition-all duration-200',
-    sidebarItemActive: 'text-white bg-white/15 backdrop-blur-sm border-l-2 border-[#38bec9]',
-
-    // Input styles - Spotlight style
-    input: 'w-full px-4 py-3 rounded-xl border border-gray-200 bg-white shadow-[0_2px_8px_rgba(16,42,67,0.06)] focus:outline-none focus:ring-2 focus:ring-[#14919b]/20 focus:border-[#14919b] focus:shadow-[0_0_0_3px_rgba(20,145,155,0.15)] transition-all',
-    inputFloating: 'bg-white rounded-2xl shadow-[0_4px_20px_rgba(16,42,67,0.10)] border border-gray-100 p-3',
-
-    // Animation classes
-    pulseGlow: 'animate-pulse shadow-[0_0_20px_rgba(20,145,155,0.4)]',
-    fadeIn: 'animate-[fadeIn_0.5s_ease-out_forwards]',
-    slideUp: 'animate-[slideUp_0.3s_ease-out_forwards]',
+    sidebarItemActive: 'text-white bg-white/15 backdrop-blur-sm border-l-2 border-accent-400',
+    input: 'w-full px-4 py-3 rounded-xl border border-gray-200 bg-white shadow-[0_2px_8px_rgba(28,9,87,0.04)] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all',
+    pulseGlow: 'animate-glow-pulse',
+    fadeIn: 'animate-fade-in',
+    slideUp: 'animate-slide-up',
 } as const
-
-// ============================================
-// ICON COLORS
-// ============================================
 
 export const iconColors = {
-    navy: 'text-[#102a43]',
-    cyan: 'text-[#14919b]',
-    muted: 'text-[#829ab1]',
+    navy: 'text-primary-800',
+    accent: 'text-accent-500',
+    muted: 'text-primary-400',
     white: 'text-white',
-    success: 'text-[#0e7c86]',
+    success: 'text-mint-500',
     warning: 'text-amber-500',
     error: 'text-red-500',
+    ai: 'text-ai-400',
 } as const
-
-// ============================================
-// TYPOGRAPHY
-// ============================================
 
 export const typography = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    heading: 'font-semibold text-[#102a43]',
+    heading: 'font-semibold text-[#32373c]',
     body: 'text-[#486581]',
     caption: 'text-sm text-[#829ab1]',
 } as const
 
-export default {
-    colors,
-    gradients,
-    shadows,
-    tw,
-    iconColors,
-    typography,
-}
+export default { colors, gradients, shadows, tw, iconColors, typography }

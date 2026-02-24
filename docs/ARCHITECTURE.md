@@ -1,321 +1,361 @@
-# Arquitetura do Backend
+# Arquitetura — Spend Analysis v3
 
-## Overview
+## Visão Geral
 
-O backend segue uma arquitetura modular com **separação clara de responsabilidades**, permitindo operação em dois modos: **Dictionary-only** (padrão) e **Hybrid ML+Dictionary**.
+O v3 resolve três problemas estruturais do v2:
+
+1. **Sem loop de aprendizado**: correções manuais nunca voltavam para o pipeline. Agora a KB alimenta o próximo job via few-shot RAG.
+2. **Modelo de dados limitado**: "setor" misturava vertical de mercado com cliente. Agora: Setor (vertical) → Projeto (empresa/escopo).
+3. **God file**: `function_app.py` com ~1800 linhas. Agora: entry point de ~33 linhas + 7 Blueprints.
 
 ---
 
-## Padrão Arquitetural
+## Componentes
+
+### Backend
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    AZURE FUNCTION APP                       │
-│  (function_app.py)                                          │
-│  - HTTP Endpoints                                           │
-│  - Orquestração                                             │
-│  - CORS handling                                            │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ usa
-┌───────────────────────▼─────────────────────────────────────┐
-│                    CLASSIFICATION LAYER                     │
-│  hybrid_classifier   │  ml_classifier   │ taxonomy_engine   │
-│  - Orquestra ML+Dict │  - TF-IDF + LR   │ - Regex patterns  │
-│  - Thresholds        │  - Predictions   │ - Keyword match   │
-│  - Fallback logic    │  - Confidence    │ - N4 hierarchy    │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ usa
-┌───────────────────────▼─────────────────────────────────────┐
-│                    SUPPORT LAYER                            │
-│  preprocessing.py │ model_trainer.py │ taxonomy_mapper.py   │
-│  - Text normalize │ - Train pipeline │ - Custom hierarchy   │
-│  - TF-IDF build   │ - Version control│ - Fallback top 3     │
-│  - Noise removal  │ - Model artifacts│ - N4 mapping         │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ persiste
-┌───────────────────────▼─────────────────────────────────────┐
-│                    DATA/MODEL LAYER                         │
-│  models/{sector}/    │  data/taxonomy/                      │
-│  - classifier.pkl    │  - Spend_Taxonomy.xlsx               │
-│  - vectorizer.pkl    │  - CONFIG sheet                      │
-│  - n4_hierarchy.json │  - DIC_* sheets                      │
-└─────────────────────────────────────────────────────────────┘
+function_app.py          ← entry point: cria FunctionApp + registra blueprints
+    │
+    ├── blueprints/projects_bp.py        CRUD setores e projetos
+    ├── blueprints/classification_bp.py  SubmitJob, GetStatus, GetJobResults
+    ├── blueprints/review_bp.py          ReclassifyItems, ApproveClassifications
+    ├── blueprints/knowledge_bp.py       KB CRUD (projeto + setor), versões, cobertura, import/export, promote (19 endpoints)
+    ├── blueprints/models_bp.py          ML legacy: TrainModel, GetModelHistory, etc.
+    ├── blueprints/copilot_bp.py         Copilot Studio: get-token, SearchMemory
+    └── blueprints/worker_bp.py          Timer 15s → run_worker_cycle()
+           │
+           └── src/worker_helpers.py     Lógica do worker (cleanup, get_active, process, consolidate)
+                   │
+                   └── src/core_classification.py   Pipeline de classificação por chunk
+                           │
+                           ├── [novo] LLM direto + few-shot da KB
+                           │       └── src/kb_retriever.py    TF-IDF cosine similarity
+                           │       └── src/llm_classifier.py  Grok/xAI async
+                           │       └── src/hierarchy_validator.py  Validação pós-LLM
+                           │
+                           └── [legado] ML + Dicionário + LLM fallback
+                                   └── src/hybrid_classifier.py
+                                   └── src/taxonomy_engine.py
+                                   └── src/ml_classifier.py
+```
+
+### Frontend
+
+```
+pages/taxonomy.tsx          Página principal + state machine
+    │
+    ├── CollapsibleSidebar (layout/)   ← sidebar navy colapsável com pinned state
+    │    ├── Logo (branding)
+    │    ├── ProjectSelect variant="dark"
+    │    └── SessionSidebar               ← lista de sessões + footer (sem container próprio)
+    │
+    ├── ContextBar (layout/)               ← breadcrumb + step indicator + KB button
+    │
+    ├── KnowledgeSlideOver (taxonomy/)     ← slide-over com 2 abas: KnowledgeTab + SectorKnowledgeTab
+    │
+    ├── hooks/useTaxonomySession.ts   Lifecycle de sessão (project-aware, review states)
+    ├── hooks/useProjects.ts          CRUD projetos + sync IndexedDB/backend
+    ├── hooks/useReview.ts            State machine de revisão (Map de estados por item)
+    ├── hooks/useHierarchy.ts         Parse hierarquia → tree para cascading dropdowns
+    ├── hooks/useVirtualScroll.ts     Windowing para 50K rows (height fixo 52px)
+    └── hooks/useCopilot.ts           Copilot Studio (gated por reviewCompleted)
+```
+
+#### Paleta Visual
+
+| Elemento | Valor |
+|----------|-------|
+| Sidebar bg | `gradient from-[#1c0957] via-[#180847] to-[#120535]` |
+| Accent principal | `#0693e3` / `accent-500` (tabs ativas, botões) |
+| Accent brilhante | `#38a8f5` / `accent-400` (hover, highlights) |
+| Gradiente signature | `from-[#0693e3] to-[#9b51e0]` (CTA principal) |
+| AI/Copilot | `#9b51e0` / `ai-400` |
+| Success | `#2db17f` / `mint-500` |
+| Separadores | `border-white/10` |
+| Design tokens | `frontend/src/lib/design-tokens.ts` (source of truth) |
+
+---
+
+## Pipeline de Classificação
+
+### Fluxo Completo
+
+```
+1. SubmitTaxonomyJob (POST)
+   ├── Lê arquivo CSV/XLSX
+   ├── Ordena por descrição (case-insensitive) ← agrupa similares no batch LLM
+   ├── Divide em chunks de 500 linhas
+   ├── Salva chunks como chunk_0.json, chunk_1.json, ...
+   └── Cria status.json com status=PENDING
+
+2. ProcessTaxonomyWorker (timer 15s)
+   ├── cleanup_stale_jobs() ← jobs PROCESSING > 1h → ERROR
+   ├── get_active_jobs() ← carrega project_config + resolve_hierarchy + KB
+   ├── Round-robin: max 5 chunks simultâneos entre todos os jobs ativos
+   │   └── process_single_chunk()
+   │           ├── Carrega chunk_X.json
+   │           ├── core_classification.process_dataframe_chunk()
+   │           │       [novo] KBRetriever.select_representative_examples(kb_entries, max_k=10)
+   │           │       [novo] classify_items_with_llm(few_shot_examples=global_examples)
+   │           │       [legado] hybrid_classifier → llm fallback
+   │           │       hierarchy_validator.validate_and_correct()
+   │           └── Salva result_X.json
+   └── consolidate_job() quando todos os chunks processados
+           ├── Merge chunk_X.json + result_X.json (original + classificação)
+           ├── Remove colunas de classificação do chunk original (evita N1.1, N2.1)
+           ├── Preenche NaN com "Não Identificado" (N1-N4) e "Nenhum" (status)
+           └── status → CLASSIFIED
+
+3. Revisão humana (frontend ReviewTab)
+   ├── GetJobResults → carrega items classificados
+   ├── useReview state machine: approved / edited / rejected per item
+   ├── ReclassifyItems → re-classifica rejeitados com instrução do consultor
+   └── ApproveClassifications
+           ├── Salva decisões do consultor
+           ├── Alimenta KB (source: llm_approved / consultant_correction / reclassified_with_guidance)
+           ├── Gera Excel final (base64)
+           └── status → COMPLETED
+
+4. Copilot desbloqueado (useCopilot.ts)
+   ├── Análise conversacional dos dados aprovados
+   └── smart-context/ RAG client-side
+```
+
+### Dois Caminhos de Classificação
+
+**Caminho Novo (projetos com KB)**
+```python
+# core_classification._llm_direct_pipeline()
+1. KBRetriever.select_representative_examples(kb_entries, max_k=10)
+   → TF-IDF (1,2)-grams sobre description_norm
+   → Seleciona exemplos cobrindo mais N4s distintos (greedy)
+2. classify_items_with_llm(few_shot_examples=global_examples, client_context=...)
+   → System message: hierarquia customizada + exemplos confirmados + instrução
+3. hierarchy_validator.validate_and_correct()
+   → Cascata: exact → level_shift → partial_fuzzy → n4_reverse → no_match
+```
+
+**Caminho Legado (setores com modelo ML treinado)**
+```python
+# core_classification._legacy_ml_pipeline()
+1. ML (TF-IDF + LogisticRegression)
+   → confidence >= 0.45: "Unico" (usa ML)
+   → confidence 0.25-0.44: "Ambiguo" (tenta dicionário)
+   → confidence < 0.25: fallback dicionário
+2. Dicionário (regex/keywords do Spend_Taxonomy.xlsx)
+3. LLM fallback para itens "Nenhum"
+4. hierarchy_validator (se custom_hierarchy presente)
 ```
 
 ---
 
-## Módulos Principais
+## Knowledge Base (KB)
 
-### 1. `function_app.py`
+### Estrutura por Projeto + Setor
 
-**Propósito**: Entry point da Azure Function com todos os endpoints HTTP.
+```
+models/projects/{project_id}/
+├── knowledge_base.json      ← array de KBEntry (dedup por description_norm apenas)
+└── kb_versions/
 
-**Endpoints**:
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/get-token` | GET | Token Direct Line p/ Copilot |
-| `/ProcessTaxonomy` | POST | Classificação de arquivo |
-| `/TrainModel` | POST | Treinar modelo ML |
-| `/GetModelHistory` | GET | Histórico de versões |
-| `/SetActiveModel` | POST | Rollback de versão |
+models/sectors/{sector_name}/
+├── sector_config.json
+├── knowledge_base.json      ← KB curada do setor (promovida de projetos ou editada diretamente)
+└── kb_versions/
+```
 
----
+### Ciclo de Vida de uma Entrada KB
 
-### 2. `taxonomy_engine.py`
+```
+Consultor aprova item classificado → source: "llm_approved"
+Consultor edita e aprova          → source: "consultant_correction"
+Consultor rejeita + instrução     → re-classifica → aprova → source: "reclassified_with_guidance"
+```
 
-**Propósito**: Motor de classificação por palavras-chave usando regex.
-
-**Funções principais**:
+### Few-Shot RAG
 
 ```python
-normalize_text(s: str) -> str
-    # Normaliza texto: lowercase, remove acentos, expande abreviações
+KBRetriever(kb_entries)
+  .select_representative_examples(max_k=10)
+  # Seleciona exemplos que cobrem mais N4s distintos (greedy coverage)
+  # Retorna <= max_k exemplos balanceados por categoria
 
-build_patterns(dict_df) -> (patterns_by_n4, terms_by_n4, taxonomy_by_n4)
-    # Constrói regex patterns do dicionário
-
-match_n4_without_priority(desc_norm, patterns, terms, taxonomy)
-    # Classifica descrição: retorna (taxonomy, match_type, matched_terms, score)
-
-classify_items(dict_records, item_records)
-    # Pipeline completo: retorna {"items", "summary", "analytics"}
-
-generate_analytics(df_items) -> dict
-    # Gera Pareto (N1-N4), Gaps, Ambiguidade
+# Inserido no system message do LLM:
+"EXEMPLOS CONFIRMADOS PELO CONSULTOR (use como referência):
+- "Válvula esfera DN50" → N1: Materiais, N2: Tubulação, N3: Válvulas, N4: Válvulas de Esfera
+- ..."
 ```
 
-**Match Types**:
-- `Único`: Uma categoria N4 com score mais alto
-- `Ambíguo`: Empate entre múltiplas N4s
-- `Nenhum`: Nenhuma palavra-chave encontrada
+### Toggle use_sector_kb
+
+Cada projeto tem `use_sector_kb` (default true) em `project_config.json`. Quando false:
+- Worker não carrega KB do setor para merge
+- Reclassificação não inclui KB do setor
+- Coverage não contabiliza entradas do setor
+- Frontend: KnowledgeTab não mostra entradas do setor, sem botão "Promover"
+- Frontend: aba "Setor" no SlideOver mostra empty state
+
+KB do setor é SEMPRE acessível via SectorKnowledgeTab para gestão direta, independente do toggle.
 
 ---
 
-### 3. `hybrid_classifier.py`
+## Gestão de Projetos
 
-**Propósito**: Orquestra classificação ML + Dictionary fallback.
-
-**Lógica de Decisão**:
-```
-ML Confidence >= 0.70 → "Único" (ML)
-ML Confidence 0.40-0.69 → "Ambíguo" (Top 3 ML)
-ML Confidence < 0.40 → Try Dictionary
-    Dictionary match → Use Dictionary
-    No match → "Nenhum"
-```
-
-**Classe `ClassificationResult`**:
-```python
-{
-    'status': str,    # Único, Ambíguo, Nenhum
-    'N1': str, 'N2': str, 'N3': str, 'N4': str,
-    'matched_terms': List[str],
-    'ml_confidence': float,
-    'classification_source': str,  # "ML" or "Dictionary"
-    'ambiguous_n4s': List[str]
-}
-```
-
----
-
-### 4. `ml_classifier.py`
-
-**Propósito**: Classificação puramente ML com TF-IDF + Logistic Regression.
-
-**Características**:
-- Cache de modelos por setor (global `_MODEL_CACHE`)
-- Predição com top-K candidatos
-- Hierarquia completa (N1→N4) para cada predição
-
-**Artefatos carregados**:
-```
-models/{sector}/
-├── tfidf_vectorizer.pkl    # Vetorizador TF-IDF
-├── classifier.pkl          # Logistic Regression
-├── label_encoder.pkl       # Encoder de labels
-└── n4_hierarchy.json       # Mapeamento N4→N1,N2,N3
-```
-
----
-
-### 5. `model_trainer.py`
-
-**Propósito**: Pipeline de treinamento de modelos ML.
-
-**Etapas**:
-1. Filtrar categorias raras (< 5 exemplos)
-2. Normalizar descrições
-3. Encode labels com LabelEncoder
-4. Split train/validation (80/20)
-5. TF-IDF vectorization (5000 features, unigrams+bigrams)
-6. Train Logistic Regression (OvR)
-7. Salvar artefatos versionados
-8. Atualizar modelo ativo
-9. Cleanup de versões antigas (max 3)
-
----
-
-### 6. `taxonomy_mapper.py`
-
-**Propósito**: Mapeamento de hierarquia customizada enviada pelo cliente.
-
-**Funções principais**:
+### Resolução de Hierarquia
 
 ```python
-load_custom_hierarchy(base64_content: str) -> Dict[str, Dict]
-    # Carrega arquivo Excel/CSV com hierarquia customizada
-    # Retorna: { "n4_lower": {"N1": ..., "N2": ..., "N3": ..., "N4": ...} }
+resolve_hierarchy(project_id, models_dir)
+  → (hierarchy_list, source)
 
-apply_custom_hierarchy(top_candidates: List[Dict], custom_hierarchy: Dict)
-    # Busca melhor match entre top 3 candidates e hierarquia
-    # Retorna: (hierarchy_dict, matched_n4) ou (None, None)
+Prioridade:
+  1. custom_hierarchy do projeto → source = "own"
+  2. custom_hierarchy do setor   → source = "inherited"
+  3. None                        → source = "padrao" (usa Spend_Taxonomy.xlsx)
 ```
 
-**Fluxo**:
-```
-1. ML classifica item -> top 3 candidates
-2. Busca 1º candidato na hierarquia -> encontrou? Usa!
-3. Busca 2º candidato na hierarquia -> encontrou? Usa!
-4. Busca 3º candidato na hierarquia -> encontrou? Usa!
-5. Nenhum encontrado -> Item fica sem classificação
-```
-
----
-
-### 7. `preprocessing.py`
-
-**Propósito**: Utilitários compartilhados de pré-processamento.
-
-**Funções**:
-- `normalize_text()`: Remove acentos, pontuação, noise words
-- `normalize_corpus()`: Batch normalization
-- `build_tfidf_vectorizer()`: Cria vetorizador configurado
-
----
-
-## Configuração
-
-### Variáveis de Ambiente
-
-| Variável | Descrição | Default |
-|----------|-----------|---------|
-| `USE_ML_CLASSIFIER` | Habilita classificação ML | `false` |
-| `DIRECT_LINE_SECRET` | Secret do Copilot Direct Line | - |
-| `POWER_AUTOMATE_URL` | URL do Flow para salvar logs no SharePoint | - |
-| `POWER_AUTOMATE_API_KEY` | API Key de autenticação do Power Automate | - |
-
-### Constantes (`taxonomy_engine.py`)
+### project_id Gerado
 
 ```python
-PARETO_CLASS_A_THRESHOLD = 0.80   # 80% para Classe A
-PARETO_CLASS_B_THRESHOLD = 0.95   # 95% para Classe B
-LRU_CACHE_SIZE = 10000            # Cache de classificações
-MIN_WORD_LENGTH_FOR_GAPS = 3      # Mínimo para análise gaps
+_slugify(sector + "-" + display_name)
+# "naval" + "WÄRTSILÄ S.A." → "naval-wartsila-s-a"
 ```
 
 ---
 
-## Versionamento de Modelos
+## Hierarquia Customizada
 
-Modelos são versionados automaticamente em `models/{sector}/versions/`:
+Problema específico que influencia várias decisões:
 
-```
-models/varejo/
-├── classifier.pkl              # Modelo ativo
-├── tfidf_vectorizer.pkl
-├── label_encoder.pkl
-├── model_history.json          # Histórico
-└── versions/
-    ├── v_1/                    # Versão 1
-    ├── v_2/                    # Versão 2
-    └── v_3/                    # Versão 3 (máximo)
-```
+**N4s duplicados**: "Materiais OEM" aparece sob 18 marcas diferentes (WARTSILA, MAN, CATERPILLAR, etc.). Se a hierarquia fosse um dict keyed por N4, perderia 17 entradas.
 
-### `model_history.json`
-```json
+**Solução**: hierarquia como lista de dicts:
+```python
 [
-  {
-    "version_id": "v_3",
-    "timestamp": "2025-12-13T10:30:00",
-    "filename": "dataset.csv",
-    "metrics": {
-      "accuracy": 0.85,
-      "f1_macro": 0.78,
-      "total_samples": 5000
-    },
-    "status": "active"
-  }
-]
-    "metrics": {
-      "accuracy": 0.85,
-      "f1_macro": 0.78,
-      "total_samples": 5000
-    },
-    "status": "active"
-  }
+  {"N1": "Materiais", "N2": "OEM WARTSILA", "N3": "Peças de Motor", "N4": "Materiais OEM"},
+  {"N1": "Materiais", "N2": "OEM MAN",     "N3": "Peças de Motor", "N4": "Materiais OEM"},
+  # ... mais 16 marcas
 ]
 ```
 
-### Comparação Consistente
-Para evitar discrepâncias em visualizações "Antes vs Depois":
-1. **Total Samples**: Sempre recalculado a partir do CSV acumulado vs Data, garantindo que o número reflita a realidade dos dados atuais, não o estado do momento do treino (que pode estar obsoleto se houver limpeza de dados).
-2. **Hierarquia**: Para versões legadas (sem JSON), o sistema reconstrói a árvore N4->N1 inferindo do CSV.
+`_format_hierarchy_compact()` em `llm_classifier.py` aceita lista ou dict (backward compat).
 
 ---
 
----
+## Validador de Hierarquia (hierarchy_validator.py)
 
-## Integração com Power Automate
+Pós-processamento que corrige erros do LLM. Cascata aplicada em sequência:
 
-O backend envia automaticamente cada arquivo classificado para um **Flow do Power Automate**, que salva o arquivo no **SharePoint** como log.
-
-### Fluxo de Integração
-
-```mermaid
-sequenceDiagram
-    participant F as Frontend
-    participant A as Azure Function
-    participant PA as Power Automate
-    participant SP as SharePoint
-    
-    F->>A: POST /ProcessTaxonomy
-    A->>A: Classifica arquivo
-    A->>A: Gera Excel
-    A->>PA: POST {filename, fileContent}
-    PA->>SP: Create file
-    A-->>F: JSON response
+```
+A. Exact path match (N1,N2,N3,N4) case-insensitive → mantém
+B. Level shift: N1 retornado é N2 válido → shift +1 nível
+C. Partial path + fuzzy match scoped (N3/N4 dentro do branch correto)
+D. N4-based reverse lookup: pontua por overlap com N1/N2/N3
+E. No match → zera para "Não Identificado" + status "Nenhum"
 ```
 
-### Função `send_to_power_automate()`
+`HierarchyLookup` é pré-construído 1x por job em `get_active_jobs()`. Não reconstruir por chunk.
+
+---
+
+## Worker Round-Robin
 
 ```python
-def send_to_power_automate(filename: str, file_content_base64: str) -> bool:
-    """
-    Envia arquivo classificado para o Power Automate (SharePoint).
-    - Non-blocking: erros são logados mas não bloqueiam a resposta
-    - Timeout: 30 segundos
-    """
+# worker_helpers.get_active_jobs()
+active_jobs = [job1, job2, job3]  # jobs com status PROCESSING
+
+# Round-robin: 1 chunk por job por rodada
+chunks_to_process = [
+    job1.next_chunk,
+    job2.next_chunk,
+    job3.next_chunk,
+][:MAX_PARALLEL_CHUNKS]  # max 5
+
+# Processamento paralelo
+with ThreadPoolExecutor(max_workers=MAX_PARALLEL_CHUNKS) as executor:
+    futures = [executor.submit(process_single_chunk, chunk) for chunk in chunks_to_process]
 ```
 
-### Payload Enviado
+Garante que jobs pequenos não ficam bloqueados por jobs grandes.
 
-```json
-{
-    "filename": "arquivo_classified_20251213_170000.xlsx",
-    "fileContent": "<base64-encoded-xlsx>"
+---
+
+## Frontend — State Machine
+
+### Estados da Sessão
+
+```typescript
+type SessionPhase =
+  | 'idle'          // sem sessão ativa
+  | 'uploading'     // upload em andamento
+  | 'processing'    // job em PROCESSING
+  | 'classified'    // job em CLASSIFIED (revisão disponível)
+  | 'reviewing'     // revisor abriu a aba de revisão
+  | 'completed'     // ApproveClassifications chamado, status COMPLETED
+```
+
+### Transições
+
+```
+idle → uploading (upload de arquivo)
+uploading → processing (SubmitTaxonomyJob retorna jobId)
+processing → classified (polling detecta status=CLASSIFIED)
+classified → reviewing (usuário clica na aba Revisar)
+reviewing → completed (finalizeReview → ApproveClassifications)
+```
+
+### Tabs por Fase
+
+| Fase | Classificar | Revisar | Conhecimento | Analisar |
+|------|-------------|---------|--------------|---------|
+| idle | Ativo | Locked | Ativo | Locked |
+| uploading/processing | Disabled | Locked | Locked | Locked |
+| classified | Ativo | **Ativo** | Ativo | Locked |
+| reviewing | Ativo | Ativo | Ativo | Locked |
+| completed | Ativo | Ativo | Ativo | **Ativo** |
+
+---
+
+## IndexedDB Schema v2
+
+```typescript
+// DB_VERSION = 2
+// Migration: v1 → v2 adiciona reviewState: 'completed' em sessões existentes
+
+stores: {
+  sessions: {
+    keyPath: 'sessionId',
+    indexes: ['by-timestamp', 'by-project'],
+    // Novos campos v3: reviewState, reviewedItems, approvedSummary, projectId
+  },
+  projects: {           // NOVO
+    keyPath: 'id',
+    indexes: ['by-sector', 'by-name'],
+  },
+  reviewProgress: {     // NOVO — persistência parcial da revisão
+    keyPath: 'sessionId',
+    // Armazena Map<number, ReviewItemState> serializado
+    // Auto-save a cada 5s em useReview.ts
+  }
 }
 ```
 
-### Headers
+---
 
-| Header | Valor |
-|--------|-------|
-| `Content-Type` | `application/json` |
-| `api-key` | Valor de `POWER_AUTOMATE_API_KEY` |
+## Decisões Técnicas
 
-### Configuração no Power Automate
-
-1. **Trigger**: "When an HTTP request is received"
-2. **Action**: "Create file" (SharePoint)
-   - File Name: `triggerBody()?['filename']`
-   - File Content: `base64ToBinary(triggerBody()?['fileContent'])`
+| Decisão | Alternativas Consideradas | Razão Escolhida |
+|---------|--------------------------|-----------------|
+| Few-shot com TF-IDF | Embeddings semânticos (OpenAI, sentence-transformers) | scikit-learn já é dependência; sem custo extra; latência mínima |
+| KB como JSON filesystem | PostgreSQL, Azure Table Storage | Sem infra adicional; compatível com File Share existente; snapshots triviais |
+| Revisão no frontend (não backend) | Backend state machine | UX mais fluida; auto-save IndexedDB; sem round-trips para cada clique |
+| Virtual scroll (52px fixo) | react-virtual, tanstack-virtual | Zero dependências extras; implementação simples suficiente para 50K rows |
+| Hierarquia como lista | Dict keyed por N4 | Suporta N4s duplicados (ex: "Materiais OEM" em 18 marcas) |
+| Status CLASSIFIED (intermediário) | Ir direto para COMPLETED | Força o loop de revisão humana antes do download |
+| Sidebar unificado em `aside` (taxonomy.tsx) | SessionSidebar com container próprio | Elimina conflito visual branco/navy; `SessionSidebar` fica sem responsabilidade de layout |
+| Slug de setor auto-gerado | Campo manual digitado pela usuária | Usuárias não são técnicas; `normalize('NFD')` garante suporte a acentos e caracteres especiais |
+| ProjectSelect com prop `variant` | Componente separado para sidebar | Mesmo componente, dois contextos; evita duplicação de lógica de agrupamento |
+| KB do setor com CRUD completo | KB do setor read-only + promote-only | Consultor precisa curar KB do setor (editar, deletar entradas erradas); 9 endpoints espelham os de projeto |
+| Toggle `use_sector_kb` por projeto | Merge sempre habilitado | Projetos podem precisar de KB isolada (ex: setor novo com KB vazia que atrapalha) |
+| Design tokens centralizados | Cores hardcoded nos componentes | `design-tokens.ts` como source of truth; `tw.*` classes compostas evitam repetição |
+| CollapsibleSidebar como componente | Sidebar inline em taxonomy.tsx | Separação de responsabilidades; sidebar colapsável melhora uso do espaço |

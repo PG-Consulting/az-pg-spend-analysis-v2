@@ -1,388 +1,730 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Head from 'next/head'
-import { useRouter } from 'next/router'
+import type { NextPage } from 'next'
 
 // Hooks
 import { useTaxonomySession } from '@/hooks/useTaxonomySession'
 import { useCopilot } from '@/hooks/useCopilot'
-import { useModelTraining } from '@/hooks/useModelTraining'
+import { useProjects } from '@/hooks/useProjects'
+
+// Layout components
+import CollapsibleSidebar from '@/components/layout/CollapsibleSidebar'
+import ContextBar from '@/components/layout/ContextBar'
+import type { StepId, StepStatus } from '@/components/layout/ContextBar'
+import { SlideOver } from '@/components/ui/SlideOver'
 
 // Components
-import Tabs from '@/components/ui/Tabs'
-import SessionSidebar from '@/components/taxonomy/SessionSidebar'
-import SectorSelect from '@/components/taxonomy/SectorSelect'
+import { ProjectSelect } from '@/components/project/ProjectSelect'
+import { CreateProjectModal } from '@/components/project/CreateProjectModal'
+import { EditProjectModal } from '@/components/project/EditProjectModal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ClassifyTab from '@/components/taxonomy/ClassifyTab'
-import TrainTab from '@/components/taxonomy/TrainTab'
-import ModelsTab from '@/components/taxonomy/ModelsTab'
-import DownloadCard from '@/components/taxonomy/DownloadCard'
+import { ReviewTab } from '@/components/taxonomy/ReviewTab'
+import { KnowledgeTab } from '@/components/taxonomy/KnowledgeTab'
+import { SectorKnowledgeTab } from '@/components/taxonomy/SectorKnowledgeTab'
+import { ProcessingOverlay } from '@/components/ProcessingOverlay'
 import ChatMessage, { ChatMessageLoading } from '@/components/chat/ChatMessage'
-import ChatInput from '@/components/chat/ChatInput'
+import SuggestedPrompts from '@/components/chat/SuggestedPrompts'
+import AiAvatar from '@/components/ui/AiAvatar'
 
-// Tab configuration
-const TAXONOMY_TABS = [
-    { id: 'classify', label: 'Classificar Itens' },
-    { id: 'train', label: 'Refinar Inteligência' },
-    { id: 'models', label: 'Biblioteca de Conhecimento' }
-]
+// Types
+import type { ClassifiedItem, HierarchyEntry, TaxonomySession } from '@/lib/types'
 
-export default function TaxonomyPage() {
-    const router = useRouter()
-    const chatContainerRef = useRef<HTMLDivElement>(null)
+// ============================================================
+// Types
+// ============================================================
 
-    // Taxonomy session management
-    const {
-        sessions,
-        activeSessionId,
-        activeSession,
-        isProcessing,
-        sector,
-        sectors,
-        isLoadingSectors,
-        clientContext,
-        setSector,
-        setClientContext,
-        setActiveSessionId,
-        handleNewUpload,
-        handleFileSelect,
-        handleClearHistory,
-        handleDeleteSession,
-        progress
-    } = useTaxonomySession()
+type TabId = 'classify' | 'review' | 'analyze'
+type SessionPhase = 'no_session' | 'processing' | 'classified' | 'reviewing' | 'completed'
 
-    // Local processing state for new tabs
-    const [localProcessing, setLocalProcessing] = useState(false)
+// ============================================================
+// NoProjectGate — shown when no project is selected
+// ============================================================
 
-    // Combined processing state for UI blocking
-    const effectiveProcessing = isProcessing || localProcessing
+function NoProjectGate({
+  hasProjects,
+  onCreateProject,
+}: {
+  hasProjects: boolean
+  onCreateProject: () => void
+}) {
+  const steps = [
+    {
+      n: '01',
+      label: 'Projeto',
+      desc: 'Hierarquia + contexto',
+      icon: (
+        <svg className="w-5 h-5 text-[#1c0957]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      ),
+    },
+    {
+      n: '02',
+      label: 'Classificar',
+      desc: 'Upload + IA',
+      icon: (
+        <svg className="w-5 h-5 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+            d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      ),
+    },
+    {
+      n: '03',
+      label: 'Revisar',
+      desc: 'Validação humana',
+      icon: (
+        <svg className="w-5 h-5 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    {
+      n: '04',
+      label: 'Analisar',
+      desc: 'Insights + Copilot',
+      icon: (
+        <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      ),
+    },
+  ]
 
-    // Copilot chat integration
-    const {
-        copilotMessages,
-        chatHistory,
-        isCopilotLoading,
-        isSending,
-        userMessage,
-        setUserMessage,
-        sendUserMessage,
-        generateExecutiveSummary
-    } = useCopilot({ activeSession })
+  return (
+    <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-sky-50/40 p-8">
+      <div className="max-w-lg w-full">
 
-    // Model training
-    const {
-        trainingStep,
-        trainingFile,
-        previewData,
-        validationStatus,
-        trainingResult,
-        modelHistory,
-        handleTrainingFileSelect,
-        confirmTraining,
-        cancelTraining,
-        loadModelHistory,
-        handleRestoreModel
-    } = useModelTraining()
+        {/* Icon + heading */}
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-[#1c0957] to-[#0693e3] flex items-center justify-center shadow-xl shadow-[#1c0957]/20">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-[#32373c]">Spend Analysis com IA</h2>
+          <p className="text-sm text-primary-500 mt-2 max-w-sm mx-auto leading-relaxed">
+            {hasProjects
+              ? 'Selecione um projeto no menu lateral para iniciar a classificação dos seus gastos.'
+              : 'Crie seu primeiro projeto para configurar a hierarquia taxonômica e a base de conhecimento da IA.'}
+          </p>
+        </div>
 
-    // Current active tab
-    const [activeTab, setActiveTab] = useState<'classify' | 'train' | 'models'>('classify')
+        {/* Workflow steps */}
+        <div className="relative flex items-start justify-between mb-10">
+          {/* Background connector */}
+          <div className="absolute top-6 left-[12.5%] right-[12.5%] h-px bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100" />
 
-    // Track which session we've already generated summary for
-    const summaryGeneratedForRef = useRef<string | null>(null)
-
-    // DEBUG: Session monitoring
-    useEffect(() => {
-        if (activeSession) {
-            console.log("------------------------------------------");
-            console.log("[DEBUG] ACTIVE SESSION CHANGED:", activeSession.sessionId);
-            console.log("[DEBUG] Filename:", activeSession.filename);
-            console.log("[DEBUG] Summary Data:", activeSession.summary);
-            console.log("[DEBUG] Has Analytics:", !!activeSession.analytics);
-            console.log("[DEBUG] Items in session:", activeSession.items?.length || 0);
-            console.log("------------------------------------------");
-        }
-    }, [activeSession?.sessionId])
-
-    // Generate executive summary when session is ready
-    useEffect(() => {
-        const currentSessionId = activeSession?.sessionId || null
-
-        if (!currentSessionId || isCopilotLoading || summaryGeneratedForRef.current === currentSessionId) {
-            return
-        }
-
-        const storedChat = localStorage.getItem(`pg_spend_chat_${currentSessionId}`)
-        const hasExistingChat = storedChat && JSON.parse(storedChat).length > 0
-
-        if (!hasExistingChat) {
-            summaryGeneratedForRef.current = currentSessionId
-            generateExecutiveSummary()
-        }
-    }, [activeSession?.sessionId, isCopilotLoading])
-
-    // Load model history
-    useEffect(() => {
-        if (activeTab === 'models') {
-            loadModelHistory(sector)
-        }
-    }, [activeTab, sector])
-
-    // Auto-scroll
-    useEffect(() => {
-        if (chatContainerRef.current) {
-            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
-        }
-    }, [chatHistory, copilotMessages, isCopilotLoading, isSending])
-
-    return (
-        <>
-            <Head>
-                <title>Taxonomia - Procurement Garage</title>
-            </Head>
-
-            {/* Processing Overlay */}
-            {effectiveProcessing && (
-                <div className="fixed inset-0 z-[9999] bg-[#0e0330]/90 backdrop-blur-md flex items-center justify-center transition-all duration-500">
-                    <div className="flex flex-col items-center justify-center text-center max-w-md w-full px-6">
-                        {/* Spinner & Icon */}
-                        <div className="relative mb-8">
-                            <div className="w-24 h-24 rounded-full border-4 border-white/10 border-t-[#38bec9] animate-spin"></div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <svg className="w-8 h-8 text-[#38bec9]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        {/* Title */}
-                        <h3 className="text-2xl font-bold text-white mb-2 tracking-tight">
-                            {progress && progress.pct > 0 ? "Classificando Itens..." : progress?.message ? "Analisando Dados..." : "Iniciando IA..."}
-                        </h3>
-
-                        {/* Status Message */}
-                        <p className="text-white/60 mb-6 font-light h-6 text-sm">
-                            {progress?.message || "Preparando ambiente de processamento..."}
-                        </p>
-
-                        {/* Progress Bar - always visible during processing */}
-                        <div className="w-full bg-white/10 rounded-full h-2 mb-3 overflow-hidden">
-                            {progress && progress.pct > 0 ? (
-                                <div
-                                    className="bg-gradient-to-r from-[#38bec9] to-[#14919b] h-2 rounded-full transition-all duration-1000 ease-out relative"
-                                    style={{ width: `${progress.pct}%` }}
-                                >
-                                    <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                                </div>
-                            ) : (
-                                <div className="h-2 rounded-full bg-gradient-to-r from-transparent via-[#38bec9]/40 to-transparent animate-[shimmer_2s_infinite] bg-[length:200%_100%]"></div>
-                            )}
-                        </div>
-
-                        {/* Percentage / Status Text */}
-                        {progress && progress.pct > 0 ? (
-                            <p className="text-sm font-mono text-[#38bec9] tracking-wider font-medium">{progress.pct}%</p>
-                        ) : (
-                            <p className="text-xs text-white/40 animate-pulse">Aguardando worker...</p>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            <div className="min-h-screen bg-[#F5F7FA] relative overflow-hidden">
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute top-[-150px] right-[-100px] w-[500px] h-[500px] bg-gradient-to-br from-primary-100/50 to-primary-200/30 rounded-full blur-3xl" />
-                    <div className="absolute bottom-[-100px] left-[-50px] w-[400px] h-[400px] bg-gradient-to-tr from-primary-100/40 to-primary-200/20 rounded-full blur-3xl" />
-                </div>
-
-                <div className="relative z-10 flex h-screen">
-                    <SessionSidebar
-                        sessions={sessions}
-                        activeSessionId={activeSessionId}
-                        onSessionSelect={setActiveSessionId}
-                        onNewUpload={handleNewUpload}
-                        onClearHistory={handleClearHistory}
-                        onDeleteSession={handleDeleteSession}
-                    />
-
-                    <div className="flex-1 flex flex-col relative z-20">
-                        {/* Header */}
-                        <div className="h-[72px] bg-gradient-to-r from-[#2a1177]/95 to-[#1c0957]/95 backdrop-blur-sm border-b border-white/15 px-6 flex items-center justify-between shadow-lg">
-                            <div className="flex items-center gap-4">
-                                <button
-                                    onClick={() => router.push('/')}
-                                    className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/15 flex items-center justify-center text-white/80 hover:text-white transition-all border border-white/10"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                                    </svg>
-                                </button>
-                                <div>
-                                    <h1 className="text-lg font-bold text-white tracking-wide">Realizar Taxonomia</h1>
-                                    <p className="text-xs text-white/60 font-light">Classificação de gastos com IA</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#38bec9]/15 border border-[#38bec9]/30">
-                                <div className="w-2.5 h-2.5 rounded-full bg-[#38bec9] animate-pulse"></div>
-                                <span className="text-sm font-medium text-[#38bec9]">Copilot Ativo</span>
-                            </div>
-                        </div>
-
-                        {/* Content Area */}
-                        <div className="flex-1 flex flex-col p-6 min-h-0 overflow-hidden">
-                            {!activeSession ? (
-                                <div className="flex-1 flex flex-col items-center justify-center">
-                                    <div className="floating-card max-w-5xl w-full p-8 h-[650px] flex flex-col bg-white rounded-3xl shadow-xl overflow-hidden">
-                                        <div className="mb-8 flex-shrink-0">
-                                            <Tabs
-                                                tabs={TAXONOMY_TABS}
-                                                activeTab={activeTab}
-                                                onTabChange={(id) => setActiveTab(id as any)}
-                                                disabled={effectiveProcessing}
-                                            />
-                                        </div>
-
-                                        <div className="mb-8 flex-shrink-0">
-                                            <SectorSelect
-                                                value={sector}
-                                                onChange={setSector}
-                                                sectors={sectors}
-                                                disabled={effectiveProcessing}
-                                                isLoading={isLoadingSectors}
-                                            />
-                                        </div>
-
-                                        {/* Client Context Input */}
-                                        {activeTab === 'classify' && (
-                                            <div className="mb-8 flex-shrink-0 animate-fadeIn">
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    Contexto do Cliente e Regras de Negócio (Opcional)
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={clientContext}
-                                                    onChange={(e) => setClientContext(e.target.value)}
-                                                    placeholder='Escreva aqui o prompt detalhado para categorização...'
-                                                    className="w-full border border-gray-200 bg-white rounded-xl px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm placeholder:text-gray-400"
-                                                    disabled={effectiveProcessing}
-                                                />
-                                                <p className="mt-1.5 text-[10px] text-gray-400 italic">
-                                                    * O contexto ajuda a IA a decidir categorias ambíguas (ex: Ar Condicionado em Escola vs Indústria).
-                                                </p>
-                                            </div>
-                                        )}
-
-                                        <div className="flex-1 overflow-y-auto min-h-0 pr-2 custom-scrollbar">
-                                            {activeTab === 'classify' && <ClassifyTab onFileSelect={handleFileSelect} isProcessing={effectiveProcessing} />}
-                                            {activeTab === 'train' && (
-                                                <TrainTab
-                                                    sector={sector}
-                                                    trainingStep={trainingStep}
-                                                    trainingFile={trainingFile}
-                                                    previewData={previewData}
-                                                    validationStatus={validationStatus}
-                                                    trainingResult={trainingResult}
-                                                    onFileSelect={(file, content) => handleTrainingFileSelect(file, content, sector)}
-                                                    onConfirmTraining={() => confirmTraining(sector)}
-                                                    onCancelTraining={cancelTraining}
-                                                />
-                                            )}
-                                            {activeTab === 'models' && (
-                                                <ModelsTab
-                                                    sector={sector}
-                                                    modelHistory={modelHistory}
-                                                    isProcessing={effectiveProcessing}
-                                                    onRefresh={() => loadModelHistory(sector)}
-                                                    onRestoreModel={(versionId) => handleRestoreModel(sector, versionId)}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-                                    {/* Chat Header */}
-                                    <div className="mb-4 flex items-center justify-between px-4">
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="text-xl font-bold text-[#102a43] truncate">
-                                                Análise Concluída
-                                                <span className="ml-2 text-[10px] bg-sky-50 text-sky-500 border border-sky-100 px-1.5 py-0.5 rounded uppercase font-mono tracking-tighter">v2.5-final</span>
-                                            </h3>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-3 py-1 rounded-full border border-gray-200">
-                                                    <span>Setor:</span>
-                                                    <span className="font-medium text-[#102a43]">{activeSession.sector}</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => setActiveSessionId(null)}
-                                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Metrics Diagnostic (Hidden by default, will show if summary fails) */}
-                                    {(!copilotMessages.length && !isCopilotLoading) && (
-                                        <div className="mb-4 bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <svg className="w-5 h-5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                                <div>
-                                                    <p className="text-xs font-bold text-orange-800">Diagnóstico de Dados</p>
-                                                    <p className="text-[10px] text-orange-600">
-                                                        Itens: {activeSession.summary?.total_linhas || 0} |
-                                                        Download: {activeSession.fileContentBase64 ? 'OK' : 'PENDENTE'} |
-                                                        Copilot: {activeSession.analytics ? 'PRONTO' : 'ERRO'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => generateExecutiveSummary()}
-                                                className="text-[10px] bg-white border border-orange-200 px-3 py-1 rounded-lg text-orange-700 font-bold hover:bg-orange-100"
-                                            >
-                                                FORÇAR RESUMO
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* Messages Area */}
-                                    <div ref={chatContainerRef} className="flex-1 overflow-y-auto space-y-6 mb-4 pr-2 min-h-0 p-6 floating-card bg-white rounded-3xl shadow-sm border border-gray-100">
-                                        {activeSession.fileContentBase64 && activeSession.downloadFilename && (
-                                            <DownloadCard fileContentBase64={activeSession.fileContentBase64} downloadFilename={activeSession.downloadFilename} />
-                                        )}
-
-                                        {copilotMessages.length > 0 ? (
-                                            copilotMessages.map((msg, idx) => <ChatMessage key={`msg-${idx}`} message={msg} />)
-                                        ) : !isCopilotLoading && (
-                                            <div className="flex flex-col items-center justify-center py-20 opacity-40">
-                                                <svg className="w-12 h-12 text-[#102a43] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                                </svg>
-                                                <p className="text-sm">Envie uma mensagem ou aguarde o resumo...</p>
-                                            </div>
-                                        )}
-
-                                        {(isCopilotLoading || isSending) && <ChatMessageLoading />}
-                                    </div>
-
-                                    {/* Input Area */}
-                                    <div className="w-full mt-2">
-                                        <ChatInput
-                                            value={userMessage}
-                                            onChange={setUserMessage}
-                                            onSend={sendUserMessage}
-                                            disabled={false}
-                                            loading={isSending || isCopilotLoading}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+          {steps.map((step) => (
+            <div key={step.n} className="relative z-10 flex flex-col items-center w-1/4 px-2">
+              <div className="w-12 h-12 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center mb-3">
+                {step.icon}
+              </div>
+              <span className="text-[10px] font-mono font-bold text-accent-400 tracking-wider mb-0.5">{step.n}</span>
+              <span className="text-xs font-semibold text-[#32373c] text-center">{step.label}</span>
+              <span className="text-[10px] text-primary-400 text-center mt-0.5 leading-tight">{step.desc}</span>
             </div>
-        </>
-    )
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div className="text-center">
+          {!hasProjects ? (
+            <button
+              onClick={onCreateProject}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-[#1c0957] to-[#0693e3] text-white text-sm font-medium rounded-xl shadow-lg shadow-[#1c0957]/20 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Criar primeiro projeto
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-2.5 text-sm text-primary-500 bg-white border border-gray-100 rounded-xl px-5 py-3 shadow-sm">
+              <svg className="w-4 h-4 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+              </svg>
+              Selecione um projeto no menu lateral
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
 }
+
+// ============================================================
+// Page
+// ============================================================
+
+const TaxonomyPage: NextPage = () => {
+
+  // ---- Project state ----
+  const [showCreateProject, setShowCreateProject] = useState(false)
+  const [editingProject, setEditingProject] = useState<import('@/lib/types').Project | null>(null)
+  const [deletingProject, setDeletingProject] = useState<import('@/lib/types').Project | null>(null)
+
+  const {
+    projects,
+    sectors,
+    loading: projectsLoading,
+    fetchProjects,
+    createProject,
+    updateProject,
+    deleteProject,
+    createSector,
+  } = useProjects()
+
+  // ---- Session state ----
+  const {
+    sessions,
+    activeSessionId,
+    activeSession,
+    isProcessing,
+    progress,
+    activeProjectId,
+    setActiveProjectId,
+    setActiveSessionId,
+    setReviewCompleted,
+    handleNewUpload,
+    handleFileSelect,
+    handleClearHistory,
+    handleDeleteSession,
+  } = useTaxonomySession()
+
+  const activeProject = useMemo(
+    () => projects.find(p => p.project_id === activeProjectId) ?? null,
+    [projects, activeProjectId]
+  )
+
+  // Keep activeProjectId in sync when switching sessions
+  useEffect(() => {
+    const session = activeSession as (TaxonomySession & { projectId?: string | null }) | undefined
+    if (session?.projectId && session.projectId !== activeProjectId) {
+      setActiveProjectId(session.projectId)
+    }
+  }, [activeSession, activeProjectId])
+
+  // ---- Session phase (computed early — needed by useCopilot) ----
+  const sessionPhase = useMemo<SessionPhase>(() => {
+    if (!activeSession) return 'no_session'
+    if (isProcessing) return 'processing'
+    const session = activeSession as any
+    if (session.reviewState === 'completed') return 'completed'
+    if (session.reviewState === 'in_progress') return 'reviewing'
+    if (session.items && session.items.length > 0) return 'classified'
+    return 'no_session'
+  }, [activeSession, isProcessing])
+
+  // ---- Copilot ----
+  const reviewCompleted = sessionPhase === 'completed'
+  const {
+    copilotMessages,
+    isCopilotLoading,
+    isSending,
+    userMessage,
+    setUserMessage,
+    sendUserMessage,
+    generateExecutiveSummary,
+  } = useCopilot({ activeSession: activeSession ?? null, reviewCompleted })
+
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    }
+  }, [copilotMessages, isCopilotLoading, isSending])
+
+  // ---- Active tab ----
+  const [activeTab, setActiveTab] = useState<TabId>('classify')
+
+  // ---- KB slide-over state ----
+  const [kbOpen, setKbOpen] = useState(false)
+  const [kbTab, setKbTab] = useState<'project' | 'sector'>('project')
+
+  // ---- Step statuses for ContextBar ----
+  const stepStatuses = useMemo<Record<StepId, StepStatus>>(() => ({
+    classify: ['classified', 'reviewing', 'completed'].includes(sessionPhase) ? 'completed' : activeTab === 'classify' ? 'active' : 'available',
+    review: sessionPhase === 'no_session' || sessionPhase === 'processing' ? 'locked' : activeTab === 'review' ? 'active' : sessionPhase === 'completed' ? 'completed' : 'available',
+    analyze: sessionPhase !== 'completed' ? 'locked' : activeTab === 'analyze' ? 'active' : 'available',
+  }), [sessionPhase, activeTab])
+
+  // Auto-navigate to review when classification finishes
+  useEffect(() => {
+    if (sessionPhase === 'classified' && activeTab === 'classify') {
+      setActiveTab('review')
+    }
+  }, [sessionPhase, activeTab])
+
+  // Auto-navigate to analyze after review completes (finalize button flow)
+  useEffect(() => {
+    if (sessionPhase === 'completed' && activeTab === 'review') {
+      setActiveTab('analyze')
+    }
+  }, [sessionPhase, activeTab])
+
+  // Auto-navigate to analyze when selecting a completed session from history
+  useEffect(() => {
+    if (sessionPhase === 'completed') {
+      setActiveTab('analyze')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession?.sessionId])
+
+  // Trigger executive summary when landing on the analyze tab for the first time
+  useEffect(() => {
+    if (
+      activeTab === 'analyze' &&
+      sessionPhase === 'completed' &&
+      copilotMessages.length === 0 &&
+      !isCopilotLoading
+    ) {
+      generateExecutiveSummary()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, activeSession?.sessionId])
+
+  // ---- Review callbacks ----
+  const [isApproving, setIsApproving] = useState(false)
+
+  const handleFinalizeReview = useCallback(async (decisions: Array<{
+    index: number
+    description: string
+    decision: string
+    N1: string; N2: string; N3: string; N4: string
+    confidence: number
+    source: string
+    contribute_to_kb?: boolean
+    instruction_used?: string
+  }>) => {
+    const session = activeSession as unknown as TaxonomySession
+    if (!session?.jobId || !activeProjectId) return
+    setIsApproving(true)
+    try {
+      const { apiClient } = await import('@/lib/api')
+      const result = await (apiClient as any).approveClassifications({
+        jobId: session.jobId,
+        projectId: activeProjectId,
+        decisions,
+      })
+      console.log('[TaxonomyPage] Review finalized:', result)
+      // Update session with approved data -> triggers sessionPhase='completed' -> auto-navigate to Analisar
+      await setReviewCompleted(
+        result.summary,
+        result.file_content_base64 || '',
+        result.download_filename || 'resultado_aprovado.xlsx'
+      )
+    } catch (e) {
+      console.error('[TaxonomyPage] ApproveClassifications error:', e)
+      alert('Erro ao finalizar revisão. Tente novamente.')
+    } finally {
+      setIsApproving(false)
+    }
+  }, [activeSession, activeProjectId, setReviewCompleted])
+
+  const handleReclassify = useCallback(async (
+    items: ClassifiedItem[],
+    instruction: string
+  ): Promise<ClassifiedItem[]> => {
+    const session = activeSession as unknown as TaxonomySession
+    if (!session?.jobId || !activeProjectId) return items
+    try {
+      const { apiClient } = await import('@/lib/api')
+      const result = await (apiClient as any).reclassifyItems({
+        jobId: session.jobId,
+        projectId: activeProjectId,
+        items: items.map(i => ({ index: i.index, description: i.description })),
+        instruction,
+      })
+      return result.results as ClassifiedItem[]
+    } catch (e) {
+      console.error('[TaxonomyPage] ReclassifyItems error:', e)
+      return items
+    }
+  }, [activeSession, activeProjectId])
+
+  // ---- Hierarchy from active project ----
+  const projectHierarchy = useMemo<HierarchyEntry[] | null>(() => {
+    return activeProject?.custom_hierarchy ?? null
+  }, [activeProject])
+
+  const typedSession = activeSession as unknown as (TaxonomySession | undefined)
+  const progressPct = progress?.pct ?? 0
+
+  // ---- Review progress for ContextBar ----
+  const reviewedCount = typedSession?.reviewedCount ?? 0
+  const totalItems = typedSession?.totalItems ?? typedSession?.items?.length ?? 0
+
+  // ============================================================
+  // Render
+  // ============================================================
+
+  return (
+    <>
+      <Head>
+        <title>Spend Analysis | PG Consultoria</title>
+        <meta name="description" content="Plataforma de classificação de gastos" />
+      </Head>
+
+      <div className="flex h-screen overflow-hidden bg-gray-50">
+
+        {/* ============================================================
+            LEFT SIDEBAR (Collapsible)
+        ============================================================ */}
+        <CollapsibleSidebar
+          activeProject={activeProject ? { project_id: activeProject.project_id, display_name: activeProject.display_name, sector: activeProject.sector } : null}
+          sessions={sessions.map(s => ({
+            sessionId: s.sessionId,
+            filename: s.filename,
+            timestamp: s.timestamp,
+            jobStatus: (s as any).jobStatus,
+            reviewState: (s as any).reviewState,
+          }))}
+          activeSessionId={activeSessionId}
+          onSessionSelect={id => setActiveSessionId(id)}
+          onNewSession={handleNewUpload}
+          onOpenKB={() => setKbOpen(true)}
+          onClearHistory={handleClearHistory}
+          onDeleteSession={handleDeleteSession}
+          renderProjectSelect={({ collapsed }) => collapsed ? null : (
+            <ProjectSelect
+              projects={projects}
+              sectors={sectors}
+              selectedProjectId={activeProjectId}
+              onSelect={id => setActiveProjectId(id)}
+              onCreateProject={() => setShowCreateProject(true)}
+              onEditProject={p => setEditingProject(p)}
+              onDeleteProject={p => setDeletingProject(p)}
+              loading={projectsLoading}
+              variant="dark"
+            />
+          )}
+        />
+
+        {/* ============================================================
+            MAIN CONTENT
+        ============================================================ */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Gate: no project selected */}
+          {!activeProjectId ? (
+            <NoProjectGate
+              hasProjects={projects.length > 0}
+              onCreateProject={() => setShowCreateProject(true)}
+            />
+          ) : (
+            <>
+
+              {/* ContextBar (replaces WorkflowStepper) */}
+              <ContextBar
+                projectName={activeProject?.display_name ?? null}
+                sessionFilename={typedSession?.filename ?? null}
+                activeStep={activeTab}
+                stepStatuses={stepStatuses}
+                onStepClick={setActiveTab}
+                onOpenKB={() => setKbOpen(true)}
+                kbDisabled={sessionPhase === 'processing'}
+                reviewProgress={sessionPhase === 'reviewing' || sessionPhase === 'classified' ? { reviewed: reviewedCount, total: totalItems } : undefined}
+                hasReviewNotification={sessionPhase === 'classified'}
+              />
+
+              {/* Tab content */}
+              <div className={`flex-1 ${activeTab === 'analyze' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'} p-6`}>
+
+                {/* ---- CLASSIFY ---- */}
+                {activeTab === 'classify' && (
+                  <div className="max-w-4xl mx-auto">
+                    <div className="mb-6">
+                      <h2 className="text-lg font-semibold text-[#32373c]">Classificar Itens</h2>
+                      <p className="text-sm text-primary-500 mt-0.5">
+                        Faça upload do arquivo de itens para iniciar a classificação com IA.
+                      </p>
+                    </div>
+
+                    <ClassifyTab
+                      onFileSelect={handleFileSelect}
+                      isProcessing={isProcessing}
+                      projectId={activeProjectId}
+                      projectHierarchy={projectHierarchy}
+                    />
+                  </div>
+                )}
+
+                {/* ---- REVIEW ---- */}
+                {activeTab === 'review' && stepStatuses.review !== 'locked' && (
+                  typedSession?.items && typedSession.items.length > 0 ? (
+                    <ReviewTab
+                      sessionId={typedSession.sessionId}
+                      items={typedSession.items as ClassifiedItem[]}
+                      hierarchy={projectHierarchy}
+                      jobId={typedSession.jobId || ''}
+                      projectId={activeProjectId || ''}
+                      onFinalizeReview={handleFinalizeReview}
+                      onReclassify={handleReclassify}
+                      isApproving={isApproving}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
+                      <svg className="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      <p className="text-sm text-gray-500">Nenhum item para revisar. Classifique um arquivo primeiro.</p>
+                    </div>
+                  )
+                )}
+
+                {/* ---- ANALYZE ---- */}
+                {activeTab === 'analyze' && stepStatuses.analyze !== 'locked' && (
+                  <div className="flex flex-col flex-1 min-h-0 max-w-4xl mx-auto w-full">
+                    {/* Compact summary header + download + close */}
+                    <div className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-5 py-3 shadow-sm mb-4 flex-shrink-0">
+                      <div className="flex items-center gap-6 text-sm">
+                        {typedSession?.reviewSummary ? (
+                          <>
+                            <span><strong className="text-[#32373c]">{typedSession.reviewSummary.total}</strong> <span className="text-primary-400">total</span></span>
+                            <span><strong className="text-mint-500">{typedSession.reviewSummary.approved}</strong> <span className="text-primary-400">aprovados</span></span>
+                            <span><strong className="text-accent-500">{typedSession.reviewSummary.edited}</strong> <span className="text-primary-400">editados</span></span>
+                            <span><strong className="text-accent-500">{typedSession.reviewSummary.kb_added}</strong> <span className="text-primary-400">na base</span></span>
+                          </>
+                        ) : (
+                          <span className="text-primary-400">Analise Conversacional</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {typedSession?.approvedFileContentBase64 && typedSession.approvedDownloadFilename && (
+                          <button
+                            onClick={() => {
+                              const base64 = typedSession.approvedFileContentBase64!
+                              const bytes = atob(base64)
+                              const arr = new Uint8Array(bytes.length)
+                              for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+                              const blob = new Blob([arr], {
+                                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                              })
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = typedSession.approvedDownloadFilename!
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-mint-500 text-white rounded-xl hover:bg-mint-600 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Baixar Excel
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setActiveSessionId(null); setActiveTab('classify') }}
+                          title="Fechar analise"
+                          className="w-8 h-8 flex items-center justify-center rounded-lg text-primary-400 hover:text-[#32373c] hover:bg-gray-100 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Chat messages — fills remaining space */}
+                    <div
+                      ref={chatContainerRef}
+                      className="bg-white rounded-xl border border-gray-100 shadow-sm flex-1 min-h-0 overflow-y-auto p-6"
+                    >
+                      {copilotMessages.length === 0 && !isCopilotLoading && (
+                        <div className="flex flex-col items-center justify-center h-full py-12">
+                          <AiAvatar size="lg" pulse className="mb-4" />
+                          <p className="text-sm text-primary-400 mb-6">Faca perguntas sobre os dados classificados e revisados.</p>
+                          <SuggestedPrompts onSelect={(prompt) => { setUserMessage(prompt); sendUserMessage(prompt); }} />
+                        </div>
+                      )}
+
+                      {copilotMessages.map((msg, i) => (
+                        <ChatMessage key={i} message={msg} />
+                      ))}
+
+                      {(isCopilotLoading || isSending) && <ChatMessageLoading />}
+                    </div>
+
+                    {/* Chat input — sticky bottom */}
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault()
+                        if (userMessage.trim()) sendUserMessage(userMessage.trim())
+                      }}
+                      className="flex gap-2 mt-4 flex-shrink-0"
+                    >
+                      <input
+                        type="text"
+                        value={userMessage}
+                        onChange={e => setUserMessage(e.target.value)}
+                        placeholder="Pergunte sobre os dados classificados..."
+                        className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/25 focus:border-accent-500 transition-all bg-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isCopilotLoading || isSending || !userMessage.trim()}
+                        className="px-5 py-2.5 bg-accent-500 text-white rounded-xl text-sm font-medium hover:bg-accent-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Enviar
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* ============================================================
+          KB SLIDE-OVER
+      ============================================================ */}
+      <SlideOver
+        isOpen={kbOpen}
+        onClose={() => setKbOpen(false)}
+        title="Base de Conhecimento"
+        subtitle={activeProject?.display_name}
+        defaultWidth={1100}
+        minWidth={600}
+        resizable
+        storageKey="kb-panel"
+      >
+        <div className="flex flex-col h-full">
+          {/* Sub-tabs: Projeto / Setor */}
+          <div className="px-6 pt-3 pb-0 flex-shrink-0">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
+              <button
+                onClick={() => setKbTab('project')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  kbTab === 'project'
+                    ? 'bg-white text-[#0693e3] shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Projeto
+              </button>
+              <button
+                onClick={() => setKbTab('sector')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  kbTab === 'sector'
+                    ? 'bg-white text-[#0693e3] shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Setor{activeProject?.sector ? ` (${sectors.find(s => s.name === activeProject.sector)?.display_name || activeProject.sector})` : ''}
+              </button>
+            </div>
+          </div>
+
+          {/* Tab content */}
+          <div className="flex-1 min-h-0">
+            {kbTab === 'project' ? (
+              <KnowledgeTab
+                projectId={activeProjectId}
+                projectHierarchy={projectHierarchy}
+                sectorName={activeProject?.sector ?? null}
+                useSectorKb={activeProject?.use_sector_kb ?? true}
+              />
+            ) : (activeProject?.use_sector_kb ?? true) ? (
+              <SectorKnowledgeTab
+                sectorName={activeProject?.sector ?? null}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                <svg className="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                <p className="text-sm font-medium text-gray-500">Base do setor desabilitada para este projeto</p>
+                <p className="text-xs text-gray-400 mt-1">Ative em Editar Projeto para usar a KB compartilhada do setor.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* ============================================================
+          PROCESSING OVERLAY
+      ============================================================ */}
+      <ProcessingOverlay
+        isVisible={isProcessing}
+        message="Classificando itens..."
+        subMessage="Aguarde enquanto a IA processa o arquivo."
+        progress={progressPct}
+        status={progress?.message || 'Processando...'}
+      />
+
+      {/* ============================================================
+          CREATE PROJECT MODAL
+      ============================================================ */}
+      <CreateProjectModal
+        isOpen={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onCreated={async project => {
+          await fetchProjects()
+          setActiveProjectId(project.project_id)
+          setShowCreateProject(false)
+        }}
+        sectors={sectors}
+        onCreateSector={createSector}
+        existingProjects={projects}
+        createProject={createProject}
+      />
+
+      {/* ============================================================
+          EDIT PROJECT MODAL
+      ============================================================ */}
+      <EditProjectModal
+        isOpen={editingProject !== null}
+        project={editingProject}
+        onClose={() => setEditingProject(null)}
+        onSave={async (projectId, data) => {
+          await updateProject(projectId, data)
+        }}
+      />
+
+      {/* ============================================================
+          DELETE PROJECT CONFIRM
+      ============================================================ */}
+      <ConfirmDialog
+        isOpen={deletingProject !== null}
+        title="Excluir Projeto"
+        message={`Tem certeza que deseja excluir o projeto "${deletingProject?.display_name}"? Todos os dados, incluindo a Base de Conhecimento, serao permanentemente apagados.`}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={async () => {
+          if (!deletingProject) return
+          try {
+            const id = deletingProject.project_id
+            // If we're deleting the active project, deselect it
+            if (activeProjectId === id) {
+              setActiveProjectId(null)
+            }
+            await deleteProject(id)
+            setDeletingProject(null)
+          } catch (e) {
+            console.error('[TaxonomyPage] DeleteProject error:', e)
+            alert('Erro ao excluir projeto. Tente novamente.')
+            setDeletingProject(null)
+          }
+        }}
+        onCancel={() => setDeletingProject(null)}
+      />
+    </>
+  )
+}
+
+export default TaxonomyPage

@@ -50,8 +50,8 @@ export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) 
             className={`
                 border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 relative overflow-hidden group
                 ${isDragging
-                    ? 'border-[#38bec9] bg-gradient-to-br from-[#38bec9]/10 to-[#38bec9]/5 shadow-lg shadow-[#38bec9]/10'
-                    : 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-[#38bec9]/50 hover:shadow-md hover:shadow-gray-200/50'
+                    ? 'border-[#38a8f5] bg-gradient-to-br from-[#38a8f5]/10 to-[#38a8f5]/5 shadow-lg shadow-[#38a8f5]/10'
+                    : 'border-gray-300 bg-gradient-to-br from-gray-50 to-white hover:border-[#38a8f5]/50 hover:shadow-md hover:shadow-gray-200/50'
                 }
                 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}
@@ -79,7 +79,7 @@ export default function FileUpload({ onFileSelect, disabled }: FileUploadProps) 
                 <div className={`
                     w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300
                     ${isDragging
-                        ? 'bg-[#38bec9]/20 text-[#38bec9] scale-110'
+                        ? 'bg-[#38a8f5]/20 text-[#38a8f5] scale-110'
                         : 'bg-gray-100 text-gray-400 group-hover:bg-[#1c0957]/10 group-hover:text-[#1c0957]'
                     }
                 `}>

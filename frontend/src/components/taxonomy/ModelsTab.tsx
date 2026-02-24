@@ -105,7 +105,7 @@ export default function ModelsTab({
                     </div>
                     <button
                         onClick={isPadrao ? () => fetchMemory(searchQuery) : onRefresh}
-                        className={`p-2 text-gray-400 hover:text-[#38bec9] transition-colors ${isLoadingMemory ? 'animate-spin' : ''}`}
+                        className={`p-2 text-gray-400 hover:text-[#38a8f5] transition-colors ${isLoadingMemory ? 'animate-spin' : ''}`}
                         title="Atualizar"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -155,7 +155,7 @@ export default function ModelsTab({
                                                         <div className="text-sm font-medium text-gray-900">{rule.description}</div>
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#38bec9]/10 text-[#14919b]">
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#38a8f5]/10 text-[#0693e3]">
                                                             {rule.classification.N1}
                                                         </span>
                                                     </td>
@@ -211,7 +211,7 @@ export default function ModelsTab({
                                         <div className="grid grid-cols-3 gap-4 mb-4">
                                             <div className="bg-white rounded-lg p-3 border border-gray-200">
                                                 <p className="text-xs text-gray-500 mb-1">Acurácia</p>
-                                                <p className="text-xl font-bold text-[#14919b]">
+                                                <p className="text-xl font-bold text-[#0693e3]">
                                                     {activeModel ? (activeModel.metrics.accuracy * 100).toFixed(1) : '—'}%
                                                 </p>
                                             </div>
@@ -231,7 +231,7 @@ export default function ModelsTab({
 
                                 <button
                                     onClick={() => setShowOverlay(true)}
-                                    className="w-full py-3 px-4 bg-gradient-to-r from-[#38bec9] to-[#14919b] text-white rounded-lg hover:from-[#4dd0d9] hover:to-[#38bec9] transition-all font-medium flex items-center justify-center gap-2 shadow-lg shadow-[#38bec9]/20"
+                                    className="w-full py-3 px-4 bg-gradient-to-r from-[#38a8f5] to-[#0693e3] text-white rounded-lg hover:from-[#7ac8ff] hover:to-[#38a8f5] transition-all font-medium flex items-center justify-center gap-2 shadow-lg shadow-[#38a8f5]/20"
                                 >
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />

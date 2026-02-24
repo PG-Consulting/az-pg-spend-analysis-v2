@@ -1,69 +1,97 @@
-"""
-Tests for src/preprocessing.py - Text normalization utilities.
-"""
+"""Tests for src.preprocessing — normalize_text, normalize_corpus, build_tfidf_vectorizer."""
+
 import pytest
-import sys
-from pathlib import Path
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Add project root
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.preprocessing import normalize_text, normalize_corpus, build_tfidf_vectorizer
 
-from src.preprocessing import normalize_text, normalize_corpus
 
+# ============================================================
+# normalize_text — basic transformations
+# ============================================================
 
 class TestNormalizeText:
-    """Tests for normalize_text function."""
-
-    def test_lowercase_conversion(self):
-        """Should convert text to lowercase."""
-        assert "hello world" in normalize_text("HELLO WORLD").lower()
+    def test_lowercase(self):
+        assert normalize_text("PARAFUSO") == "parafuso"
 
     def test_accent_removal(self):
-        """Should remove accents from text."""
-        result = normalize_text("Café com Açúcar")
-        assert "á" not in result
-        assert "ú" not in result
-        assert "cafe" in result.lower()
+        result = normalize_text("manutenção")
+        assert result == "manutencao"
+
+    def test_noise_words_removed(self):
+        # "de" is a noise word
+        result = normalize_text("peça de motor")
+        assert result == "peca motor"
+
+    def test_multiple_noise_words(self):
+        # "a", "da" are noise words
+        result = normalize_text("a porca da válvula")
+        assert result == "porca valvula"
+
+    def test_abbreviation_expansion(self):
+        # "etiq" -> "etiqueta" per ABBREVIATIONS dict
+        result = normalize_text("etiq adesiva")
+        assert result == "etiqueta adesiva"
 
     def test_punctuation_removal(self):
-        """Should remove punctuation."""
-        result = normalize_text("Hello, World! How are you?")
-        assert "," not in result
-        assert "!" not in result
-        assert "?" not in result
+        result = normalize_text("motor/bomba")
+        assert result == "motor bomba"
+
+    def test_hyphen_becomes_space(self):
+        result = normalize_text("válvula-solenoide")
+        assert result == "valvula solenoide"
 
     def test_multiple_spaces_compacted(self):
-        """Should compact multiple spaces to single space."""
-        result = normalize_text("Hello    World")
-        assert "    " not in result
+        result = normalize_text("motor   bomba")
+        assert result == "motor bomba"
 
     def test_empty_string(self):
-        """Should handle empty string."""
-        result = normalize_text("")
-        assert result == ""
+        assert normalize_text("") == ""
 
-    def test_none_handling(self):
-        """Should handle None input gracefully."""
-        result = normalize_text(None)
-        assert result == ""
+    def test_none_input(self):
+        assert normalize_text(None) == ""
 
-    def test_numeric_handling(self):
-        """Should handle numeric inputs."""
-        result = normalize_text("123.45")
-        assert "123" in result or result == ""
+    def test_numeric_input(self):
+        assert normalize_text(12345) == ""
 
+    def test_mixed_case_and_accents(self):
+        result = normalize_text("Serviço de Manutenção - OEM")
+        assert result == "servico manutencao oem"
+
+    def test_special_characters(self):
+        result = normalize_text("item@#$%test")
+        assert result == "item test"
+
+    def test_preserve_numbers(self):
+        # Numbers (and alphanumeric tokens like m8x120) should be kept
+        result = normalize_text("parafuso m8x120")
+        assert result == "parafuso m8x120"
+
+
+# ============================================================
+# normalize_corpus
+# ============================================================
 
 class TestNormalizeCorpus:
-    """Tests for normalize_corpus function."""
+    def test_normalize_corpus(self):
+        corpus = ["PARAFUSO M8", "Válvula de Controle", "etiq adesiva"]
+        result = normalize_corpus(corpus)
+        assert result == ["parafuso m8", "valvula controle", "etiqueta adesiva"]
 
-    def test_batch_normalization(self):
-        """Should normalize a list of texts."""
-        texts = ["Café", "Açúcar", "HELLO"]
-        results = normalize_corpus(texts)
-        assert len(results) == 3
-        assert all(isinstance(r, str) for r in results)
+    def test_normalize_corpus_empty(self):
+        assert normalize_corpus([]) == []
 
-    def test_empty_list(self):
-        """Should handle empty list."""
-        results = normalize_corpus([])
-        assert results == []
+
+# ============================================================
+# build_tfidf_vectorizer
+# ============================================================
+
+class TestBuildTfidfVectorizer:
+    def test_build_tfidf_vectorizer(self):
+        vec = build_tfidf_vectorizer()
+        assert isinstance(vec, TfidfVectorizer)
+
+    def test_tfidf_vectorizer_params(self):
+        vec = build_tfidf_vectorizer(max_features=3000, ngram_range=(1, 3))
+        assert vec.max_features == 3000
+        assert vec.ngram_range == (1, 3)

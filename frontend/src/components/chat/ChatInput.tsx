@@ -36,16 +36,16 @@ export default function ChatInput({
                         onKeyPress={handleKeyPress}
                         placeholder={loading ? 'Processando...' : placeholder}
                         disabled={disabled || loading}
-                        className="w-full px-4 py-3 bg-[#F5F7FA] rounded-xl border-0 text-[#102a43] placeholder-[#829ab1] focus:outline-none focus:ring-2 focus:ring-[#14919b]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                        className="w-full px-4 py-3 bg-[#F5F7FA] rounded-xl border-0 text-[#32373c] placeholder-[#829ab1] focus:outline-none focus:ring-2 focus:ring-[#0693e3]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                     />
 
                     {/* AI Indicator */}
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
                         {loading && (
                             <div className="flex gap-1">
-                                <div className="w-1.5 h-1.5 bg-[#14919b] rounded-full animate-thinking"></div>
-                                <div className="w-1.5 h-1.5 bg-[#14919b] rounded-full animate-thinking delay-200"></div>
-                                <div className="w-1.5 h-1.5 bg-[#14919b] rounded-full animate-thinking delay-300"></div>
+                                <div className="w-1.5 h-1.5 bg-[#0693e3] rounded-full animate-thinking"></div>
+                                <div className="w-1.5 h-1.5 bg-[#0693e3] rounded-full animate-thinking delay-200"></div>
+                                <div className="w-1.5 h-1.5 bg-[#0693e3] rounded-full animate-thinking delay-300"></div>
                             </div>
                         )}
                     </div>
@@ -55,7 +55,7 @@ export default function ChatInput({
                 <button
                     onClick={onSend}
                     disabled={disabled || loading || !value.trim()}
-                    className="px-5 py-3 bg-gradient-to-r from-[#38bec9] to-[#14919b] hover:from-[#4dd0d9] hover:to-[#38bec9] text-white rounded-xl font-medium text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500 flex items-center gap-2 shadow-md hover:shadow-lg shadow-[#38bec9]/20"
+                    className="px-5 py-3 bg-gradient-to-r from-[#38a8f5] to-[#0693e3] hover:from-[#7ac8ff] hover:to-[#38a8f5] text-white rounded-xl font-medium text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500 flex items-center gap-2 shadow-md hover:shadow-lg shadow-[#38a8f5]/20"
                 >
                     {loading ? (
                         <>

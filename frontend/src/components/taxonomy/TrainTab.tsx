@@ -78,14 +78,14 @@ function UploadStep({ sector, onFileSelect }: { sector: string; onFileSelect: (f
             <p className="text-sm text-gray-500 mb-2 text-center max-w-sm mx-auto">
                 Envie o arquivo final revisado/corrigido. O sistema usará estas correções para <strong>aprender suas regras de ouro</strong> e não cometer os mesmos erros novamente.
             </p>
-            <div className="text-xs text-gray-500 bg-[#38bec9]/10 border border-[#38bec9]/30 rounded-lg p-3 mb-6 max-w-md mx-auto">
+            <div className="text-xs text-gray-500 bg-[#38a8f5]/10 border border-[#38a8f5]/30 rounded-lg p-3 mb-6 max-w-md mx-auto">
                 <strong>Formato Obrigatório:</strong> O arquivo deve conter exatamente as colunas:
                 <br />
-                <code className="bg-white px-1 rounded border border-[#38bec9]/30 text-[#14919b]">Descrição</code>,
-                <code className="bg-white px-1 rounded border border-[#38bec9]/30 text-[#14919b]">N1</code>,
-                <code className="bg-white px-1 rounded border border-[#38bec9]/30 text-[#14919b]">N2</code>,
-                <code className="bg-white px-1 rounded border border-[#38bec9]/30 text-[#14919b]">N3</code>,
-                <code className="bg-white px-1 rounded border border-[#38bec9]/30 text-[#14919b]">N4</code>
+                <code className="bg-white px-1 rounded border border-[#38a8f5]/30 text-[#0693e3]">Descrição</code>,
+                <code className="bg-white px-1 rounded border border-[#38a8f5]/30 text-[#0693e3]">N1</code>,
+                <code className="bg-white px-1 rounded border border-[#38a8f5]/30 text-[#0693e3]">N2</code>,
+                <code className="bg-white px-1 rounded border border-[#38a8f5]/30 text-[#0693e3]">N3</code>,
+                <code className="bg-white px-1 rounded border border-[#38a8f5]/30 text-[#0693e3]">N4</code>
             </div>
             <FileUpload onFileSelect={onFileSelect} disabled={false} />
         </>
@@ -142,7 +142,7 @@ function PreviewStep({
                             onClick={onConfirm}
                             disabled={!isFullyValid}
                             className={`px-4 py-1.5 text-xs font-medium text-white rounded-lg transition-all shadow-sm ${isFullyValid
-                                ? 'bg-[#14919b] hover:bg-[#0e7c86] hover:shadow hover:scale-[1.02]'
+                                ? 'bg-[#0693e3] hover:bg-[#0576b8] hover:shadow hover:scale-[1.02]'
                                 : 'bg-gray-300 cursor-not-allowed'
                                 }`}
                         >
@@ -218,7 +218,7 @@ function PreviewStep({
 function TrainingStep() {
     return (
         <div className="mt-6 text-center">
-            <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-200 border-t-[#14919b]"></div>
+            <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-200 border-t-[#0693e3]"></div>
             <p className="text-sm text-gray-600 mt-3 font-medium">Refinando inteligência com base nas suas correções (quase pronto)...</p>
         </div>
     )
@@ -248,7 +248,7 @@ function ResultStep({
             <div className="flex flex-col gap-3">
                 <button
                     onClick={onTrainAnother}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-[#38bec9] to-[#14919b] hover:from-[#4dd0d9] hover:to-[#38bec9] text-white rounded-lg transition-all font-medium shadow-md hover:shadow-lg shadow-[#38bec9]/20"
+                    className="w-full px-4 py-3 bg-gradient-to-r from-[#38a8f5] to-[#0693e3] hover:from-[#7ac8ff] hover:to-[#38a8f5] text-white rounded-lg transition-all font-medium shadow-md hover:shadow-lg shadow-[#38a8f5]/20"
                 >
                     Refinar Outro Setor
                 </button>

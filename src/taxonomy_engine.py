@@ -555,9 +555,10 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
     Generate analytics from the classified items DataFrame.
 
     Calculates:
-      1. Pareto (N4 volume).
-      2. Dictionary Gaps (frequent words in unclassified items).
-      3. Ambiguity Analysis (frequent ambiguous N4 combinations).
+      1. Pareto (N4 volume) — the only analytics with real value.
+
+    Gaps and ambiguity sections return empty lists for schema compatibility
+    (these concepts only applied to the legacy dictionary path).
 
     Args:
         df_items (pd.DataFrame): The DataFrame with classification results.
@@ -568,10 +569,6 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
     analytics = {}
 
     # 1. Pareto (Volume by Level)
-    # Ensure Match_Type exists (alias from status if necessary)
-    if "Match_Type" not in df_items.columns and "status" in df_items.columns:
-        df_items["Match_Type"] = df_items["status"]
-
     for level in ["N1", "N2", "N3", "N4"]:
         if level not in df_items.columns:
             analytics[f"pareto_{level}"] = []
@@ -583,86 +580,56 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
             (df_items[level] != "") &
             (df_items[level] != "Não Identificado")
         ]
-        
+
         if not df_valid.empty:
             # Count frequency
             pareto = df_valid[level].value_counts().reset_index()
             pareto.columns = [level, "Contagem"]
-            
+
             total = pareto["Contagem"].sum()
             pareto["% do Total"] = pareto["Contagem"] / total
             pareto["% Acumulado"] = pareto["% do Total"].cumsum()
-            
+
             # Mark Pareto classes
             pareto["Classe"] = pareto["% Acumulado"].apply(
-                lambda x: "A" if x <= PARETO_CLASS_A_THRESHOLD 
+                lambda x: "A" if x <= PARETO_CLASS_A_THRESHOLD
                 else ("B" if x <= PARETO_CLASS_B_THRESHOLD else "C")
             )
-            
+
             analytics[f"pareto_{level}"] = pareto.head(20).to_dict(orient="records")
         else:
             analytics[f"pareto_{level}"] = []
 
-    # Preserve legacy 'pareto' key for backward compatibility if needed (aliased to N4)
+    # Preserve legacy 'pareto' key for backward compatibility (aliased to N4)
     analytics["pareto"] = analytics.get("pareto_N4", [])
 
-    # 2. Dictionary Gaps (Words in 'Nenhum')
-    # We need the normalized description. If it's not in the input df, we might need to re-normalize or expect it there.
-    # In classify_items, we drop _desc_norm before returning. 
-    # Ideally, classify_items should pass the full DF to this function OR we re-normalize here.
-    # Let's assume we can access the description column.
-    
-    # Identify rows with Match_Type == 'Nenhum'
-    df_gaps = df_items[df_items["Match_Type"] == "Nenhum"]
-    
-    gap_words = []
-    if not df_gaps.empty:
-        # We need to find the description column again or rely on a convention.
-        # Since this is internal, let's look for '_desc_norm' if it exists (it should if called before drop),
-        # otherwise try to find the description column from summary or heuristic.
-        
-        # NOTE: In classify_items, we call this BEFORE dropping _desc_norm for efficiency.
-        col_target = "_desc_norm" if "_desc_norm" in df_items.columns else None
-        
-        if col_target:
-            all_text = " ".join(df_items.loc[df_items.index.intersection(df_gaps.index), col_target].astype(str))
-            # Simple tokenization - filter short words
-            words = [w for w in all_text.split() if len(w) > MIN_WORD_LENGTH_FOR_GAPS]
-            common = Counter(words).most_common(TOP_GAPS_COUNT)
-            analytics["gaps"] = [{"Palavra": w, "Frequencia": c} for w, c in common]
-        else:
-            analytics["gaps"] = []
-    else:
-        analytics["gaps"] = []
-
-    # 3. Ambiguity Analysis
-    df_ambiguous = df_items[df_items["Match_Type"] == "Ambíguo"]
-    if not df_ambiguous.empty:
-        ambiguity_counts = df_ambiguous["N4"].value_counts().reset_index()
-        ambiguity_counts.columns = ["Combinacao_N4", "Contagem"]
-        analytics["ambiguity"] = ambiguity_counts.head(TOP_AMBIGUITY_COUNT).to_dict(orient="records")
-    else:
-        analytics["ambiguity"] = []
+    # Empty lists for schema compatibility (concepts from legacy dictionary path)
+    analytics["gaps"] = []
+    analytics["ambiguity"] = []
 
     return analytics
 
 def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -> Dict[str, Any]:
     """
     Generate summary statistics from the classified items DataFrame.
-    """
-    # Ensure Match_Type exists (alias from status if necessary)
-    if "Match_Type" not in df_items.columns and "status" in df_items.columns:
-        df_items["Match_Type"] = df_items["status"]
 
+    Derives "classificado vs não classificado" from N1-N4 values instead of
+    relying on the legacy Match_Type/status field.
+    """
     total_items = len(df_items)
-    ambiguous_count = int((df_items["Match_Type"] == "Ambíguo").sum()) if "Match_Type" in df_items.columns else 0
-    unmatched_count = int((df_items["Match_Type"] == "Nenhum").sum()) if "Match_Type" in df_items.columns else 0
-    unique_count = int((df_items["Match_Type"] == "Único").sum()) if "Match_Type" in df_items.columns else 0
-    
+
+    # "Não classificado" = any N-level is empty or "Não Identificado"
+    _incomplete = {"", "Não Identificado", "Nao Identificado"}
+    nenhum_count = int(df_items.apply(
+        lambda row: any(str(row.get(lvl, "")).strip() in _incomplete for lvl in ("N1", "N2", "N3", "N4")),
+        axis=1
+    ).sum())
+    unico_count = total_items - nenhum_count
+
     return {
         "total_linhas": total_items,
         "coluna_descricao_utilizada": desc_col_name,
-        "unico": unique_count,
-        "ambiguo": ambiguous_count,
-        "nenhum": unmatched_count,
+        "unico": unico_count,
+        "ambiguo": 0,          # conceito removido — manter campo por compat
+        "nenhum": nenhum_count,
     }

@@ -1,13 +1,18 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "GROK_API_KEY": "",
+    "GROK_API_ENDPOINT": "https://api.x.ai/v1",
+    "GROK_MODEL_NAME": "grok-4-1-fast-reasoning",
+    "DIRECT_LINE_SECRET": "",
+    "POWER_AUTOMATE_URL": "",
+    "POWER_AUTOMATE_API_KEY": "",
     "USE_ML_CLASSIFIER": "true",
-    "PYTHON_ISOLATE_WORKER_DEPENDENCIES": "1",
-    "DIRECT_LINE_SECRET": "5BvM81bCtWNTfP35Ld6Iwvr4ajNr2dPmqd0p8rnKIMALiTesSm9CJQQJ99BLACZoyfiAArohAAABAZBS3hYT.7vnZP7jKZ2079dXhouHL6E6LsXuEG64a3M2bYlfqG0GBhOjlmezwJQQJ99BLACZoyfiAArohAAABAZBS2d5b",
-    "POWER_AUTOMATE_URL": "https://73e548db8cade09eb6aaf81398c987.02.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/7b5ed6ba25ec4094a1f6b7fff542f792/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=MT2lLBDmdAIKShmeVrYvC06UO0SAbAzPGn1zpWXO4tY",
-    "POWER_AUTOMATE_API_KEY": "oLpibR0bjRlxmXOOs196O58MfsVclYUA"
+    "MODELS_DIR_PATH": ""
+  },
+  "Host": {
+    "CORS": "*"
   }
 }

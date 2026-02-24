@@ -1,294 +1,664 @@
 /**
- * @fileoverview HTTP API client for Spend Analysis application.
- * 
- * This module provides the centralized API client for all HTTP communications:
- * - Azure Function endpoints (classification, training, model management)
- * - Microsoft Direct Line API (Copilot chat communication)
- * 
- * @module api
+ * @fileoverview HTTP API client for Spend Analysis v3.
+ *
+ * Extends v2 with project-aware classification, review workflow,
+ * knowledge base management, and sector/project CRUD endpoints.
+ *
+ * Backward-compatible: v2 methods (trainModel, getModelHistory, etc.)
+ * are preserved unchanged.
  */
 
-import axios, { AxiosRequestConfig } from 'axios'
+import axios from 'axios';
+import type {
+  Project,
+  Sector,
+  HierarchyEntry,
+  ClassifiedItem,
+  ReviewDecision,
+  ReviewSummary,
+  JobStatusResponse,
+  KBEntry,
+  KBPage,
+  KBCoverage,
+  KBVersion,
+} from './types';
 
 /** Base URL for the Azure Functions API (configurable via environment) */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7071/api'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7071/api';
 
 /** Function key for Azure Functions authentication (optional, for production) */
-const FUNCTION_KEY = process.env.NEXT_PUBLIC_FUNCTION_KEY || ''
+const FUNCTION_KEY = process.env.NEXT_PUBLIC_FUNCTION_KEY || '';
 
 /**
  * Generates authentication headers for Azure Functions requests.
  * Only includes the x-functions-key header when a key is configured.
- * @returns Record containing auth headers, or empty object
  */
 const getAuthHeaders = (): Record<string, string> => {
-    if (FUNCTION_KEY) {
-        return { 'x-functions-key': FUNCTION_KEY }
-    }
-    return {}
-}
+  if (FUNCTION_KEY) {
+    return { 'x-functions-key': FUNCTION_KEY };
+  }
+  return {};
+};
 
 /**
- * Response from the Direct Line token endpoint.
+ * Converts a File object to a base64-encoded string.
+ * Used when sending file content as JSON to the backend.
  */
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip the data-URL prefix (e.g. "data:application/octet-stream;base64,")
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Response from the Direct Line token endpoint. */
 export interface DirectLineToken {
-    /** Unique conversation identifier */
-    conversationId: string
-    /** Bearer token for Direct Line API authentication */
-    token: string
-    /** Token expiration time in seconds */
-    expires_in: number
+  conversationId: string;
+  token: string;
+  expires_in: number;
 }
 
 /**
- * Represents a classification session (deprecated - use TaxonomySession from hooks).
- * @deprecated Use TaxonomySession from useTaxonomySession hook instead
- */
-export interface ClassificationSession {
-    sessionId: string
-    filename: string
-    sector: string
-    fileContent: string
-    summary?: any
-    analytics?: any
-}
-
-/**
- * Centralized API client containing all HTTP methods for the application.
- * 
- * @example
- * ```typescript
- * // Classification
- * const result = await apiClient.processTaxonomy(fileContent, dictContent, 'Varejo', 'file.xlsx')
- * 
- * // Chat
- * const token = await apiClient.getDirectLineToken()
- * await apiClient.sendMessageToCopilot(token.conversationId, token.token, 'Hello')
- * ```
+ * Centralized API client.
+ *
+ * V2 methods (kept for backward compatibility):
+ *   getDirectLineToken, postActivity, sendMessageToCopilot,
+ *   getMessagesFromCopilot, trainModel, getModelHistory, setActiveModel,
+ *   getModelInfo, getTrainingData, deleteTrainingData
+ *
+ * V3 additions:
+ *   Sectors, Projects, submitClassificationJob, getJobStatus, getJobResults,
+ *   reclassifyItems, approveClassifications, Knowledge Base CRUD
  */
 export const apiClient = {
-    /**
-     * Gets a temporary Direct Line token for Copilot chat communication.
-     * The token is valid for 30 minutes and should not be cached long-term.
-     * @returns Promise resolving to DirectLineToken with conversationId and token
-     */
-    async getDirectLineToken(): Promise<DirectLineToken> {
-        const response = await axios.get(`${API_BASE_URL}/get-token`, {
-            headers: getAuthHeaders()
-        })
-        return response.data
-    },
 
-    // Process Excel file for taxonomy classification (Async Polling)
-    async processTaxonomy(
-        fileContent: string,
-        dictionaryContent: string,
-        sector: string,
-        originalFilename: string,
-        customHierarchy?: string, // Optional custom hierarchy base64
-        clientContext?: string,   // Optional client context
-        onProgress?: (msg: string, pct: number) => void // Callback for progress updates
-    ): Promise<any> {
-        const requestBody: any = {
-            fileContent,
-            dictionaryContent,
-            sector,
-            originalFilename,
-            clientContext: clientContext || ""
-        }
+  // ==================== V2 METHODS (UNCHANGED) ====================
 
-        // Only include customHierarchy if provided
-        if (customHierarchy) {
-            requestBody.customHierarchy = customHierarchy
-        }
+  /** Gets a temporary Direct Line token for Copilot chat communication. */
+  async getDirectLineToken(): Promise<DirectLineToken> {
+    const response = await axios.get(`${API_BASE_URL}/get-token`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
 
-        console.log("[API] Submitting Taxonomy Job...");
+  async postActivity(conversationId: string, token: string, activity: unknown): Promise<unknown> {
+    console.log('[DIRECT LINE ACTIVITY]', JSON.stringify(activity, null, 2));
+    const response = await axios.post(
+      `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
+      activity,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return response.data;
+  },
 
-        // 1. Submit Job
-        const submitResponse = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody, {
-            headers: getAuthHeaders()
-        });
+  async sendMessageToCopilot(
+    conversationId: string,
+    token: string,
+    text: string,
+    value?: unknown
+  ): Promise<void> {
+    const payload = {
+      type: 'message',
+      from: { id: 'user' },
+      locale: 'pt-BR',
+      text,
+      value,
+    };
+    console.log('[DIRECT LINE PAYLOAD]', JSON.stringify(payload, null, 2));
+    await axios.post(
+      `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  },
 
-        const jobId = submitResponse.data.jobId;
-        console.log(`[API] Job submitted. ID: ${jobId}`);
+  async getMessagesFromCopilot(
+    conversationId: string,
+    token: string,
+    watermark?: string
+  ): Promise<unknown> {
+    const url = watermark
+      ? `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities?watermark=${watermark}`
+      : `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`;
 
-        if (onProgress) onProgress("Upload concluído. Aguardando início...", 0);
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
 
-        // 2. Poll for Completion
-        const maxRetries = 600; // 50 minutes max (5s interval)
-        let attempts = 0;
+  async trainModel(fileContent: string, sector: string, filename: string): Promise<unknown> {
+    const response = await axios.post(
+      `${API_BASE_URL}/TrainModel`,
+      { fileContent, sector, filename },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
 
-        while (attempts < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
-
-            try {
-                const statusRes = await axios.get(`${API_BASE_URL}/GetTaxonomyJobStatus`, {
-                    params: { jobId },
-                    headers: getAuthHeaders()
-                });
-
-                const status = statusRes.data;
-                console.log(`[API] Job Status: ${status.status} (${status.progress_pct}%)`);
-
-                if (onProgress) {
-                    onProgress(status.message || "Processando...", status.progress_pct || 0);
-                }
-
-                if (status.status === 'COMPLETED') {
-                    // The result is the response body itself in the new design (or loaded from it)
-                    // Our backend returns the full JSON when completed.
-                    return { ...status, sessionId: status.jobId || status.sessionId };
-                }
-
-                if (status.status === 'ERROR') {
-                    throw new Error(status.message || "Erro desconhecido no processamento");
-                }
-
-            } catch (e: any) {
-                // Stop polling on 404 (job not found) - don't retry forever
-                if (e?.response?.status === 404) {
-                    throw new Error("Job não encontrado no servidor. Por favor, tente novamente.");
-                }
-                console.warn("[API] Polling error (retrying):", e);
-            }
-
-            attempts++;
-        }
-
-        throw new Error("Timeout aguardando processamento do arquivo.");
-    },
-
-    // Generic method to post any activity to Direct Line
-    async postActivity(conversationId: string, token: string, activity: any): Promise<any> {
-        console.log('[DIRECT LINE ACTIVITY]', JSON.stringify(activity, null, 2));
-        const response = await axios.post(
-            `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
-            activity,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        )
-        return response.data
-    },
-
-    // Send message to Copilot Studio via Direct Line
-    async sendMessageToCopilot(conversationId: string, token: string, text: string, value?: any): Promise<void> {
-        const payload = {
-            type: 'message',
-            from: { id: 'user' },
-            locale: 'pt-BR',
-            text: text,
-            value: value
-        };
-
-        console.log('[DIRECT LINE PAYLOAD]', JSON.stringify(payload, null, 2));
-
-        await axios.post(
-            `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
-            payload,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        )
-    },
-
-    // Get messages from Copilot Studio via Direct Line
-    async getMessagesFromCopilot(conversationId: string, token: string, watermark?: string): Promise<any> {
-        const url = watermark
-            ? `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities?watermark=${watermark}`
-            : `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`
-
-        const response = await axios.get(url, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-        return response.data
-    },
-
-    // Train ML Model
-    async trainModel(
-        fileContent: string,
-        sector: string,
-        filename: string
-    ): Promise<any> {
-        const response = await axios.post(`${API_BASE_URL}/TrainModel`, {
-            fileContent,
-            sector,
-            filename
-        }, {
-            headers: getAuthHeaders()
-        })
-        return response.data
-    },
-
-    async getModelHistory(sector: string): Promise<any[]> {
-        console.log(`[API] Fetching model history for sector: ${sector} from ${API_BASE_URL}/GetModelHistory`)
-        try {
-            const response = await axios.get(`${API_BASE_URL}/GetModelHistory`, {
-                params: { sector, t: Date.now() },
-                headers: getAuthHeaders()
-            })
-            console.log(`[API] Model history received: ${response.data?.length} entries`)
-            return response.data
-        } catch (error) {
-            console.error('[API] Error fetching model history:', error)
-            throw error
-        }
-    },
-
-    async setActiveModel(sector: string, versionId: string): Promise<any> {
-        const response = await axios.post(`${API_BASE_URL}/SetActiveModel`, {
-            sector,
-            version_id: versionId
-        }, {
-            headers: getAuthHeaders()
-        })
-        return response.data
-    },
-
-    async getModelInfo(sector: string, versionId?: string): Promise<any> {
-        const response = await axios.get(`${API_BASE_URL}/GetModelInfo`, {
-            params: { sector, version_id: versionId, t: Date.now() },
-            headers: getAuthHeaders()
-        })
-        return response.data
-    },
-
-    async getTrainingData(
-        sector: string,
-        page: number = 1,
-        pageSize: number = 50,
-        filters?: { version?: string; n4?: string; search?: string }
-    ): Promise<any> {
-        const response = await axios.get(`${API_BASE_URL}/GetTrainingData`, {
-            params: {
-                sector,
-                page,
-                page_size: pageSize,
-                ...filters
-            },
-            headers: getAuthHeaders()
-        })
-        return response.data
-    },
-
-    async deleteTrainingData(
-        sector: string,
-        options: { row_ids?: number[]; version?: string; items?: { descricao: string; n4: string; version: string }[] }
-    ): Promise<any> {
-        const response = await axios.post(`${API_BASE_URL}/DeleteTrainingData`, {
-            sector,
-            ...options
-        }, {
-            headers: getAuthHeaders()
-        })
-        return response.data
+  async getModelHistory(sector: string): Promise<unknown[]> {
+    console.log(`[API] Fetching model history for sector: ${sector}`);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/GetModelHistory`, {
+        params: { sector, t: Date.now() },
+        headers: getAuthHeaders(),
+      });
+      console.log(`[API] Model history received: ${response.data?.length} entries`);
+      return response.data;
+    } catch (error) {
+      console.error('[API] Error fetching model history:', error);
+      throw error;
     }
-}
+  },
+
+  async setActiveModel(sector: string, versionId: string): Promise<unknown> {
+    const response = await axios.post(
+      `${API_BASE_URL}/SetActiveModel`,
+      { sector, version_id: versionId },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  async getModelInfo(sector: string, versionId?: string): Promise<unknown> {
+    const response = await axios.get(`${API_BASE_URL}/GetModelInfo`, {
+      params: { sector, version_id: versionId, t: Date.now() },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  async getTrainingData(
+    sector: string,
+    page: number = 1,
+    pageSize: number = 50,
+    filters?: { version?: string; n4?: string; search?: string }
+  ): Promise<unknown> {
+    const response = await axios.get(`${API_BASE_URL}/GetTrainingData`, {
+      params: { sector, page, page_size: pageSize, ...filters },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  async deleteTrainingData(
+    sector: string,
+    options: {
+      row_ids?: number[];
+      version?: string;
+      items?: { descricao: string; n4: string; version: string }[];
+    }
+  ): Promise<unknown> {
+    const response = await axios.post(
+      `${API_BASE_URL}/DeleteTrainingData`,
+      { sector, ...options },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  // ==================== V3: SECTORS ====================
+
+  /** Lists all available sectors. */
+  async getSectors(): Promise<Sector[]> {
+    const response = await axios.get(`${API_BASE_URL}/ListSectors`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Creates a new sector. */
+  async createSector(data: {
+    name: string;
+    display_name: string;
+    custom_hierarchy?: HierarchyEntry[] | null;
+  }): Promise<Sector> {
+    const response = await axios.post(`${API_BASE_URL}/CreateSector`, data, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  // ==================== V3: PROJECTS ====================
+
+  /** Lists all projects. */
+  async getProjects(): Promise<Project[]> {
+    const response = await axios.get(`${API_BASE_URL}/ListProjects`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Creates a new project. */
+  async createProject(
+    data: Partial<Project> & { display_name: string; sector: string }
+  ): Promise<Project> {
+    const response = await axios.post(`${API_BASE_URL}/CreateProject`, data, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Updates an existing project. */
+  async updateProject(projectId: string, data: Partial<Project>): Promise<Project> {
+    const response = await axios.put(
+      `${API_BASE_URL}/UpdateProject`,
+      { project_id: projectId, ...data },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Deletes a project. */
+  async deleteProject(projectId: string): Promise<void> {
+    await axios.delete(`${API_BASE_URL}/DeleteProject`, {
+      params: { projectId },
+      headers: getAuthHeaders(),
+    });
+  },
+
+  /** Returns the effective hierarchy for a project (own, inherited, or padrao). */
+  async getProjectHierarchy(
+    projectId: string
+  ): Promise<{ hierarchy: HierarchyEntry[] | null; source: string }> {
+    const response = await axios.get(`${API_BASE_URL}/GetProjectHierarchy`, {
+      params: { projectId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  // ==================== V3: CLASSIFICATION ====================
+
+  /**
+   * Submits a classification job (v3, project-aware).
+   * Converts files to base64 and sends as JSON.
+   * Returns the jobId immediately; use getJobStatus to poll.
+   */
+  async submitClassificationJob(params: {
+    file: File;
+    projectId?: string;
+    sector?: string;
+    descColumn?: string;
+    hierarchyFile?: File;
+  }): Promise<{ jobId: string }> {
+    const fileContent = await fileToBase64(params.file);
+
+    const requestBody: Record<string, unknown> = {
+      fileContent,
+      originalFilename: params.file.name,
+    };
+
+    if (params.projectId) requestBody.projectId = params.projectId;
+    if (params.sector) requestBody.sector = params.sector;
+    if (params.descColumn) requestBody.descColumn = params.descColumn;
+
+    if (params.hierarchyFile) {
+      requestBody.customHierarchy = await fileToBase64(params.hierarchyFile);
+    }
+
+    console.log('[API] Submitting classification job (v3)...');
+
+    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody, {
+      headers: getAuthHeaders(),
+    });
+
+    const jobId: string = response.data.jobId;
+    console.log(`[API] Job submitted. ID: ${jobId}`);
+    return { jobId };
+  },
+
+  /**
+   * Submits a classification job using pre-encoded base64 strings (v3).
+   * Use this when the caller has already converted files to base64
+   * (e.g. via FileReader in ClassifyTab). Returns jobId immediately.
+   */
+  async submitClassificationJobRaw(params: {
+    fileContent: string;       // base64, no data-URL prefix
+    originalFilename: string;
+    projectId?: string;
+    sector?: string;
+    descColumn?: string;
+    customHierarchy?: string;  // base64, no data-URL prefix
+    clientContext?: string;
+  }): Promise<{ jobId: string }> {
+    const requestBody: Record<string, unknown> = {
+      fileContent: params.fileContent,
+      originalFilename: params.originalFilename,
+    };
+
+    if (params.projectId) requestBody.projectId = params.projectId;
+    if (params.sector) requestBody.sector = params.sector;
+    if (params.descColumn) requestBody.descColumn = params.descColumn;
+    if (params.customHierarchy) requestBody.customHierarchy = params.customHierarchy;
+    if (params.clientContext) requestBody.clientContext = params.clientContext;
+
+    console.log('[API] Submitting classification job (raw base64, v3)...');
+
+    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody, {
+      headers: getAuthHeaders(),
+    });
+
+    const jobId: string = response.data.jobId;
+    console.log(`[API] Job submitted. ID: ${jobId}`);
+    return { jobId };
+  },
+
+  /** Polls the status of a classification job. */
+  async getJobStatus(jobId: string): Promise<JobStatusResponse> {
+    const response = await axios.get(`${API_BASE_URL}/GetTaxonomyJobStatus`, {
+      params: { jobId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Retrieves all classified items for a completed job, including analytics and summary. */
+  async getJobResults(
+    jobId: string
+  ): Promise<{ jobId: string; status: string; items: ClassifiedItem[]; total: number; analytics?: any; summary?: any }> {
+    const response = await axios.get(`${API_BASE_URL}/GetJobResults`, {
+      params: { jobId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  // ==================== V3: REVIEW ====================
+
+  /**
+   * Re-classifies a subset of items using a consultant instruction (prompt).
+   * Useful for bulk reclassification during the review step.
+   */
+  async reclassifyItems(params: {
+    jobId: string;
+    projectId: string;
+    items: Array<{ index: number; description: string }>;
+    instruction: string;
+  }): Promise<{ results: ClassifiedItem[] }> {
+    const response = await axios.post(`${API_BASE_URL}/ReclassifyItems`, params, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /**
+   * Submits final review decisions for a job.
+   * Items marked contribute_to_kb=true are added to the project KB.
+   * Returns a download-ready Excel (base64) with approved classifications.
+   */
+  async approveClassifications(params: {
+    jobId: string;
+    projectId: string;
+    decisions: Array<{
+      index: number;
+      description: string;
+      decision: ReviewDecision;
+      N1: string;
+      N2: string;
+      N3: string;
+      N4: string;
+      confidence: number;
+      source: string;
+      contribute_to_kb?: boolean;
+      instruction_used?: string;
+    }>;
+  }): Promise<{
+    success: boolean;
+    kb_added: number;
+    summary: ReviewSummary;
+    download_filename?: string;
+    file_content_base64?: string;
+  }> {
+    const response = await axios.post(`${API_BASE_URL}/ApproveClassifications`, params, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  // ==================== V3: KNOWLEDGE BASE ====================
+
+  /** Returns a paginated list of KB entries for a project. */
+  async getKnowledgeBase(
+    projectId: string,
+    params?: {
+      page?: number;
+      pageSize?: number;
+      source?: string;
+      n4?: string;
+      search?: string;
+    }
+  ): Promise<KBPage> {
+    const response = await axios.get(`${API_BASE_URL}/GetKnowledgeBase`, {
+      params: {
+        projectId,
+        page: params?.page ?? 1,
+        pageSize: params?.pageSize ?? 50,
+        source: params?.source,
+        n4: params?.n4,
+        search: params?.search,
+      },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Adds a single entry to the project KB. */
+  async addKBEntry(projectId: string, entry: Partial<KBEntry>): Promise<KBEntry> {
+    const response = await axios.post(
+      `${API_BASE_URL}/AddKBEntry`,
+      { projectId, ...entry },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Updates an existing KB entry. */
+  async updateKBEntry(
+    projectId: string,
+    entryId: string,
+    data: Partial<KBEntry>
+  ): Promise<KBEntry> {
+    const response = await axios.put(
+      `${API_BASE_URL}/UpdateKBEntry`,
+      { projectId, entryId, ...data },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Deletes a KB entry by ID. */
+  async deleteKBEntry(projectId: string, entryId: string): Promise<void> {
+    await axios.delete(`${API_BASE_URL}/DeleteKBEntry`, {
+      params: { projectId, entryId },
+      headers: getAuthHeaders(),
+    });
+  },
+
+  /** Returns KB coverage statistics for a project. */
+  async getKBCoverage(projectId: string): Promise<KBCoverage> {
+    const response = await axios.get(`${API_BASE_URL}/GetKBCoverage`, {
+      params: { projectId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Lists all KB snapshot versions for a project. */
+  async getKBVersions(projectId: string): Promise<KBVersion[]> {
+    const response = await axios.get(`${API_BASE_URL}/GetKBVersions`, {
+      params: { projectId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Rolls the KB back to a previous snapshot version. */
+  async rollbackKB(projectId: string, versionId: string): Promise<void> {
+    await axios.post(
+      `${API_BASE_URL}/RollbackKB`,
+      { projectId, versionId },
+      { headers: getAuthHeaders() }
+    );
+  },
+
+  /**
+   * Exports the full KB for a project as a base64-encoded Excel file.
+   * Convert to Blob on click using atob() + Uint8Array (do NOT use blob URLs).
+   */
+  async exportKB(projectId: string): Promise<string> {
+    const response = await axios.get(`${API_BASE_URL}/ExportKB`, {
+      params: { projectId },
+      headers: getAuthHeaders(),
+    });
+    return response.data.file_content_base64 as string;
+  },
+
+  /**
+   * Imports KB entries from a base64-encoded Excel file.
+   * Returns the count of added entries and the new total.
+   */
+  async importKB(
+    projectId: string,
+    fileContentBase64: string
+  ): Promise<{ added: number; total: number }> {
+    const response = await axios.post(
+      `${API_BASE_URL}/ImportKB`,
+      { projectId, fileContentBase64 },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  // ==================== V3: SECTOR KNOWLEDGE BASE ====================
+
+  /** Returns a paginated list of KB entries for a sector. */
+  async getSectorKB(
+    sectorName: string,
+    params?: { page?: number; pageSize?: number; search?: string }
+  ): Promise<KBPage> {
+    const response = await axios.get(`${API_BASE_URL}/GetSectorKB`, {
+      params: {
+        sectorName,
+        page: params?.page ?? 1,
+        pageSize: params?.pageSize ?? 50,
+        search: params?.search,
+      },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Returns KB coverage for a sector against its hierarchy. */
+  async getSectorKBCoverage(sectorName: string): Promise<KBCoverage> {
+    const response = await axios.get(`${API_BASE_URL}/GetSectorKBCoverage`, {
+      params: { sectorName },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Lists all KB snapshot versions for a sector. */
+  async getSectorKBVersions(sectorName: string): Promise<KBVersion[]> {
+    const response = await axios.get(`${API_BASE_URL}/GetSectorKBVersions`, {
+      params: { sectorName },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  /** Exports sector KB as a base64-encoded Excel file. */
+  async exportSectorKB(sectorName: string): Promise<string> {
+    const response = await axios.get(`${API_BASE_URL}/ExportSectorKB`, {
+      params: { sectorName },
+      headers: getAuthHeaders(),
+    });
+    return response.data.file_content_base64 as string;
+  },
+
+  /** Imports KB entries into a sector from a base64-encoded Excel file. */
+  async importSectorKB(
+    sectorName: string,
+    fileContentBase64: string
+  ): Promise<{ added: number; total: number }> {
+    const response = await axios.post(
+      `${API_BASE_URL}/ImportSectorKB`,
+      { sectorName, fileContentBase64 },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Updates an existing sector KB entry. */
+  async updateSectorKBEntry(
+    sectorName: string,
+    entryId: string,
+    data: Partial<KBEntry>
+  ): Promise<KBEntry> {
+    const response = await axios.put(
+      `${API_BASE_URL}/UpdateSectorKBEntry`,
+      { sectorName, entryId, ...data },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Deletes a sector KB entry by ID. */
+  async deleteSectorKBEntry(sectorName: string, entryId: string): Promise<void> {
+    await axios.delete(`${API_BASE_URL}/DeleteSectorKBEntry`, {
+      params: { sectorName, entryId },
+      headers: getAuthHeaders(),
+    });
+  },
+
+  /** Rolls the sector KB back to a previous snapshot version. */
+  async rollbackSectorKB(sectorName: string, versionId: string): Promise<void> {
+    await axios.post(
+      `${API_BASE_URL}/RollbackSectorKB`,
+      { sectorName, versionId },
+      { headers: getAuthHeaders() }
+    );
+  },
+
+  /** Adds a single entry to the sector KB. */
+  async addSectorKBEntry(sectorName: string, entry: Partial<KBEntry>): Promise<KBEntry> {
+    const response = await axios.post(
+      `${API_BASE_URL}/AddSectorKBEntry`,
+      { sectorName, ...entry },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+
+  /** Promotes selected entries from a project KB to the sector KB. */
+  async promoteToSectorKB(
+    projectId: string,
+    sectorName: string,
+    entryIds: string[]
+  ): Promise<{ success: boolean; promoted_count: number }> {
+    const response = await axios.post(
+      `${API_BASE_URL}/PromoteToSectorKB`,
+      { projectId, sectorName, entryIds },
+      { headers: getAuthHeaders() }
+    );
+    return response.data;
+  },
+};
