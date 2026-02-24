@@ -666,7 +666,7 @@ const TaxonomyPage: NextPage = () => {
         message="Classificando itens..."
         subMessage="Aguarde enquanto a IA processa o arquivo."
         progress={progressPct}
-        status={progress?.message || 'Processando...'}
+        status={progress?.message}
       />
 
       {/* ============================================================
