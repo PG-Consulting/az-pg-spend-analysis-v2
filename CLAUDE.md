@@ -73,9 +73,11 @@ Copilot desbloqueado após COMPLETED
 
 ```
 PENDING → PROCESSING → CLASSIFIED → APPROVED → COMPLETED
-                            ↑                       ↑
-                     worker para aqui    ApproveClassifications
+    ↓          ↓            ↑                       ↑
+ CANCELLED  CANCELLED  worker para aqui    ApproveClassifications
 ```
+
+Cancelamento: `POST /api/CancelJob?jobId=xxx` — só aceita jobs `PENDING` ou `PROCESSING` (retorna 409 para outros status). O worker ignora jobs `CANCELLED` em `get_active_jobs()`, no round-robin e na consolidação. Frontend aborta o polling loop via `cancelledRef` e fecha o overlay.
 
 Auto-limpeza: jobs `PROCESSING` há mais de 1 hora → `ERROR`.
 
@@ -94,7 +96,7 @@ new-solution/
 │
 ├── blueprints/
 │   ├── projects_bp.py           # CRUD setores + projetos (9 endpoints, incl. DeleteSector)
-│   ├── classification_bp.py     # SubmitJob, GetStatus, GetJobResults (3 endpoints)
+│   ├── classification_bp.py     # SubmitJob, GetStatus, GetJobResults, CancelJob (4 endpoints)
 │   ├── review_bp.py             # ReclassifyItems, ApproveClassifications (2 endpoints)
 │   ├── knowledge_bp.py          # KB projeto + setor: CRUD, coverage, versões, import/export, promote (19 endpoints)
 │   ├── models_bp.py             # Treinamento ML legacy (6 endpoints)
@@ -463,7 +465,7 @@ O hint `ID interno: naval-offshore` aparece em cinza claro sob o campo (visível
 ### Nomenclatura
 - Níveis: N1 (mais alto) → N4 (mais granular)
 - Status de classificação: `"Unico"`, `"Nenhum"` — **derivados** dos N1-N4 em `GetJobResults` (não armazenados no caminho LLM-direto). `"Ambiguo"` existe apenas no caminho legado de dicionário.
-- Status de jobs: `PENDING`, `PROCESSING`, `CLASSIFIED`, `APPROVED`, `COMPLETED`, `ERROR`
+- Status de jobs: `PENDING`, `PROCESSING`, `CLASSIFIED`, `APPROVED`, `COMPLETED`, `ERROR`, `CANCELLED`
 - Setores: lowercase slug auto-gerado (`"naval"`, `"naval-offshore"`)
 - Project IDs: slug gerado de `"{setor}-{nome-projeto}"` (ex: `"naval-wartsila"`)
 
@@ -530,6 +532,7 @@ A aba "Analisar" usa layout **chat-first** com flex vertical (não scroll geral)
 - **`hierarchy_source` enviado na criação**: `CreateProjectModal` mapeia `hierarchyOption` (`upload`→`own`, `none`→`padrao`) e envia `hierarchy_source` ao backend. Sem esse mapeamento, o backend defaulta para `"own"` e o `EditProjectModal` mostra "Hierarquia: Própria" incorretamente.
 - **Setor não tem hierarquia**: Setores possuem apenas KB (base de conhecimento), nunca hierarquia. `resolve_hierarchy()` em `project_manager.py` busca apenas: (1) hierarquia própria do projeto → `"own"`, (2) sem hierarquia → `"padrao"`. Não existe `"inherited"`.
 - **CreateProjectModal 2 opções de hierarquia**: Step 2 oferece apenas "Upload de hierarquia própria" ou "Padrão UNSPSC". A opção "Herdar do setor" foi removida pois setores não têm hierarquia.
+- **CancelJob e status CANCELLED**: `POST /api/CancelJob?jobId=xxx` em `classification_bp.py` escreve `CANCELLED` + `cancelled_at` no `status.json`. Só aceita `PENDING`/`PROCESSING` (retorna 409 para outros). Worker ignora `CANCELLED` em 3 pontos: `get_active_jobs()` (não carrega), round-robin (filtra de `pending`), consolidação (pula). Frontend usa `cancelledRef` em `useTaxonomySession.ts` para abortar o polling loop imediatamente sem esperar a próxima resposta. `ProcessingOverlay` mostra "Cancelando..." via prop `cancelling`.
 
 ### Problemas Conhecidos
 
@@ -586,3 +589,4 @@ Ver `docs/DEPLOYMENT.md` para guia completo.
 | 2026-02-20 | KB do setor sempre mesclada sem opção de desabilitar | Merge automático hardcoded em `worker_helpers.py` e `review_bp.py`; projetos não podiam usar KB isolada | Toggle `use_sector_kb` no `project_config.json` (default true); condicional em worker, reclassificação e cobertura; toggle switch no Create/EditProjectModal |
 | 2026-02-24 | Sem forma de excluir setores via API ou UI | Só existia `DeleteProject`; setores vazios não apareciam no dropdown | `delete_sector()` com proteção force/no-force; endpoint `DELETE /api/DeleteSector`; `ProjectSelect` mostra todos os setores + botão excluir; `ConfirmDialog` com lista de projetos afetados |
 | 2026-02-24 | Hierarquia sempre "Própria" no EditProjectModal | `CreateProjectModal` não enviava `hierarchy_source`; backend defaultava para `"own"` | Adicionado mapeamento `hierarchyOption` → `hierarchy_source` (`upload`→`own`, `inherit`→`inherited`, `none`→`padrao`) no `handleCreate()` |
+| 2026-02-24 | Botão "Cancelar classificação" era placeholder (noop) | `ProcessingOverlay` tinha `onClick={() => { /* placeholder */ }}`; job continuava rodando e overlay não fechava | Endpoint `CancelJob` no backend; worker ignora `CANCELLED`; frontend aborta polling via `cancelledRef` e fecha overlay |

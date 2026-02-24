@@ -409,7 +409,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
         total_chunks = status_data.get("total_chunks", 0)
         desc_col = status_data.get("desc_column", "Descricao")
 
-        # Load result.json once — needed for analytics/summary and as item fallback
+        # Load result.json once — needed for analytics/summary and as authoritative source
         analytics = None
         summary = None
         result_file = os.path.join(job_dir, "result.json")
@@ -420,50 +420,13 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
             analytics = result_json.get("analytics")
             summary = result_json.get("summary")
 
-        # Merge all available result_X.json files (in-progress jobs)
         items = []
-        global_index = 0
 
-        for i in range(total_chunks):
-            result_path = os.path.join(job_dir, f"result_{i}.json")
-            chunk_path = os.path.join(job_dir, f"chunk_{i}.json")
-
-            if not os.path.exists(result_path):
-                continue
-
-            with open(result_path, "r", encoding="utf-8") as rf:
-                chunk_results = json.load(rf)
-
-            # Load original chunk data for descriptions (if chunks not yet cleaned up)
-            original_descriptions = {}
-            if os.path.exists(chunk_path):
-                with open(chunk_path, "r", encoding="utf-8") as cf:
-                    original_rows = json.load(cf)
-                for j, row in enumerate(original_rows):
-                    original_descriptions[j] = row.get(desc_col, "")
-
-            for j, result in enumerate(chunk_results):
-                item = {
-                    "index": global_index,
-                    "description": result.get("description") or original_descriptions.get(j, ""),
-                    "N1": result.get("N1", "Nao Identificado"),
-                    "N2": result.get("N2", "Nao Identificado"),
-                    "N3": result.get("N3", "Nao Identificado"),
-                    "N4": result.get("N4", "Nao Identificado"),
-                    "confidence": result.get("confidence", 0.0),
-                    "source": result.get("source", ""),
-                    "status": result.get("status", "") or (
-                        "Nenhum" if any(
-                            str(result.get(lvl, "")).strip() in ("", "Não Identificado", "Nao Identificado")
-                            for lvl in ("N1", "N2", "N3", "N4")
-                        ) else "Unico"
-                    ),
-                }
-                items.append(item)
-                global_index += 1
-
-        # When CLASSIFIED or COMPLETED, individual chunk files are gone — use result.json items
-        if job_status in ("CLASSIFIED", "COMPLETED") and not items and result_json:
+        # For CLASSIFIED/COMPLETED jobs, always use result.json (authoritative).
+        # Reading individual result_X.json is unsafe due to race condition:
+        # consolidate_job deletes them AFTER writing CLASSIFIED, so a concurrent
+        # GetJobResults call may find only a subset, producing truncated results.
+        if job_status in ("CLASSIFIED", "COMPLETED") and result_json:
             raw_items = result_json.get("items", [])
             for idx, row in enumerate(raw_items):
                 items.append({
@@ -482,6 +445,47 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                         ) else "Unico"
                     ),
                 })
+        else:
+            # In-progress jobs (PROCESSING): read individual result_X.json chunks
+            global_index = 0
+            for i in range(total_chunks):
+                result_path = os.path.join(job_dir, f"result_{i}.json")
+                chunk_path = os.path.join(job_dir, f"chunk_{i}.json")
+
+                if not os.path.exists(result_path):
+                    continue
+
+                with open(result_path, "r", encoding="utf-8") as rf:
+                    chunk_results = json.load(rf)
+
+                original_descriptions = {}
+                if os.path.exists(chunk_path):
+                    with open(chunk_path, "r", encoding="utf-8") as cf:
+                        original_rows = json.load(cf)
+                    for j, row in enumerate(original_rows):
+                        original_descriptions[j] = row.get(desc_col, "")
+
+                for j, result in enumerate(chunk_results):
+                    item = {
+                        "index": global_index,
+                        "description": result.get("description") or original_descriptions.get(j, ""),
+                        "N1": result.get("N1", "Nao Identificado"),
+                        "N2": result.get("N2", "Nao Identificado"),
+                        "N3": result.get("N3", "Nao Identificado"),
+                        "N4": result.get("N4", "Nao Identificado"),
+                        "confidence": result.get("confidence", 0.0),
+                        "source": result.get("source", ""),
+                        "status": result.get("status", "") or (
+                            "Nenhum" if any(
+                                str(result.get(lvl, "")).strip() in ("", "Não Identificado", "Nao Identificado")
+                                for lvl in ("N1", "N2", "N3", "N4")
+                            ) else "Unico"
+                        ),
+                    }
+                    items.append(item)
+                    global_index += 1
+
+        logger.info(f"[GetJobResults] Job {job_id}: status={job_status}, items={len(items)}")
 
         response = {
             "jobId": job_id,
