@@ -87,12 +87,19 @@ export function CreateProjectModal({
         hierarchyFilename = hierarchyFile.name;
       }
 
+      const hierarchySourceMap: Record<string, string> = {
+        upload: 'own',
+        inherit: 'inherited',
+        none: 'padrao',
+      };
+
       const project = await createProject({
         display_name: displayName,
         sector: sectorName,
         client_context: clientContext,
         hierarchy_file_base64: hierarchyBase64,
         hierarchy_filename: hierarchyFilename,
+        hierarchy_source: hierarchySourceMap[hierarchyOption] || 'padrao',
         use_sector_kb: useSectorKb,
       });
 
