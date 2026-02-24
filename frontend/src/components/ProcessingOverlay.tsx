@@ -7,6 +7,8 @@ interface ProcessingOverlayProps {
   progress?: number // 0-100
   message?: string
   subMessage?: string
+  onCancel?: () => void
+  cancelling?: boolean
 }
 
 export function ProcessingOverlay({
@@ -15,6 +17,8 @@ export function ProcessingOverlay({
   progress,
   message,
   subMessage,
+  onCancel,
+  cancelling,
 }: ProcessingOverlayProps) {
   const displayMessage = useMemo(() => {
     if (status && status !== 'Processando...') return status
@@ -74,12 +78,15 @@ export function ProcessingOverlay({
         <div className="flex justify-center pt-2">
           <button
             type="button"
-            className="text-sm text-primary-400 hover:text-red-500 transition-colors cursor-pointer"
-            onClick={() => {
-              /* placeholder */
-            }}
+            disabled={cancelling}
+            className={`text-sm transition-colors cursor-pointer ${
+              cancelling
+                ? 'text-primary-300 cursor-not-allowed'
+                : 'text-primary-400 hover:text-red-500'
+            }`}
+            onClick={onCancel}
           >
-            Cancelar classificação
+            {cancelling ? 'Cancelando...' : 'Cancelar classificação'}
           </button>
         </div>
       </div>

@@ -189,6 +189,7 @@ const TaxonomyPage: NextPage = () => {
     activeSessionId,
     activeSession,
     isProcessing,
+    isCancelling,
     progress,
     activeProjectId,
     setActiveProjectId,
@@ -198,6 +199,7 @@ const TaxonomyPage: NextPage = () => {
     handleFileSelect,
     handleClearHistory,
     handleDeleteSession,
+    cancelJob,
   } = useTaxonomySession()
 
   const activeProject = useMemo(
@@ -667,6 +669,8 @@ const TaxonomyPage: NextPage = () => {
         subMessage="Aguarde enquanto a IA processa o arquivo."
         progress={progressPct}
         status={progress?.message}
+        onCancel={cancelJob}
+        cancelling={isCancelling}
       />
 
       {/* ============================================================

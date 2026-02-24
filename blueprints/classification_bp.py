@@ -314,6 +314,69 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Error reading status: {e}", status_code=500)
 
 
+@classification_bp.route(route="CancelJob", methods=["POST", "OPTIONS"],
+                          auth_level=func.AuthLevel.ANONYMOUS)
+def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/CancelJob?jobId=xxx
+    Cancels a PENDING or PROCESSING job by writing CANCELLED to status.json.
+    Returns 200 with {jobId, status: "CANCELLED"}.
+    """
+    if req.method == "OPTIONS":
+        return func.HttpResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
+
+    job_id = req.params.get("jobId")
+    if not job_id:
+        return func.HttpResponse("Missing jobId", status_code=400)
+
+    jobs_dir = get_jobs_dir()
+    job_dir = os.path.join(jobs_dir, job_id)
+    status_file = os.path.join(job_dir, "status.json")
+
+    if not os.path.exists(status_file):
+        return func.HttpResponse("Job not found", status_code=404)
+
+    try:
+        with open(status_file, "r", encoding="utf-8") as f:
+            status = json.load(f)
+
+        current_status = status.get("status", "")
+        if current_status not in ("PENDING", "PROCESSING"):
+            return func.HttpResponse(
+                body=safe_json_dumps({
+                    "error": f"Cannot cancel job with status '{current_status}'. Only PENDING or PROCESSING jobs can be cancelled."
+                }),
+                status_code=409,
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        status["status"] = "CANCELLED"
+        status["cancelled_at"] = datetime.utcnow().isoformat()
+
+        with open(status_file, "w", encoding="utf-8") as f:
+            json.dump(status, f, ensure_ascii=False)
+
+        logger.info(f"[CancelJob] Job {job_id} cancelled (was {current_status})")
+
+        return func.HttpResponse(
+            body=safe_json_dumps({"jobId": job_id, "status": "CANCELLED"}),
+            status_code=200,
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    except Exception as e:
+        logger.error(f"CancelJob error: {e}", exc_info=True)
+        return func.HttpResponse(f"Error cancelling job: {e}", status_code=500)
+
+
 @classification_bp.route(route="GetJobResults", methods=["GET", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
 def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:

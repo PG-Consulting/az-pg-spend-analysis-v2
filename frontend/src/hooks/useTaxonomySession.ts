@@ -6,7 +6,7 @@
  * The UI is locked via isProcessing=true and shows real-time progress.
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { apiClient } from '@/lib/api'
 import { saveSession, getAllSessions, clearAllSessions, deleteSession } from '@/lib/database'
 import type { TaxonomySession, ReviewSummary, ReviewState } from '@/lib/types'
@@ -22,6 +22,7 @@ interface UseTaxonomySessionReturn {
     activeSessionId: string | null
     activeSession: TaxonomySession | undefined
     isProcessing: boolean
+    isCancelling: boolean
     progress: { message: string; pct: number } | null
     clientContext: string
     activeProjectId: string | null
@@ -34,6 +35,7 @@ interface UseTaxonomySessionReturn {
     handleClearHistory: () => void
     handleDeleteSession: (sessionId: string) => void
     setReviewCompleted: (summary: ReviewSummary, approvedFileB64: string, approvedFilename: string) => Promise<void>
+    cancelJob: () => Promise<void>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,9 +46,13 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
     const [sessions, setSessions] = useState<TaxonomySession[]>([])
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
     const [isProcessing, setIsProcessing] = useState(false)
+    const [isCancelling, setIsCancelling] = useState(false)
     const [progress, setProgress] = useState<{ message: string; pct: number } | null>(null)
     const [clientContext, setClientContext] = useState('')
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+
+    const cancelledRef = useRef(false)
+    const currentJobIdRef = useRef<string | null>(null)
 
     const activeSession = sessions.find(s => s.sessionId === activeSessionId)
 
@@ -78,6 +84,8 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         hierarchyContent?: string
     ) => {
         setIsProcessing(true)
+        setIsCancelling(false)
+        cancelledRef.current = false
         setProgress({ message: 'Enviando arquivo...', pct: 0 })
 
         try {
@@ -89,15 +97,22 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                 customHierarchy: hierarchyContent,
             })
 
+            currentJobIdRef.current = jobId
             console.log(`[Session] Job submitted: ${jobId}`)
             setProgress({ message: 'Upload concluído. Aguardando início...', pct: 2 })
 
-            // Poll until CLASSIFIED (or ERROR / timeout)
+            // Poll until CLASSIFIED (or ERROR / CANCELLED / timeout)
             const MAX_POLLS = 600  // 50 minutes at 5 s/poll
             let attempts = 0
 
             while (attempts < MAX_POLLS) {
                 await new Promise(resolve => setTimeout(resolve, 5000))
+
+                // Check if cancelled locally (user clicked cancel)
+                if (cancelledRef.current) {
+                    console.log(`[Session] Job ${jobId} cancelled by user`)
+                    return
+                }
 
                 try {
                     const status = await apiClient.getJobStatus(jobId)
@@ -105,6 +120,13 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                     const msg = (status as any).message || 'Classificando chunks...'
 
                     console.log(`[Session] Job ${jobId}: ${status.status} (${newPct}%)`)
+
+                    // Job cancelled (possibly from another tab/session)
+                    if (status.status === 'CANCELLED') {
+                        console.log(`[Session] Job ${jobId} was cancelled`)
+                        return
+                    }
+
                     // Never go backwards — backend reports 0% for PENDING jobs
                     setProgress(prev => ({ message: msg, pct: Math.max(prev?.pct ?? 0, newPct) }))
 
@@ -156,10 +178,14 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
 
         } catch (error: any) {
             console.error('Erro no processamento:', error)
-            alert(`Erro ao processar arquivo: ${error.message || 'Erro desconhecido'}`)
+            if (!cancelledRef.current) {
+                alert(`Erro ao processar arquivo: ${error.message || 'Erro desconhecido'}`)
+            }
         } finally {
             setIsProcessing(false)
+            setIsCancelling(false)
             setProgress(null)
+            currentJobIdRef.current = null
         }
     }
 
@@ -193,6 +219,21 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         }
     }, [activeSessionId, sessions])
 
+    const cancelJob = useCallback(async () => {
+        const jobId = currentJobIdRef.current
+        if (!jobId) return
+
+        setIsCancelling(true)
+        try {
+            await apiClient.cancelJob(jobId)
+            cancelledRef.current = true
+        } catch (e) {
+            console.error('[Session] Cancel error:', e)
+            // Even if the API call fails, abort the polling loop
+            cancelledRef.current = true
+        }
+    }, [])
+
     const handleClearHistory = useCallback(async () => {
         await clearAllSessions()
 
@@ -219,6 +260,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         activeSessionId,
         activeSession,
         isProcessing,
+        isCancelling,
         progress,
         clientContext,
         activeProjectId,
@@ -230,6 +272,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         handleClearHistory,
         handleDeleteSession,
         setReviewCompleted,
+        cancelJob,
     }
 }
 

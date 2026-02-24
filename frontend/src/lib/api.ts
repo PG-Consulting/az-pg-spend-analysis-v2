@@ -382,6 +382,14 @@ export const apiClient = {
     return response.data;
   },
 
+  /** Cancels a PENDING or PROCESSING job. */
+  async cancelJob(jobId: string): Promise<void> {
+    await axios.post(`${API_BASE_URL}/CancelJob`, null, {
+      params: { jobId },
+      headers: getAuthHeaders(),
+    });
+  },
+
   /** Retrieves all classified items for a completed job, including analytics and summary. */
   async getJobResults(
     jobId: string
