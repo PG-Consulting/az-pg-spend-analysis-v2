@@ -79,7 +79,11 @@ def get_sector(name: str, models_dir: str) -> Optional[dict]:
 
 
 def create_sector(name: str, display_name: str, hierarchy: Optional[list], models_dir: str) -> dict:
-    """Create a new sector. name is lowercased and used as folder name."""
+    """Create a new sector. name is lowercased and used as folder name.
+
+    Note: hierarchy parameter is accepted for backwards compatibility but ignored.
+    Sectors only have a knowledge base, not a hierarchy.
+    """
     name = name.lower().strip()
     sector_dir = os.path.join(models_dir, "sectors", name)
     os.makedirs(sector_dir, exist_ok=True)
@@ -87,7 +91,6 @@ def create_sector(name: str, display_name: str, hierarchy: Optional[list], model
     config = {
         "name": name,
         "display_name": display_name,
-        "custom_hierarchy": hierarchy,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     config_path = os.path.join(sector_dir, "sector_config.json")
@@ -146,7 +149,7 @@ def create_project(data: dict, models_dir: str) -> dict:
         sector (required): Sector name, e.g. "naval"
         client_context (optional): Free-text context for LLM prompts
         custom_hierarchy (optional): list of {N1,N2,N3,N4} dicts or None
-        hierarchy_source (optional): "own" | "inherited" | "padrao" (default "own")
+        hierarchy_source (optional): "own" | "padrao" (default "own")
         hierarchy_filename (optional): Original filename of uploaded hierarchy
         few_shot_max_examples (optional): int, default 5
 
@@ -273,8 +276,7 @@ def delete_sector(name: str, models_dir: str, force: bool = False) -> dict:
 def resolve_hierarchy(project_id: str, models_dir: str) -> tuple:
     """Returns (hierarchy: list|None, source: str) following precedence:
     1. Project's own custom_hierarchy -> source="own"
-    2. Project's sector custom_hierarchy -> source="inherited"
-    3. No hierarchy -> source="padrao", return None
+    2. No hierarchy -> source="padrao", return None
     """
     project = get_project(project_id, models_dir)
     if project is None:
@@ -285,16 +287,7 @@ def resolve_hierarchy(project_id: str, models_dir: str) -> tuple:
     if own:
         return own, "own"
 
-    # 2. Sector hierarchy
-    sector_name = project.get("sector", "")
-    if sector_name:
-        sector = get_sector(sector_name, models_dir)
-        if sector:
-            sector_hierarchy = sector.get("custom_hierarchy")
-            if sector_hierarchy:
-                return sector_hierarchy, "inherited"
-
-    # 3. Fallback: no hierarchy
+    # 2. Fallback: no hierarchy
     return None, "padrao"
 
 

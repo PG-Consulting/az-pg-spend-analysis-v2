@@ -49,7 +49,7 @@ export function CreateProjectModal({
   const [useSectorKb, setUseSectorKb] = useState(true);
 
   // Step 2: Hierarchy
-  const [hierarchyOption, setHierarchyOption] = useState<'none' | 'inherit' | 'upload'>('inherit');
+  const [hierarchyOption, setHierarchyOption] = useState<'none' | 'upload'>('none');
   const [hierarchyFile, setHierarchyFile] = useState<File | null>(null);
 
   const handleClose = () => {
@@ -61,7 +61,7 @@ export function CreateProjectModal({
     setIsNewSector(false);
     setClientContext('');
     setUseSectorKb(true);
-    setHierarchyOption('inherit');
+    setHierarchyOption('none');
     setHierarchyFile(null);
     setError(null);
     onClose();
@@ -89,7 +89,6 @@ export function CreateProjectModal({
 
       const hierarchySourceMap: Record<string, string> = {
         upload: 'own',
-        inherit: 'inherited',
         none: 'padrao',
       };
 
@@ -281,21 +280,16 @@ export function CreateProjectModal({
             {(
               [
                 {
-                  value: 'inherit',
-                  label: 'Herdar do setor',
-                  desc: 'Usa a hierarquia do setor selecionado (se existir)',
-                },
-                {
                   value: 'upload',
-                  label: 'Fazer upload de hierarquia propria',
+                  label: 'Fazer upload de hierarquia própria',
                   desc: 'Excel com colunas N1, N2, N3, N4',
                 },
                 {
                   value: 'none',
-                  label: 'Sem hierarquia (padrao UNSPSC)',
+                  label: 'Sem hierarquia (padrão UNSPSC)',
                   desc: 'O LLM usa a taxonomia UNSPSC geral',
                 },
-              ] as { value: 'inherit' | 'upload' | 'none'; label: string; desc: string }[]
+              ] as { value: 'upload' | 'none'; label: string; desc: string }[]
             ).map(opt => (
               <label
                 key={opt.value}

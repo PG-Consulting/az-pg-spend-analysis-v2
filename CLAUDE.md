@@ -142,7 +142,7 @@ new-solution/
 │   ├── test_kb_retriever.py     # 18 testes — retrieve, batch, representative, enriched selection
 │   ├── test_knowledge_base.py   # 41 testes — CRUD, dedup, versioning, coverage, sector KB CRUD, merge, promote
 │   ├── test_core_classification.py # 15 testes — two-phase KB learning, merged KB pipeline (mock LLM)
-│   ├── test_project_manager.py  # 29 testes — slugify, sector/project CRUD, delete_sector, use_sector_kb, resolve_hierarchy
+│   ├── test_project_manager.py  # 28 testes — slugify, sector/project CRUD, delete_sector, use_sector_kb, resolve_hierarchy
 │   └── test_utils.py            # 8 testes — safe_json_dumps, get_models_dir
 │
 ├── pytest.ini                   # Config pytest (testpaths, addopts)
@@ -283,7 +283,7 @@ npm run dev    # http://localhost:3000
 ### Testes
 
 ```bash
-# Backend — 153 testes (pytest, ~4s)
+# Backend — 152 testes (pytest, ~4s)
 python3 -m pytest tests/ -v
 
 # Frontend — 23 testes (Jest + React Testing Library, ~1.3s)
@@ -308,7 +308,6 @@ cd frontend && npx jest --coverage
 {
   "name": "naval",
   "display_name": "Naval",
-  "custom_hierarchy": null,
   "created_at": "2026-02-18T..."
 }
 ```
@@ -321,7 +320,7 @@ cd frontend && npx jest --coverage
   "sector": "naval",
   "client_context": "Contexto do cliente para prompt LLM",
   "custom_hierarchy": [...],
-  "hierarchy_source": "own",
+  "hierarchy_source": "own",  // "own" | "padrao"
   "hierarchy_filename": "hierarquia.xlsx",
   "created_at": "...",
   "updated_at": "...",
@@ -528,7 +527,9 @@ A aba "Analisar" usa layout **chat-first** com flex vertical (não scroll geral)
 - **UI components library**: `components/ui/` contém 17+ componentes reutilizáveis. Novos no redesign: `SlideOver` (painel lateral), `Input`/`Select`/`Textarea` (formulários), `FilterDropdown` (filtros multi-select), `AiAvatar` (avatar do Copilot), `StickyFooter` (rodapé fixo). Todos seguem design tokens.
 - **`delete_sector()` com proteção**: `project_manager.py` — se `force=False` e há projetos no setor, levanta `ValueError` com lista de project_ids. Se `force=True`, deleta todos os projetos primeiro (`shutil.rmtree` em cada um) e depois o setor. Endpoint `DELETE /api/DeleteSector?sectorName=xxx&force=false` retorna 409 (conflito) quando há projetos sem force. Frontend mostra `ConfirmDialog` com lista dos projetos afetados.
 - **ProjectSelect mostra setores vazios**: `bySector` em `ProjectSelect.tsx` inclui todos os setores (via `useMemo` com `sectors` + `projects`), não apenas os que têm projetos. Setores vazios mostram "Nenhum projeto" em itálico. Botão de excluir setor sempre visível ao lado do header do grupo (`text-white/15`, hover vermelho).
-- **`hierarchy_source` enviado na criação**: `CreateProjectModal` mapeia `hierarchyOption` (`upload`→`own`, `inherit`→`inherited`, `none`→`padrao`) e envia `hierarchy_source` ao backend. Sem esse mapeamento, o backend defaulta para `"own"` e o `EditProjectModal` mostra "Hierarquia: Própria" incorretamente.
+- **`hierarchy_source` enviado na criação**: `CreateProjectModal` mapeia `hierarchyOption` (`upload`→`own`, `none`→`padrao`) e envia `hierarchy_source` ao backend. Sem esse mapeamento, o backend defaulta para `"own"` e o `EditProjectModal` mostra "Hierarquia: Própria" incorretamente.
+- **Setor não tem hierarquia**: Setores possuem apenas KB (base de conhecimento), nunca hierarquia. `resolve_hierarchy()` em `project_manager.py` busca apenas: (1) hierarquia própria do projeto → `"own"`, (2) sem hierarquia → `"padrao"`. Não existe `"inherited"`.
+- **CreateProjectModal 2 opções de hierarquia**: Step 2 oferece apenas "Upload de hierarquia própria" ou "Padrão UNSPSC". A opção "Herdar do setor" foi removida pois setores não têm hierarquia.
 
 ### Problemas Conhecidos
 

@@ -69,7 +69,7 @@ export function useProjects() {
     setProjects(prev => prev.filter(p => p.project_id !== projectId));
   }, []);
 
-  const createSector = useCallback(async (data: { name: string; display_name: string; custom_hierarchy?: any[] | null }) => {
+  const createSector = useCallback(async (data: { name: string; display_name: string }) => {
     const api = await getApi();
     const sector = await api.createSector(data);
     setSectors(prev => [...prev, sector]);

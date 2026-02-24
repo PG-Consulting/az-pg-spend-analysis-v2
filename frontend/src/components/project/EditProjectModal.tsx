@@ -91,7 +91,7 @@ export function EditProjectModal({ isOpen, project, onClose, onSave }: EditProje
           <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-500 space-y-1">
             <p><span className="font-medium text-gray-600">ID:</span> <span className="font-mono">{project.project_id}</span></p>
             <p><span className="font-medium text-gray-600">Setor:</span> {project.sector}</p>
-            <p><span className="font-medium text-gray-600">Hierarquia:</span> {project.hierarchy_source === 'own' ? 'Própria' : project.hierarchy_source === 'inherited' ? 'Herdada do setor' : 'Padrão UNSPSC'}</p>
+            <p><span className="font-medium text-gray-600">Hierarquia:</span> {project.hierarchy_source === 'own' ? 'Própria' : 'Padrão UNSPSC'}</p>
           </div>
         )}
 

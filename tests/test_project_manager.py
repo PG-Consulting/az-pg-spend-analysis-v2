@@ -273,22 +273,8 @@ class TestResolveHierarchy:
         assert source == "own"
         assert result_hierarchy == hierarchy
 
-    def test_resolve_inherited(self, models_dir):
-        """Project without hierarchy inherits from its sector."""
-        sector_hierarchy = [
-            {"N1": "MRO", "N2": "Fixação", "N3": "Parafusos", "N4": "Parafuso Sextavado"},
-        ]
-        create_sector("naval", "Naval", sector_hierarchy, models_dir)
-        created = create_project(
-            {"display_name": "Naval Wartsila", "sector": "naval"},
-            models_dir,
-        )
-        result_hierarchy, source = resolve_hierarchy(created["project_id"], models_dir)
-        assert source == "inherited"
-        assert result_hierarchy == sector_hierarchy
-
     def test_resolve_padrao(self, models_dir):
-        """Neither project nor sector has hierarchy: returns (None, 'padrao')."""
+        """Project without hierarchy returns (None, 'padrao')."""
         create_sector("naval", "Naval", None, models_dir)
         created = create_project(
             {"display_name": "Naval Wartsila", "sector": "naval"},

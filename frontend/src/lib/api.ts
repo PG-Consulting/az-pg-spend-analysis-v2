@@ -229,7 +229,6 @@ export const apiClient = {
   async createSector(data: {
     name: string;
     display_name: string;
-    custom_hierarchy?: HierarchyEntry[] | null;
   }): Promise<Sector> {
     const response = await axios.post(`${API_BASE_URL}/CreateSector`, data, {
       headers: getAuthHeaders(),

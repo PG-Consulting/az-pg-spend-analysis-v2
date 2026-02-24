@@ -5,7 +5,6 @@
 export interface Sector {
   name: string;           // lowercase, folder name
   display_name: string;
-  custom_hierarchy: HierarchyEntry[] | null;
   created_at: string;
 }
 
@@ -15,7 +14,7 @@ export interface Project {
   sector: string;
   client_context: string;
   custom_hierarchy: HierarchyEntry[] | null;
-  hierarchy_source: 'own' | 'inherited' | 'padrao';
+  hierarchy_source: 'own' | 'padrao';
   hierarchy_filename: string | null;
   created_at: string;
   updated_at: string;
