@@ -89,7 +89,7 @@ def get_active_jobs(jobs_root: str) -> list:
             with open(status_path, "r") as f:
                 status = json.load(f)
 
-            if status.get("status") in ["COMPLETED", "CLASSIFIED", "ERROR"]:
+            if status.get("status") in ["COMPLETED", "CLASSIFIED", "ERROR", "CANCELLED"]:
                 continue
 
             if status["status"] == "PENDING":
@@ -292,7 +292,11 @@ def process_single_chunk(job_info: dict, chunk_index: int) -> None:
 # ---------------------------------------------------------------------------
 
 def update_job_progress(job_info: dict) -> None:
-    """Update processed_chunks count in status.json. Call OUTSIDE parallel context."""
+    """Update processed_chunks count in status.json.
+
+    Called from the main thread after each chunk completes (via as_completed loop).
+    Safe because the loop is sequential — no concurrent writes to status.json.
+    """
     job_dir = job_info["job_dir"]
     total_chunks = job_info["total_chunks"]
     processed_so_far = sum(
@@ -467,7 +471,7 @@ def run_worker_cycle() -> None:
 
         # Collect up to MAX_PARALLEL_CHUNKS via fair round-robin across jobs
         batch = []
-        pending = [j for j in active_jobs if j["status"].get("status") != "ERROR"]
+        pending = [j for j in active_jobs if j["status"].get("status") not in ("ERROR", "CANCELLED")]
         assigned = {j["job_id"]: set() for j in pending}
 
         # Round-robin: 1 chunk per job per round, repeat until batch is full
@@ -502,6 +506,9 @@ def run_worker_cycle() -> None:
                 job, idx = futures[future]
                 try:
                     future.result()
+                    # Update progress immediately after each chunk completes
+                    if job["status"].get("status") != "ERROR":
+                        update_job_progress(job)
                 except Exception as e:
                     logger.error(f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}")
                     job["status"]["status"] = "ERROR"
@@ -509,15 +516,9 @@ def run_worker_cycle() -> None:
                     with open(job["status_path"], "w") as f:
                         json.dump(job["status"], f)
 
-        # Update progress for all touched jobs (sequential, no race condition)
-        touched = set(j["job_id"] for j, _ in batch)
-        for job in active_jobs:
-            if job["job_id"] in touched and job["status"].get("status") != "ERROR":
-                update_job_progress(job)
-
     # 4. Consolidate jobs that have completed all chunks
     for job_info in active_jobs:
-        if job_info["status"].get("status") == "ERROR":
+        if job_info["status"].get("status") in ("ERROR", "CANCELLED"):
             continue
         all_done = all(
             os.path.exists(os.path.join(job_info["job_dir"], f"result_{i}.json"))
