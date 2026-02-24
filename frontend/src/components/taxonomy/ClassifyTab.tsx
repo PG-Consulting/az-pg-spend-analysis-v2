@@ -124,47 +124,45 @@ export default function ClassifyTab({
         />
       )}
 
-      {/* ── Collapsible hierarchy section ── */}
-      {!hasProjectHierarchy && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setHierarchyOpen(prev => !prev)}
-            className="flex items-center gap-1.5 text-sm text-primary-500 hover:text-primary-700 transition-colors"
+      {/* ── Collapsible hierarchy section (always visible) ── */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setHierarchyOpen(prev => !prev)}
+          className="flex items-center gap-1.5 text-sm text-primary-500 hover:text-primary-700 transition-colors"
+        >
+          <svg
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${hierarchyOpen ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            <svg
-              className={`w-3.5 h-3.5 transition-transform duration-200 ${hierarchyOpen ? 'rotate-90' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            Hierarquia customizada (opcional)
-          </button>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {hasProjectHierarchy ? 'Substituir hierarquia nesta execução (opcional)' : 'Hierarquia customizada (opcional)'}
+        </button>
 
-          {hierarchyOpen && (
-            <div className="mt-3">
-              {hierarchyValidation ? (
-                <FileValidationCard
-                  validation={hierarchyValidation}
-                  onClear={() => setHierarchyValidation(null)}
-                  disabled={isProcessing}
-                  compact
-                />
-              ) : (
-                <UploadZone
-                  onFileSelect={(file, content) => validateHierarchyFile(file, content)}
-                  disabled={isProcessing}
-                  compact
-                  label="Arraste o arquivo de hierarquia"
-                  hint="N1 . N2 . N3 . N4"
-                />
-              )}
-            </div>
-          )}
-        </div>
-      )}
+        {hierarchyOpen && (
+          <div className="mt-3">
+            {hierarchyValidation ? (
+              <FileValidationCard
+                validation={hierarchyValidation}
+                onClear={() => setHierarchyValidation(null)}
+                disabled={isProcessing}
+                compact
+              />
+            ) : (
+              <UploadZone
+                onFileSelect={(file, content) => validateHierarchyFile(file, content)}
+                disabled={isProcessing}
+                compact
+                label="Arraste o arquivo de hierarquia"
+                hint="N1 . N2 . N3 . N4"
+              />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── CTA Button ── */}
       <div className="flex justify-center pt-1">
@@ -209,14 +207,12 @@ export default function ClassifyTab({
             <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
             <path strokeLinecap="round" strokeWidth={1.5} d="M12 6v6l4 2" />
           </svg>
-          {hasProjectHierarchy && (
-            <span>Hierarquia: {n4Count} N4s</span>
-          )}
-          {!hasProjectHierarchy && hierarchyValidation?.isValid && (
-            <span>Hierarquia customizada carregada</span>
-          )}
-          {!hasProjectHierarchy && !hierarchyValidation?.isValid && (
-            <span>Taxonomia padrao UNSPSC</span>
+          {hierarchyValidation?.isValid ? (
+            <span>Hierarquia desta execução (sobrescreve projeto)</span>
+          ) : hasProjectHierarchy ? (
+            <span>Hierarquia do projeto: {n4Count} N4s</span>
+          ) : (
+            <span>Taxonomia padrão UNSPSC</span>
           )}
         </div>
       )}

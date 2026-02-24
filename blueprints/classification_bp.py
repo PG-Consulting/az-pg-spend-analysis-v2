@@ -140,11 +140,15 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
             # Project client_context takes precedence over body clientContext
             client_context = project_config.get("client_context", "") or client_context
 
-            # Resolve hierarchy from project (own > inherited > padrao)
+            # Resolve hierarchy: per-job upload always overrides project hierarchy
             resolved_hierarchy, hierarchy_source = resolve_hierarchy(project_id, models_dir)
-            # Store hierarchy as list directly in metadata (no base64 needed)
-            custom_hierarchy_list = resolved_hierarchy
-            custom_hierarchy_b64 = None  # not using b64 path for project-based jobs
+            if custom_hierarchy_b64:
+                # Per-job hierarchy uploaded: use it, ignore project's
+                custom_hierarchy_list = None
+            else:
+                # No per-job upload: fall back to project hierarchy (may be None for padrao)
+                custom_hierarchy_list = resolved_hierarchy
+                custom_hierarchy_b64 = None
         except Exception as e:
             logger.error(f"SubmitTaxonomyJob: failed to load project '{project_id}': {e}")
             return func.HttpResponse(
