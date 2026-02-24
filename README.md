@@ -5,9 +5,10 @@ Plataforma de classificação taxonômica de gastos corporativos com **loop de a
 ## Funcionalidades
 
 - **Projetos por empresa** — hierarquia Setor → Projeto, com taxonomia customizada por projeto
-- **Classificação LLM com few-shot** — exemplos da KB são selecionados automaticamente por similaridade (TF-IDF cosine)
+- **Classificação Two-Phase** — Phase 1: KB direct match (sim ≥ 0.90, sem LLM); Phase 2: LLM com exemplos enriched por similaridade (TF-IDF cosine)
+- **KB por setor e projeto** — KB do setor é referência viva mesclada automaticamente; promoção seletiva de entradas do projeto para o setor
 - **Tela de revisão humana** — aprovar, editar ou rejeitar itens; re-classificar com instrução
-- **Knowledge Base versionada** — export/import XLSX, rollback, cobertura por N4, seed entre projetos
+- **Knowledge Base versionada** — export/import XLSX, rollback, cobertura por N4, toggle `use_sector_kb` por projeto
 - **Copilot integrado** — análise conversacional desbloqueada após revisão aprovada
 - **Compatibilidade legada** — setores `varejo` e `educacional` com modelos ML continuam funcionando
 
@@ -66,16 +67,30 @@ npm run dev
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — guia de deploy no Azure
 - [`CLAUDE.md`](CLAUDE.md) — instruções para o Claude Code (desenvolvimento)
 
+## Testes
+
+```bash
+# Backend — 148 testes (pytest, ~6s)
+python3 -m pytest tests/ -v
+
+# Frontend — 23 testes (Jest + React Testing Library, ~1.5s)
+cd frontend && npx jest --verbose
+```
+
 ## Estrutura
 
 ```
-new-solution/
-├── function_app.py      # Entry point (registra blueprints)
-├── blueprints/          # Endpoints por domínio
-├── src/                 # Módulos Python
-├── models/              # Artefatos ML + KBs + jobs
+├── function_app.py      # Entry point (~33 linhas, registra blueprints)
+├── blueprints/          # 7 módulos: classification, review, knowledge, projects, models, copilot, worker
+├── src/                 # Módulos Python (16 arquivos)
+├── models/              # Artefatos ML + KBs de setor/projeto + jobs
+│   ├── sectors/         # Configs e KBs curadas por setor
+│   ├── projects/        # Configs e KBs por projeto
+│   ├── educacional/     # Modelo ML legado
+│   └── varejo/          # Modelo ML legado
+├── tests/               # 7 suites de testes backend (148 testes)
 ├── data/taxonomy/       # Dicionário Spend_Taxonomy.xlsx
-└── frontend/            # Next.js 14 + TypeScript
+└── frontend/            # Next.js 14 + TypeScript + design system
 ```
 
 ## Stack

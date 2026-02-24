@@ -4,7 +4,7 @@
 
 | Recurso | Nome |
 |---------|------|
-| Function App | `az-pg-spend-analysis-ai-agent` (ou novo para v3) |
+| Function App | `az-pg-spend-analysis-ai-agent` |
 | Resource Group | `azpgspendanalysisaiagent` |
 | Storage Account | `azpgspendanalysisaiagent` |
 | File Share | `models-data` (montado em `/mount/models`) |
@@ -70,10 +70,30 @@ az storage file list \
   --account-name azpgspendanalysisaiagent \
   --output table
 
-# Upload de um diretório
+# Upload de setores e projetos (v3)
 az storage file upload-batch \
-  --source ./models \
+  --source ./models/sectors \
   --destination models-data \
+  --destination-path sectors \
+  --account-name azpgspendanalysisaiagent
+
+az storage file upload-batch \
+  --source ./models/projects \
+  --destination models-data \
+  --destination-path projects \
+  --account-name azpgspendanalysisaiagent
+
+# Upload de modelos ML legados (se não existirem no File Share)
+az storage file upload-batch \
+  --source ./models/educacional \
+  --destination models-data \
+  --destination-path educacional \
+  --account-name azpgspendanalysisaiagent
+
+az storage file upload-batch \
+  --source ./models/varejo \
+  --destination models-data \
+  --destination-path varejo \
   --account-name azpgspendanalysisaiagent
 ```
 
@@ -178,13 +198,14 @@ azurite --location AzuriteConfig --silent
 
 - [ ] File Share `models-data` criado na Storage Account
 - [ ] Modelos ML legados (`varejo/`, `educacional/`) copiados para o File Share
+- [ ] Dados v3 (`sectors/`, `projects/`) copiados para o File Share
 - [ ] `Spend_Taxonomy.xlsx` presente em `data/taxonomy/` no pacote deploy
-- [ ] Variáveis de ambiente configuradas no Function App
+- [ ] Variáveis de ambiente configuradas no Function App (`GROK_API_KEY`, `DIRECT_LINE_SECRET`, `MODELS_DIR_PATH`)
 - [ ] Function App com timeout de 30 minutos (`host.json` já configurado)
 - [ ] CORS configurado (ou `*` para desenvolvimento)
 - [ ] Frontend: `NEXT_PUBLIC_API_URL` apontando para o backend correto
-- [ ] Testar `GET /api/ListSectors` retornando `{ "sectors": [] }`
-- [ ] Criar setor e projeto via API ou frontend
+- [ ] Testar `GET /api/ListSectors` retornando setores existentes
+- [ ] Testar `GET /api/ListProjects` retornando projetos existentes
 - [ ] Testar upload de arquivo pequeno (100 linhas) end-to-end
 
 ---
