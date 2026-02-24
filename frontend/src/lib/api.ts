@@ -275,6 +275,18 @@ export const apiClient = {
     });
   },
 
+  /** Deletes a sector. If force=true, also deletes all projects in the sector. */
+  async deleteSector(
+    sectorName: string,
+    force: boolean = false
+  ): Promise<{ success: boolean; deleted_sector: string; deleted_projects: string[] }> {
+    const { data } = await axios.delete(`${API_BASE_URL}/DeleteSector`, {
+      params: { sectorName, force: force.toString() },
+      headers: getAuthHeaders(),
+    });
+    return data;
+  },
+
   /** Returns the effective hierarchy for a project (own, inherited, or padrao). */
   async getProjectHierarchy(
     projectId: string

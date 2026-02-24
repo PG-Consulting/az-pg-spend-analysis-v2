@@ -76,6 +76,19 @@ export function useProjects() {
     return sector;
   }, []);
 
+  const deleteSector = useCallback(async (sectorName: string, force: boolean = false) => {
+    const api = await getApi();
+    const result = await api.deleteSector(sectorName, force);
+    setSectors(prev => prev.filter(s => s.name !== sectorName));
+    if (force && result.deleted_projects?.length) {
+      setProjects(prev => prev.filter(p => p.sector !== sectorName));
+      for (const pid of result.deleted_projects) {
+        await deleteProjectLocal(pid);
+      }
+    }
+    return result;
+  }, []);
+
   // Group projects by sector for display
   const projectsBySector = projects.reduce<Record<string, Project[]>>((acc, p) => {
     if (!acc[p.sector]) acc[p.sector] = [];
@@ -94,5 +107,6 @@ export function useProjects() {
     updateProject,
     deleteProject,
     createSector,
+    deleteSector,
   };
 }

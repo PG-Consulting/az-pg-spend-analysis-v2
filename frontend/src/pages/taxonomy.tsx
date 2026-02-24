@@ -169,6 +169,7 @@ const TaxonomyPage: NextPage = () => {
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [editingProject, setEditingProject] = useState<import('@/lib/types').Project | null>(null)
   const [deletingProject, setDeletingProject] = useState<import('@/lib/types').Project | null>(null)
+  const [deletingSector, setDeletingSector] = useState<import('@/lib/types').Sector | null>(null)
 
   const {
     projects,
@@ -179,6 +180,7 @@ const TaxonomyPage: NextPage = () => {
     updateProject,
     deleteProject,
     createSector,
+    deleteSector,
   } = useProjects()
 
   // ---- Session state ----
@@ -402,6 +404,7 @@ const TaxonomyPage: NextPage = () => {
               onCreateProject={() => setShowCreateProject(true)}
               onEditProject={p => setEditingProject(p)}
               onDeleteProject={p => setDeletingProject(p)}
+              onDeleteSector={s => setDeletingSector(s)}
               loading={projectsLoading}
               variant="dark"
             />
@@ -722,6 +725,45 @@ const TaxonomyPage: NextPage = () => {
           }
         }}
         onCancel={() => setDeletingProject(null)}
+      />
+
+      {/* ============================================================
+          DELETE SECTOR CONFIRM
+      ============================================================ */}
+      <ConfirmDialog
+        isOpen={deletingSector !== null}
+        title="Excluir Setor"
+        message={(() => {
+          if (!deletingSector) return ''
+          const sectorProjects = projects.filter(p => p.sector === deletingSector.name)
+          if (sectorProjects.length > 0) {
+            const names = sectorProjects.map(p => p.display_name).join(', ')
+            return `O setor "${deletingSector.display_name}" possui ${sectorProjects.length} projeto(s): ${names}. Excluir o setor e todos os seus projetos permanentemente?`
+          }
+          return `Tem certeza que deseja excluir o setor "${deletingSector.display_name}"? Esta acao nao pode ser desfeita.`
+        })()}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={async () => {
+          if (!deletingSector) return
+          try {
+            const name = deletingSector.name
+            const sectorProjects = projects.filter(p => p.sector === name)
+            const hasProjects = sectorProjects.length > 0
+            // If active project belongs to this sector, deselect it
+            if (activeProjectId && sectorProjects.some(p => p.project_id === activeProjectId)) {
+              setActiveProjectId(null)
+            }
+            await deleteSector(name, hasProjects)
+            setDeletingSector(null)
+          } catch (e) {
+            console.error('[TaxonomyPage] DeleteSector error:', e)
+            alert('Erro ao excluir setor. Tente novamente.')
+            setDeletingSector(null)
+          }
+        }}
+        onCancel={() => setDeletingSector(null)}
       />
     </>
   )

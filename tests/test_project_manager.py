@@ -9,6 +9,7 @@ from src.project_manager import (
     list_sectors,
     get_sector,
     update_sector,
+    delete_sector,
     create_project,
     list_projects,
     get_project,
@@ -296,5 +297,78 @@ class TestResolveHierarchy:
         result_hierarchy, source = resolve_hierarchy(created["project_id"], models_dir)
         assert source == "padrao"
         assert result_hierarchy is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: delete_sector
+# ---------------------------------------------------------------------------
+
+class TestDeleteSector:
+    def test_delete_sector_empty(self, models_dir):
+        """Deleting a sector with no projects succeeds."""
+        create_sector("naval", "Naval", None, models_dir)
+        result = delete_sector("naval", models_dir)
+        assert result["deleted_sector"] == "naval"
+        assert result["deleted_projects"] == []
+        # Verify directory removed
+        sector_dir = os.path.join(models_dir, "sectors", "naval")
+        assert not os.path.isdir(sector_dir)
+        # Verify no longer listed
+        assert len(list_sectors(models_dir)) == 0
+
+    def test_delete_sector_not_found(self, models_dir):
+        """Deleting a nonexistent sector returns empty dict."""
+        result = delete_sector("nonexistent", models_dir)
+        assert result == {}
+
+    def test_delete_sector_with_projects_no_force(self, models_dir):
+        """Deleting a sector with projects and force=False raises ValueError."""
+        create_sector("naval", "Naval", None, models_dir)
+        create_project({"display_name": "Projeto A", "sector": "naval"}, models_dir)
+        create_project({"display_name": "Projeto B", "sector": "naval"}, models_dir)
+
+        with pytest.raises(ValueError, match="projeto"):
+            delete_sector("naval", models_dir)
+
+        # Verify sector and projects still exist
+        assert get_sector("naval", models_dir) is not None
+        assert len(list_projects(models_dir)) == 2
+
+    def test_delete_sector_with_projects_force(self, models_dir):
+        """Deleting a sector with force=True deletes all projects and the sector."""
+        create_sector("naval", "Naval", None, models_dir)
+        p1 = create_project({"display_name": "Projeto A", "sector": "naval"}, models_dir)
+        p2 = create_project({"display_name": "Projeto B", "sector": "naval"}, models_dir)
+
+        result = delete_sector("naval", models_dir, force=True)
+        assert result["deleted_sector"] == "naval"
+        assert set(result["deleted_projects"]) == {p1["project_id"], p2["project_id"]}
+
+        # Verify everything removed
+        assert get_sector("naval", models_dir) is None
+        assert len(list_projects(models_dir)) == 0
+
+    def test_delete_sector_removes_all_files(self, models_dir):
+        """Verify that sector_config.json, knowledge_base.json, kb_versions/ are all removed."""
+        create_sector("naval", "Naval", None, models_dir)
+        sector_dir = os.path.join(models_dir, "sectors", "naval")
+
+        # Create KB and versions files to simulate a real sector
+        kb_path = os.path.join(sector_dir, "knowledge_base.json")
+        with open(kb_path, "w") as f:
+            json.dump([{"id": "test"}], f)
+        versions_dir = os.path.join(sector_dir, "kb_versions")
+        os.makedirs(versions_dir, exist_ok=True)
+        with open(os.path.join(versions_dir, "v1.json"), "w") as f:
+            json.dump([], f)
+
+        # Verify files exist before deletion
+        assert os.path.exists(kb_path)
+        assert os.path.isdir(versions_dir)
+
+        delete_sector("naval", models_dir)
+
+        # Verify all removed
+        assert not os.path.exists(sector_dir)
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import type { Project, Sector } from '../../lib/types'
 
 interface ProjectSelectProps {
@@ -9,6 +9,7 @@ interface ProjectSelectProps {
   onCreateProject: () => void
   onEditProject?: (project: Project) => void
   onDeleteProject?: (project: Project) => void
+  onDeleteSector?: (sector: Sector) => void
   loading?: boolean
   className?: string
   variant?: 'light' | 'dark' // kept for API compat
@@ -22,6 +23,7 @@ export function ProjectSelect({
   onCreateProject,
   onEditProject,
   onDeleteProject,
+  onDeleteSector,
   loading = false,
   className = '',
 }: ProjectSelectProps) {
@@ -37,12 +39,18 @@ export function ProjectSelect({
 
   const getInitial = (name: string) => name.trim().charAt(0).toUpperCase()
 
-  // Group by sector
-  const bySector = projects.reduce<Record<string, Project[]>>((acc, p) => {
-    if (!acc[p.sector]) acc[p.sector] = []
-    acc[p.sector].push(p)
-    return acc
-  }, {})
+  // Group by sector — include all sectors (even empty ones)
+  const bySector = useMemo(() => {
+    const groups: Record<string, Project[]> = {}
+    for (const s of sectors) {
+      groups[s.name] = []
+    }
+    for (const p of projects) {
+      if (!groups[p.sector]) groups[p.sector] = []
+      groups[p.sector].push(p)
+    }
+    return groups
+  }, [sectors, projects])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -143,10 +151,26 @@ export function ProjectSelect({
 
             {/* Sector groups */}
             {Object.entries(bySector).map(([sector, sectorProjects]) => (
-              <div key={sector} className="px-2 pt-3 pb-1">
-                <p className="px-2 pb-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-white/20">
-                  {getSectorDisplay(sector)}
-                </p>
+              <div key={sector} className="px-2 pt-3 pb-1 group/sector">
+                <div className="flex items-center justify-between px-2 pb-1.5">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/20">
+                    {getSectorDisplay(sector)}
+                  </p>
+                  {onDeleteSector && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onDeleteSector(sectors.find(s => s.name === sector)!); setIsOpen(false) }}
+                      title="Excluir setor"
+                      className="opacity-0 group-hover/sector:opacity-100 w-5 h-5 flex items-center justify-center rounded-md hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all"
+                    >
+                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {sectorProjects.length === 0 && (
+                  <p className="px-3 py-2 text-[11px] text-white/15 italic">Nenhum projeto</p>
+                )}
                 {sectorProjects.map(p => {
                   const isSelected = p.project_id === selectedProjectId
                   return (

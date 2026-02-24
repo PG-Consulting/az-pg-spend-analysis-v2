@@ -17,7 +17,7 @@ O v3 resolve três problemas estruturais do v2:
 ```
 function_app.py          ← entry point: cria FunctionApp + registra blueprints
     │
-    ├── blueprints/projects_bp.py        CRUD setores e projetos
+    ├── blueprints/projects_bp.py        CRUD setores e projetos (incl. DeleteSector com force)
     ├── blueprints/classification_bp.py  SubmitJob, GetStatus, GetJobResults
     ├── blueprints/review_bp.py          ReclassifyItems, ApproveClassifications
     ├── blueprints/knowledge_bp.py       KB CRUD (projeto + setor), versões, cobertura, import/export, promote (19 endpoints)
@@ -96,17 +96,15 @@ pages/taxonomy.tsx          Página principal + state machine
    │   └── process_single_chunk()
    │           ├── Carrega chunk_X.json
    │           ├── core_classification.process_dataframe_chunk()
-   │           │       [novo] Two-Phase Classification:
-   │           │         Phase 1: KB direct match (sim ≥ 0.90) → classificação sem LLM
-   │           │         Phase 2: LLM com enriched examples (matches parciais do batch)
+   │           │       [novo] KBRetriever.select_representative_examples(kb_entries, max_k=10)
+   │           │       [novo] classify_items_with_llm(few_shot_examples=global_examples)
    │           │       [legado] hybrid_classifier → llm fallback
    │           │       hierarchy_validator.validate_and_correct()
    │           └── Salva result_X.json
    └── consolidate_job() quando todos os chunks processados
            ├── Merge chunk_X.json + result_X.json (original + classificação)
            ├── Remove colunas de classificação do chunk original (evita N1.1, N2.1)
-           ├── Preenche NaN com "Não Identificado" (N1-N4)
-           ├── Source com label amigável via friendly_source_label()
+           ├── Preenche NaN com "Não Identificado" (N1-N4) e "Nenhum" (status)
            └── status → CLASSIFIED
 
 3. Revisão humana (frontend ReviewTab)
@@ -126,29 +124,16 @@ pages/taxonomy.tsx          Página principal + state machine
 
 ### Dois Caminhos de Classificação
 
-**Caminho Novo — Two-Phase Classification (projetos com KB)**
+**Caminho Novo (projetos com KB)**
 ```python
 # core_classification._llm_direct_pipeline()
-
-# PHASE 1: KB Direct Match (sem LLM)
-# Para cada item, busca match na KB mesclada (setor + projeto)
-# Se similaridade >= 0.90 e classificação completa → usa KB direto
-# Resultado: "KB (Direct Match)" / "Base de Aprendizado"
-
-# PHASE 2: LLM com Enriched Examples
-# Itens restantes vão ao Grok com exemplos enriched:
-1. KBRetriever.select_enriched_examples(kb_entries, descriptions, max_per_n4=3)
-   → Seleciona matches parciais (sim >= 0.30) relevantes ao batch (não globais)
-   → Limita 3 por N4 para garantir diversidade
-2. classify_items_with_llm(few_shot_examples=enriched_examples, client_context=...)
+1. KBRetriever.select_representative_examples(kb_entries, max_k=10)
+   → TF-IDF (1,2)-grams sobre description_norm
+   → Seleciona exemplos cobrindo mais N4s distintos (greedy)
+2. classify_items_with_llm(few_shot_examples=global_examples, client_context=...)
    → System message: hierarquia customizada + exemplos confirmados + instrução
 3. hierarchy_validator.validate_and_correct()
    → Cascata: exact → level_shift → partial_fuzzy → n4_reverse → no_match
-
-# Thresholds:
-# KB_DIRECT_MATCH_THRESHOLD = 0.90
-# KB_ENRICHED_EXAMPLE_MIN_SIM = 0.30
-# KB_ENRICHED_MAX_EXAMPLES = 20
 ```
 
 **Caminho Legado (setores com modelo ML treinado)**
@@ -188,21 +173,13 @@ Consultor edita e aprova          → source: "consultant_correction"
 Consultor rejeita + instrução     → re-classifica → aprova → source: "reclassified_with_guidance"
 ```
 
-### Few-Shot RAG (KBRetriever)
+### Few-Shot RAG
 
 ```python
 KBRetriever(kb_entries)
-  # TF-IDF (1,2)-grams sobre description_norm
-  # Criado 1x por job com KB mesclada (setor + projeto) — não recriar por chunk
-
-  # Método principal (Two-Phase):
-  .select_enriched_examples(kb_entries, descriptions, max_per_n4=3, max_examples=20)
-  # Seleciona matches parciais (sim >= 0.30) relevantes ao batch específico
-  # Limita 3 por N4 para diversidade
-
-  # Método fallback (se enriched vazio):
   .select_representative_examples(max_k=10)
-  # Greedy coverage: maximiza N4s distintos cobertos
+  # Seleciona exemplos que cobrem mais N4s distintos (greedy coverage)
+  # Retorna <= max_k exemplos balanceados por categoria
 
 # Inserido no system message do LLM:
 "EXEMPLOS CONFIRMADOS PELO CONSULTOR (use como referência):
@@ -220,23 +197,6 @@ Cada projeto tem `use_sector_kb` (default true) em `project_config.json`. Quando
 - Frontend: aba "Setor" no SlideOver mostra empty state
 
 KB do setor é SEMPRE acessível via SectorKnowledgeTab para gestão direta, independente do toggle.
-
-### Labels de Fonte (friendly_source_label)
-
-| Source interno | Label amigável |
-|----------------|---------------|
-| `KB (Direct Match)` | Base de Aprendizado |
-| `LLM (Batch)` | Grok |
-| `LLM (Reclassified)` | Grok |
-| `Taxonomy (Dict)` | Dicionário |
-| `ML` | ML |
-
-Usados nos Excels (intermediário e final) e no badge da coluna FONTE na `ReviewTable`.
-
-### Colunas dos Excels
-
-- **Excel final** (ApproveClassifications): Descricao, N1-N4, Fonte (label amigável). Sem Confianca nem Status Revisao.
-- **Excel intermediário** (consolidate_job): Descricao, N1-N4, Fonte (label amigável). Sem `status` nem `matched_terms` no caminho LLM-direto.
 
 ---
 

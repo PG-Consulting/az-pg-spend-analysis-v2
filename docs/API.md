@@ -14,14 +14,16 @@ Lista todos os setores criados.
 
 **Response 200**
 ```json
-[
-  {
-    "name": "naval",
-    "display_name": "Naval",
-    "custom_hierarchy": null,
-    "created_at": "2026-02-18T12:00:00Z"
-  }
-]
+{
+  "sectors": [
+    {
+      "name": "naval",
+      "display_name": "Naval",
+      "custom_hierarchy": null,
+      "created_at": "2026-02-18T12:00:00Z"
+    }
+  ]
+}
 ```
 
 ---
@@ -69,17 +71,18 @@ Lista todos os projetos, com opção de filtrar por setor.
 
 **Response 200**
 ```json
-[
-  {
-    "project_id": "naval-wartsila",
-    "display_name": "Naval - WÄRTSILÄ",
-    "sector": "naval",
-    "client_context": "...",
-    "hierarchy_source": "own",
-    "use_sector_kb": true,
-    "created_at": "..."
-  }
-]
+{
+  "projects": [
+    {
+      "project_id": "naval-wartsila",
+      "display_name": "Naval - WÄRTSILÄ",
+      "sector": "naval",
+      "client_context": "...",
+      "hierarchy_source": "own",
+      "created_at": "..."
+    }
+  ]
+}
 ```
 
 ---
@@ -145,6 +148,42 @@ Remove um projeto e seus artefatos.
 
 ---
 
+### `DELETE /api/DeleteSector`
+
+Remove um setor e opcionalmente todos os seus projetos.
+
+**Query params**:
+- `sectorName` (obrigatório) — nome do setor
+- `force` (opcional, default `"false"`) — se `"true"`, exclui todos os projetos do setor antes de deletá-lo
+
+**Response 200**
+```json
+{
+  "success": true,
+  "deleted_sector": "naval",
+  "deleted_projects": ["naval-wartsila", "naval-embraport"]
+}
+```
+
+**Response 400** — `sectorName` ausente
+```json
+{ "error": "sectorName is required" }
+```
+
+**Response 404** — setor não encontrado
+```json
+{ "error": "Sector not found" }
+```
+
+**Response 409** — setor tem projetos e `force=false`
+```json
+{
+  "error": "Setor 'naval' possui 2 projeto(s): naval-wartsila, naval-embraport. Use force=true para excluir o setor e todos os seus projetos."
+}
+```
+
+---
+
 ### `GET /api/GetProjectHierarchy`
 
 Retorna a hierarquia resolvida do projeto (projeto → setor → padrão).
@@ -164,7 +203,26 @@ Retorna a hierarquia resolvida do projeto (projeto → setor → padrão).
 
 `source` pode ser `"own"`, `"inherited"` ou `"padrao"`.
 
-> **Nota**: O endpoint `CheckCompatibility` foi removido. A compatibilidade entre projetos é gerida automaticamente pela KB do setor (referência viva) + promoção seletiva.
+---
+
+### `GET /api/CheckCompatibility`
+
+Verifica compatibilidade de hierarquia entre dois projetos (para seed de KB).
+
+**Query params**: `projectA`, `projectB`
+
+**Response 200**
+```json
+{
+  "status": "compatible",
+  "overlap_pct": 0.87,
+  "common_n4s": 45,
+  "total_n4s_a": 52,
+  "total_n4s_b": 50
+}
+```
+
+`status`: `"compatible"` (>80%), `"partial"` (40-80%), `"incompatible"` (<40%).
 
 ---
 

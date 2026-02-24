@@ -228,6 +228,44 @@ def delete_project(project_id: str, models_dir: str) -> bool:
     return True
 
 
+def delete_sector(name: str, models_dir: str, force: bool = False) -> dict:
+    """Delete sector directory and all contents.
+
+    If force=False and projects exist for this sector, raises ValueError.
+    If force=True, deletes all projects of the sector first, then the sector.
+
+    Returns: {"deleted_sector": name, "deleted_projects": [...]}
+    Returns empty dict if sector not found.
+    """
+    name = name.lower().strip()
+    sector_dir = os.path.join(models_dir, "sectors", name)
+    if not os.path.isdir(sector_dir):
+        logger.warning(f"Sector '{name}' not found for deletion")
+        return {}
+
+    # Find projects belonging to this sector
+    sector_projects = [p for p in list_projects(models_dir) if p.get("sector") == name]
+    deleted_project_ids = []
+
+    if sector_projects and not force:
+        project_ids = [p["project_id"] for p in sector_projects]
+        raise ValueError(
+            f"Setor '{name}' possui {len(sector_projects)} projeto(s): {', '.join(project_ids)}. "
+            f"Use force=true para excluir o setor e todos os seus projetos."
+        )
+
+    if sector_projects and force:
+        for p in sector_projects:
+            pid = p["project_id"]
+            delete_project(pid, models_dir)
+            deleted_project_ids.append(pid)
+            logger.info(f"Project '{pid}' deleted as part of sector '{name}' deletion")
+
+    shutil.rmtree(sector_dir)
+    logger.info(f"Sector '{name}' deleted")
+    return {"deleted_sector": name, "deleted_projects": deleted_project_ids}
+
+
 # ---------------------------------------------------------------------------
 # Hierarchy resolution
 # ---------------------------------------------------------------------------

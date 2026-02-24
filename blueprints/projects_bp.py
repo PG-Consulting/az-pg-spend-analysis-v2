@@ -4,7 +4,7 @@ import logging
 import azure.functions as func
 from src.utils import get_models_dir
 from src.project_manager import (
-    list_sectors, create_sector, update_sector,
+    list_sectors, create_sector, update_sector, delete_sector,
     list_projects, get_project, create_project, update_project, delete_project,
     resolve_hierarchy,
 )
@@ -65,6 +65,30 @@ def update_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
                                  status_code=200, mimetype="application/json")
     except Exception as e:
         logger.error(f"UpdateSector error: {e}", exc_info=True)
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+
+@projects_bp.route(route="DeleteSector", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
+def delete_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
+    """DELETE /api/DeleteSector?sectorName=xxx&force=false"""
+    try:
+        sector_name = req.params.get("sectorName", "").strip()
+        if not sector_name:
+            return func.HttpResponse(json.dumps({"error": "sectorName is required"}),
+                                     status_code=400, mimetype="application/json")
+        force = req.params.get("force", "false").lower() == "true"
+        models_dir = get_models_dir()
+        result = delete_sector(sector_name, models_dir, force=force)
+        if not result:
+            return func.HttpResponse(json.dumps({"error": "Sector not found"}),
+                                     status_code=404, mimetype="application/json")
+        return func.HttpResponse(json.dumps({"success": True, **result}),
+                                 status_code=200, mimetype="application/json")
+    except ValueError as e:
+        return func.HttpResponse(json.dumps({"error": str(e)}),
+                                 status_code=409, mimetype="application/json")
+    except Exception as e:
+        logger.error(f"DeleteSector error: {e}", exc_info=True)
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
 
 
