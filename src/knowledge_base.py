@@ -4,17 +4,18 @@ import json
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, List, Optional
 import io
 
 import pandas as pd
 from src.utils import get_projects_dir, get_sectors_dir
+from src.types import KBEntryDict, HierarchyEntryDict, KBCoverageDict, KBPaginatedDict
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeBase:
-    def __init__(self, entity_id: str, models_dir: str, entity_type: str = "project"):
+    def __init__(self, entity_id: str, models_dir: Optional[str], entity_type: str = "project") -> None:
         self.entity_id = entity_id
         self.project_id = entity_id  # alias for backward compatibility
         self.models_dir = models_dir
@@ -31,13 +32,13 @@ class KnowledgeBase:
         os.makedirs(self.versions_dir, exist_ok=True)
         self.entries = self._load()
 
-    def _load(self) -> list:
+    def _load(self) -> List[KBEntryDict]:
         if os.path.exists(self.kb_path):
             with open(self.kb_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return []
 
-    def save(self):
+    def save(self) -> None:
         with open(self.kb_path, "w", encoding="utf-8") as f:
             json.dump(self.entries, f, ensure_ascii=False, indent=2)
 
@@ -49,7 +50,7 @@ class KnowledgeBase:
         except Exception:
             return str(text).lower().strip()
 
-    def add_entries(self, entries: list) -> int:
+    def add_entries(self, entries: List[KBEntryDict]) -> int:
         """Add entries to KB. Each entry: {description, N1, N2, N3, N4, source, confidence, instruction_used}.
         Deduplicates by description_norm only — each unique description has exactly one
         entry in the KB. When a duplicate is found, the entry is updated only if the new
@@ -118,7 +119,7 @@ class KnowledgeBase:
             self.save()
         return added
 
-    def update_entry(self, entry_id: str, data: dict) -> bool:
+    def update_entry(self, entry_id: str, data: Dict[str, object]) -> bool:
         for i, e in enumerate(self.entries):
             if e["id"] == entry_id:
                 self.entries[i].update(data)
@@ -135,12 +136,12 @@ class KnowledgeBase:
             return True
         return False
 
-    def search(self, query: str, limit: int = 50) -> list:
+    def search(self, query: str, limit: int = 50) -> List[KBEntryDict]:
         q = query.lower().strip()
         results = [e for e in self.entries if q in e.get("description", "").lower()]
         return results[:limit]
 
-    def get_all(self, page: int = 1, page_size: int = 50, filters: Optional[dict] = None) -> dict:
+    def get_all(self, page: int = 1, page_size: int = 50, filters: Optional[Dict[str, str]] = None) -> KBPaginatedDict:
         entries = self.entries
         if filters:
             if filters.get("source"):
@@ -159,7 +160,7 @@ class KnowledgeBase:
         end = start + page_size
         return {"entries": entries[start:end], "total": total, "page": page, "pages": pages}
 
-    def get_coverage(self, hierarchy: Optional[list]) -> dict:
+    def get_coverage(self, hierarchy: Optional[List[HierarchyEntryDict]]) -> KBCoverageDict:
         if not hierarchy:
             return {"total_n4s": 0, "covered": 0, "pct": 0.0, "underserved": []}
 
@@ -210,7 +211,7 @@ class KnowledgeBase:
         self.save()
         return True
 
-    def list_versions(self) -> list:
+    def list_versions(self) -> List[Dict[str, object]]:
         versions = []
         if os.path.isdir(self.versions_dir):
             for fname in sorted(os.listdir(self.versions_dir)):
@@ -252,7 +253,7 @@ class KnowledgeBase:
             df.to_excel(writer, index=False, sheet_name="KnowledgeBase")
         return buf.getvalue()
 
-    def import_xlsx(self, file_bytes: bytes) -> dict:
+    def import_xlsx(self, file_bytes: bytes) -> Dict[str, int]:
         df = pd.read_excel(io.BytesIO(file_bytes))
         entries = []
         for _, row in df.iterrows():
@@ -300,7 +301,7 @@ class KnowledgeBase:
             )
         return self.add_entries(entries_to_add)
 
-    def promote_entries_to(self, target_kb: 'KnowledgeBase', entry_ids: list) -> int:
+    def promote_entries_to(self, target_kb: 'KnowledgeBase', entry_ids: List[str]) -> int:
         """Promote selected entries from this KB to the target KB.
 
         Filters entries by IDs, creates a snapshot on the target before adding,
@@ -329,7 +330,7 @@ class KnowledgeBase:
         return target_kb.add_entries(add_list)
 
 
-def merge_kb_entries(sector_entries: list, project_entries: list) -> list:
+def merge_kb_entries(sector_entries: List[KBEntryDict], project_entries: List[KBEntryDict]) -> List[KBEntryDict]:
     """Merge sector + project KB entries. Project overrides sector by description_norm.
 
     Uses description_norm as the merge key. Sector entries are added first,

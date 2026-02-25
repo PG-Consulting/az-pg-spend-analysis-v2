@@ -8,6 +8,8 @@ import json
 import logging
 import requests
 from typing import List, Dict, Any, Optional, Union
+
+from src.types import ClassificationResultDict, HierarchyEntryDict, KBEntryDict
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -23,7 +25,7 @@ Exemplos:
 - "Consultoria Financeira" -> N1: "Serviços Financeiros", N2: "Consultoria"
 """
 
-def _format_hierarchy_compact(custom_hierarchy) -> str:
+def _format_hierarchy_compact(custom_hierarchy: Union[Dict[str, HierarchyEntryDict], List[HierarchyEntryDict]]) -> str:
     """
     Formata hierarquia customizada em formato árvore com labels explícitos [N1]/[N2]/[N3]/[N4].
     Labels eliminam ambiguidade de nível (reduz deslocamento de ~14% para ~5%).
@@ -63,7 +65,7 @@ def _format_hierarchy_compact(custom_hierarchy) -> str:
     return "\n".join(lines)
 
 
-def get_azure_openai_config():
+def get_azure_openai_config() -> Dict[str, str]:
     """Retrieves Azure OpenAI config from environment variables."""
     return {
         "endpoint": os.getenv("GROK_API_ENDPOINT", "https://api.x.ai/v1"),
@@ -75,10 +77,10 @@ def classify_items_with_llm(
     descriptions: List[str],
     sector: str = "Padrão",
     client_context: str = "",
-    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None,
-    few_shot_examples: list = None,
-    user_instruction: str = None,
-) -> List[Dict[str, str]]:
+    custom_hierarchy: Optional[Union[Dict[str, HierarchyEntryDict], List[HierarchyEntryDict]]] = None,
+    few_shot_examples: Optional[List[KBEntryDict]] = None,
+    user_instruction: Optional[str] = None,
+) -> List[ClassificationResultDict]:
     """
     Classifies a list of item descriptions using Azure OpenAI.
 
@@ -144,7 +146,7 @@ def classify_items_with_llm(
 
     return [r if r is not None else _create_manual_fallback("Falha no mapeamento", "Falha Crítica no Processamento") for r in results]
 
-def _create_empty_result():
+def _create_empty_result() -> ClassificationResultDict:
     return {
         "N1": "Não Identificado", "N2": "Não Identificado", "N3": "Não Identificado", "N4": "Não Identificado",
         "LLM_Explanation": "LLM não configurado",
@@ -153,13 +155,13 @@ def _create_empty_result():
 
 def _call_openai_api(
     items: List[str],
-    config: Dict,
+    config: Dict[str, str],
     sector: str = "Padrão",
     client_context: str = "",
-    custom_hierarchy: Optional[Union[Dict, List[Dict]]] = None,
-    few_shot_examples: list = None,
-    user_instruction: str = None,
-) -> List[Dict]:
+    custom_hierarchy: Optional[Union[Dict[str, HierarchyEntryDict], List[HierarchyEntryDict]]] = None,
+    few_shot_examples: Optional[List[KBEntryDict]] = None,
+    user_instruction: Optional[str] = None,
+) -> List[ClassificationResultDict]:
     """Helper to call the API for a chunk of items."""
 
     # Construct the system message
@@ -381,7 +383,7 @@ def _call_openai_api(
         logging.error(f"Exception calling Azure OpenAI: {e}")
         return [_create_manual_fallback(item) for item in items]
 
-def _create_manual_fallback(item_text, reason="Erro na API"):
+def _create_manual_fallback(item_text: str, reason: str = "Erro na API") -> ClassificationResultDict:
     return {
         "N1": "Não Identificado", "N2": "Não Identificado", "N3": "Não Identificado", "N4": "Não Identificado",
         "LLM_Explanation": reason,

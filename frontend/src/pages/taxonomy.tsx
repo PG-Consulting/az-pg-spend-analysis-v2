@@ -20,12 +20,9 @@ import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ClassifyTab from '@/components/taxonomy/ClassifyTab'
 import { ReviewTab } from '@/components/taxonomy/ReviewTab'
-import { KnowledgeTab } from '@/components/taxonomy/KnowledgeTab'
-import { SectorKnowledgeTab } from '@/components/taxonomy/SectorKnowledgeTab'
+import AnalyzeTab from '@/components/taxonomy/AnalyzeTab'
+import KBPanel from '@/components/taxonomy/KBPanel'
 import { ProcessingOverlay } from '@/components/ProcessingOverlay'
-import ChatMessage, { ChatMessageLoading } from '@/components/chat/ChatMessage'
-import SuggestedPrompts from '@/components/chat/SuggestedPrompts'
-import AiAvatar from '@/components/ui/AiAvatar'
 
 // Types
 import type { ClassifiedItem, HierarchyEntry, TaxonomySession } from '@/lib/types'
@@ -488,104 +485,19 @@ const TaxonomyPage: NextPage = () => {
 
                 {/* ---- ANALYZE ---- */}
                 {activeTab === 'analyze' && stepStatuses.analyze !== 'locked' && (
-                  <div className="flex flex-col flex-1 min-h-0 max-w-4xl mx-auto w-full">
-                    {/* Compact summary header + download + close */}
-                    <div className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-5 py-3 shadow-sm mb-4 flex-shrink-0">
-                      <div className="flex items-center gap-6 text-sm">
-                        {typedSession?.reviewSummary ? (
-                          <>
-                            <span><strong className="text-[#32373c]">{typedSession.reviewSummary.total}</strong> <span className="text-primary-400">total</span></span>
-                            <span><strong className="text-mint-500">{typedSession.reviewSummary.approved}</strong> <span className="text-primary-400">aprovados</span></span>
-                            <span><strong className="text-accent-500">{typedSession.reviewSummary.edited}</strong> <span className="text-primary-400">editados</span></span>
-                            <span><strong className="text-accent-500">{typedSession.reviewSummary.kb_added}</strong> <span className="text-primary-400">na base</span></span>
-                          </>
-                        ) : (
-                          <span className="text-primary-400">Analise Conversacional</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {typedSession?.approvedFileContentBase64 && typedSession.approvedDownloadFilename && (
-                          <button
-                            onClick={() => {
-                              const base64 = typedSession.approvedFileContentBase64!
-                              const bytes = atob(base64)
-                              const arr = new Uint8Array(bytes.length)
-                              for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
-                              const blob = new Blob([arr], {
-                                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                              })
-                              const url = URL.createObjectURL(blob)
-                              const a = document.createElement('a')
-                              a.href = url
-                              a.download = typedSession.approvedDownloadFilename!
-                              a.click()
-                              URL.revokeObjectURL(url)
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-mint-500 text-white rounded-xl hover:bg-mint-600 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            Baixar Excel
-                          </button>
-                        )}
-                        <button
-                          onClick={() => { setActiveSessionId(null); setActiveTab('classify') }}
-                          title="Fechar analise"
-                          className="w-8 h-8 flex items-center justify-center rounded-lg text-primary-400 hover:text-[#32373c] hover:bg-gray-100 transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Chat messages — fills remaining space */}
-                    <div
-                      ref={chatContainerRef}
-                      className="bg-white rounded-xl border border-gray-100 shadow-sm flex-1 min-h-0 overflow-y-auto p-6"
-                    >
-                      {copilotMessages.length === 0 && !isCopilotLoading && (
-                        <div className="flex flex-col items-center justify-center h-full py-12">
-                          <AiAvatar size="lg" pulse className="mb-4" />
-                          <p className="text-sm text-primary-400 mb-6">Faca perguntas sobre os dados classificados e revisados.</p>
-                          <SuggestedPrompts onSelect={(prompt) => { setUserMessage(prompt); sendUserMessage(prompt); }} />
-                        </div>
-                      )}
-
-                      {copilotMessages.map((msg, i) => (
-                        <ChatMessage key={i} message={msg} />
-                      ))}
-
-                      {(isCopilotLoading || isSending) && <ChatMessageLoading />}
-                    </div>
-
-                    {/* Chat input — sticky bottom */}
-                    <form
-                      onSubmit={e => {
-                        e.preventDefault()
-                        if (userMessage.trim()) sendUserMessage(userMessage.trim())
-                      }}
-                      className="flex gap-2 mt-4 flex-shrink-0"
-                    >
-                      <input
-                        type="text"
-                        value={userMessage}
-                        onChange={e => setUserMessage(e.target.value)}
-                        placeholder="Pergunte sobre os dados classificados..."
-                        className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/25 focus:border-accent-500 transition-all bg-white"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isCopilotLoading || isSending || !userMessage.trim()}
-                        className="px-5 py-2.5 bg-accent-500 text-white rounded-xl text-sm font-medium hover:bg-accent-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Enviar
-                      </button>
-                    </form>
-                  </div>
+                  <AnalyzeTab
+                    reviewSummary={typedSession?.reviewSummary ?? null}
+                    approvedFileContentBase64={typedSession?.approvedFileContentBase64}
+                    approvedDownloadFilename={typedSession?.approvedDownloadFilename}
+                    copilotMessages={copilotMessages}
+                    isCopilotLoading={isCopilotLoading}
+                    isSending={isSending}
+                    userMessage={userMessage}
+                    onSetUserMessage={setUserMessage}
+                    onSendMessage={sendUserMessage}
+                    onClose={() => { setActiveSessionId(null); setActiveTab('classify') }}
+                    chatContainerRef={chatContainerRef}
+                  />
                 )}
 
               </div>
@@ -607,57 +519,15 @@ const TaxonomyPage: NextPage = () => {
         resizable
         storageKey="kb-panel"
       >
-        <div className="flex flex-col h-full">
-          {/* Sub-tabs: Projeto / Setor */}
-          <div className="px-6 pt-3 pb-0 flex-shrink-0">
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
-              <button
-                onClick={() => setKbTab('project')}
-                className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  kbTab === 'project'
-                    ? 'bg-white text-[#0693e3] shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Projeto
-              </button>
-              <button
-                onClick={() => setKbTab('sector')}
-                className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  kbTab === 'sector'
-                    ? 'bg-white text-[#0693e3] shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Setor{activeProject?.sector ? ` (${sectors.find(s => s.name === activeProject.sector)?.display_name || activeProject.sector})` : ''}
-              </button>
-            </div>
-          </div>
-
-          {/* Tab content */}
-          <div className="flex-1 min-h-0">
-            {kbTab === 'project' ? (
-              <KnowledgeTab
-                projectId={activeProjectId}
-                projectHierarchy={projectHierarchy}
-                sectorName={activeProject?.sector ?? null}
-                useSectorKb={activeProject?.use_sector_kb ?? true}
-              />
-            ) : (activeProject?.use_sector_kb ?? true) ? (
-              <SectorKnowledgeTab
-                sectorName={activeProject?.sector ?? null}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <svg className="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-                <p className="text-sm font-medium text-gray-500">Base do setor desabilitada para este projeto</p>
-                <p className="text-xs text-gray-400 mt-1">Ative em Editar Projeto para usar a KB compartilhada do setor.</p>
-              </div>
-            )}
-          </div>
-        </div>
+        <KBPanel
+          kbTab={kbTab}
+          onKbTabChange={setKbTab}
+          projectId={activeProjectId}
+          projectHierarchy={projectHierarchy}
+          sectorName={activeProject?.sector ?? null}
+          sectorDisplayName={activeProject?.sector ? (sectors.find(s => s.name === activeProject.sector)?.display_name || activeProject.sector) : null}
+          useSectorKb={activeProject?.use_sector_kb ?? true}
+        />
       </SlideOver>
 
       {/* ============================================================

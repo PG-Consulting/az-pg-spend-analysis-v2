@@ -6,12 +6,13 @@ and classify item descriptions into N4 subcategories based on keyword matching.
 """
 
 import re
-import unicodedata
 from collections import Counter
 from functools import lru_cache
 from typing import List, Dict, Any, Tuple
 
 import pandas as pd
+
+from src.preprocessing import normalize_text
 
 # ================================
 # CONFIGURATION CONSTANTS
@@ -33,20 +34,6 @@ COL_DESC_CANDIDATES_DEFAULT = [
     "Texto Longo"
 ]
 
-# Common abbreviations found in procurement data.
-# Expanded during text normalization to improve matching accuracy.
-ABBREVIATIONS = {
-    "etiq": "etiqueta",  # Label/tag abbreviation
-}
-
-# Noise words (prepositions, articles) removed during normalization.
-# These words don't contribute to classification and can cause false matches.
-NOISE_WORDS = {
-    "para", "com", "de", "do", "da",  # Prepositions
-    "em", "no", "na",                  # More prepositions
-    "a", "o", "as", "os",              # Articles
-}
-
 # Analytics configuration
 PARETO_CLASS_A_THRESHOLD = 0.80  # 80% threshold for Pareto Class A
 PARETO_CLASS_B_THRESHOLD = 0.95  # 95% threshold for Pareto Class B
@@ -57,63 +44,8 @@ TOP_AMBIGUITY_COUNT = 20         # Number of top ambiguous combinations to retur
 
 
 # ================================
-# NORMALIZATION / HELPERS
+# HELPERS
 # ================================
-
-def normalize_text(s: str) -> str:
-    """
-    Normalize text for comparison.
-
-    Performs the following operations:
-      - Converts to lowercase.
-      - Removes accents (using NFD normalization + Mn category filtering).
-      - Removes punctuation (keeps letters, numbers, spaces, hyphens).
-      - Replaces hyphens with spaces.
-      - Compacts multiple spaces into one.
-
-    Args:
-        s (str): The input string.
-
-    Returns:
-        str: The normalized string.
-    """
-    if not isinstance(s, str):
-        return ""
-    
-    s = s.lower()
-    
-    # Remove accents (NFD + Mn filter)
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    
-    # Remove everything that is not a letter, number, space, or hyphen
-    s = re.sub(r"[^\w\s\-]", " ", s, flags=re.UNICODE)
-    
-    # Hyphen becomes a separator (space)
-    s = s.replace("-", " ")
-    
-    # Compact spaces
-    s = re.sub(r"\s+", " ", s).strip()
-    
-    # Expand abbreviations and remove noise words
-    words = s.split()
-    new_words = []
-    for w in words:
-        # Expand abbreviation if exists
-        w = ABBREVIATIONS.get(w, w)
-        
-        # Skip noise words (only if they are not the only word, to be safe, 
-        # though usually we want to remove them even if alone? 
-        # Let's remove them unconditionally as they are connectors)
-        if w in NOISE_WORDS:
-            continue
-            
-        new_words.append(w)
-    
-    s = " ".join(new_words)
-    
-    return s
-
 
 def split_terms(cell_value: Any) -> List[str]:
     """

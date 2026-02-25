@@ -1,9 +1,11 @@
 """TF-IDF cosine similarity retriever for few-shot examples from Knowledge Base."""
 import logging
-from typing import Optional
+from typing import List, Optional
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+from src.types import KBEntryDict
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +13,7 @@ logger = logging.getLogger(__name__)
 class KBRetriever:
     """Retrieves similar KB entries using TF-IDF cosine similarity for few-shot prompting."""
 
-    def __init__(self, kb_entries: list):
+    def __init__(self, kb_entries: List[KBEntryDict]) -> None:
         """
         Args:
             kb_entries: List of KB entry dicts with 'description_norm' field.
@@ -48,7 +50,7 @@ class KBRetriever:
         except Exception:
             return str(text).lower().strip()
 
-    def retrieve(self, description: str, top_k: int = 5) -> list:
+    def retrieve(self, description: str, top_k: int = 5) -> List[KBEntryDict]:
         """Retrieve top-K similar KB entries for a given description."""
         if not self.vectorizer or self.matrix is None or len(self.entries) == 0:
             return []
@@ -70,7 +72,7 @@ class KBRetriever:
             logger.warning(f"KBRetriever.retrieve failed: {e}")
             return []
 
-    def retrieve_batch(self, descriptions: list, top_k: int = 5) -> list:
+    def retrieve_batch(self, descriptions: List[str], top_k: int = 5) -> List[List[KBEntryDict]]:
         """Efficient batch retrieval - one TF-IDF transform for all descriptions."""
         if not self.vectorizer or self.matrix is None or len(self.entries) == 0:
             return [[] for _ in descriptions]
@@ -96,7 +98,7 @@ class KBRetriever:
             return [[] for _ in descriptions]
 
     @staticmethod
-    def select_representative_examples(kb_entries: list, max_k: int = 10) -> list:
+    def select_representative_examples(kb_entries: List[KBEntryDict], max_k: int = 10) -> List[KBEntryDict]:
         """Select diverse representative examples from KB for global few-shot prompting.
         Picks the highest-confidence entries, distributed across N4 categories."""
         if not kb_entries:
@@ -118,7 +120,7 @@ class KBRetriever:
         return candidates[:max_k]
 
     @staticmethod
-    def select_enriched_examples(batch_retrieve_results: list, max_examples: int = 20) -> list:
+    def select_enriched_examples(batch_retrieve_results: List[List[KBEntryDict]], max_examples: int = 20) -> List[KBEntryDict]:
         """Select enriched examples from per-item retrieval results for a batch.
 
         Aggregates all matches from all items, deduplicates by description_norm,

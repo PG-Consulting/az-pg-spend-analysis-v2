@@ -119,10 +119,10 @@ export async function saveSession(session: TaxonomySession): Promise<void> {
     const db = await getDB();
     // Ensure required review fields are always present
     const toSave: TaxonomySession = {
-      reviewState: 'pending',
-      reviewedCount: 0,
-      totalItems: 0,
       ...session,
+      reviewState: session.reviewState ?? 'pending',
+      reviewedCount: session.reviewedCount ?? 0,
+      totalItems: session.totalItems ?? 0,
     };
     await db.put('sessions', toSave);
   } catch (error) {

@@ -7,7 +7,11 @@ Supports two paths:
    Phase 2: LLM with enriched per-batch KB examples -> hierarchy validation
 """
 import logging
-from typing import Optional
+from typing import List, Optional
+
+import pandas as pd
+
+from src.types import KBEntryDict, ClassificationResultDict, HierarchyEntryDict
 
 logger = logging.getLogger(__name__)
 
@@ -18,19 +22,19 @@ KB_ENRICHED_MAX_EXAMPLES = 20       # Max enriched examples per LLM batch
 
 
 def process_dataframe_chunk(
-    df_chunk,
+    df_chunk: pd.DataFrame,
     desc_column: str,
     sector: str = "Padrão",
-    models_dir: str = None,
-    custom_hierarchy=None,
+    models_dir: Optional[str] = None,
+    custom_hierarchy: Optional[List[HierarchyEntryDict]] = None,
     client_context: str = "",
-    few_shot_examples: list = None,
-    hierarchy_lookup=None,
+    few_shot_examples: Optional[List[KBEntryDict]] = None,
+    hierarchy_lookup: Optional[object] = None,
     use_legacy_ml: bool = False,
-    project_id: str = None,
-    user_instruction: str = None,
-    kb_retriever=None,
-) -> list:
+    project_id: Optional[str] = None,
+    user_instruction: Optional[str] = None,
+    kb_retriever: Optional[object] = None,
+) -> List[ClassificationResultDict]:
     """
     Classify a DataFrame chunk.
 
@@ -58,15 +62,15 @@ def process_dataframe_chunk(
 
 
 def _llm_direct_pipeline(
-    descriptions: list,
+    descriptions: List[str],
     sector: str,
     client_context: str,
-    custom_hierarchy,
-    few_shot_examples: list,
-    hierarchy_lookup,
-    user_instruction: str = None,
-    kb_retriever=None,
-) -> list:
+    custom_hierarchy: Optional[List[HierarchyEntryDict]],
+    few_shot_examples: Optional[List[KBEntryDict]],
+    hierarchy_lookup: Optional[object],
+    user_instruction: Optional[str] = None,
+    kb_retriever: Optional[object] = None,
+) -> List[ClassificationResultDict]:
     """Two-Phase LLM-direct path:
 
     Phase 1: KB direct match — items with similarity >= KB_DIRECT_MATCH_THRESHOLD
@@ -180,7 +184,14 @@ def _llm_direct_pipeline(
     return results
 
 
-def _legacy_ml_pipeline(df_chunk, sector: str, desc_column: str, models_dir: str, custom_hierarchy, hierarchy_lookup) -> list:
+def _legacy_ml_pipeline(
+    df_chunk: pd.DataFrame,
+    sector: str,
+    desc_column: str,
+    models_dir: Optional[str],
+    custom_hierarchy: Optional[List[HierarchyEntryDict]],
+    hierarchy_lookup: Optional[object],
+) -> List[ClassificationResultDict]:
     """Legacy path: Hybrid ML+Dictionary+LLM pipeline (from v2)."""
     # Import hybrid classifier (v2 compatible)
     try:

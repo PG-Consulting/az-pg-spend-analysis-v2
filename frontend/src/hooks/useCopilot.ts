@@ -184,7 +184,7 @@ export function useCopilot({ activeSession, reviewCompleted = false }: UseCopilo
                 attempts++
 
                 try {
-                    const activityData = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
+                    const activityData: any = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
 
                     const botMsgs = activityData.activities?.filter((a: any) =>
                         (a.from?.id !== 'user' && a.from.name !== 'user') &&
@@ -238,7 +238,7 @@ export function useCopilot({ activeSession, reviewCompleted = false }: UseCopilo
                 attempts++
 
                 try {
-                    const activityData = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
+                    const activityData: any = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
 
                     const botMsgs = activityData.activities?.filter((a: any) =>
                         (a.from?.id !== 'user' && a.from.name !== 'user') &&
@@ -297,7 +297,7 @@ ${userMsg}`
                 attempts++
 
                 try {
-                    const activityData = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
+                    const activityData: any = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
 
                     const botMsgs = activityData.activities?.filter((a: any) =>
                         (a.from?.id !== 'user' && a.from.name !== 'user') &&
@@ -479,7 +479,7 @@ ${JSON.stringify(contextData, null, 2)}
                 console.log(`[COPILOT] Polling summary attempt ${attempts}/${maxAttempts}...`);
 
                 try {
-                    const activityData = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
+                    const activityData: any = await apiClient.getMessagesFromCopilot(tempConversationId, tempToken)
 
                     const botMsgs = activityData.activities?.filter((a: any) =>
                         (a.from?.id !== 'user' && a.from.name !== 'user') &&

@@ -21,6 +21,9 @@ import glob as glob_mod
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from typing import Dict, List, Optional, Set
+
+from src.types import HierarchyEntryDict, JobInfoDict, KBEntryDict
 from src.utils import get_jobs_dir, get_models_dir, friendly_source_label
 from src.project_manager import get_project, resolve_hierarchy
 
@@ -72,7 +75,7 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
 # get_active_jobs
 # ---------------------------------------------------------------------------
 
-def get_active_jobs(jobs_root: str) -> list:
+def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
     """
     Collect active jobs (PENDING/PROCESSING), transition PENDING -> PROCESSING,
     parse custom_hierarchy ONCE per job, and load the project KB for few-shot retrieval.
@@ -152,7 +155,7 @@ def get_active_jobs(jobs_root: str) -> list:
 # find_next_chunks
 # ---------------------------------------------------------------------------
 
-def find_next_chunks(job_info: dict, max_count: int = 1, exclude: set = None) -> list:
+def find_next_chunks(job_info: JobInfoDict, max_count: int = 1, exclude: Optional[Set[int]] = None) -> List[int]:
     """Return up to max_count unprocessed chunk indices (excluding already-assigned ones)."""
     if exclude is None:
         exclude = set()
@@ -174,7 +177,7 @@ def find_next_chunks(job_info: dict, max_count: int = 1, exclude: set = None) ->
 # parse_custom_hierarchy
 # ---------------------------------------------------------------------------
 
-def parse_custom_hierarchy(status: dict):
+def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[HierarchyEntryDict]]:
     """
     Decode custom_hierarchy_b64 from job status, if present.
     Robust: detects the header row (N1,N2,N3,N4) even if there are blank rows above it.
@@ -236,7 +239,7 @@ def parse_custom_hierarchy(status: dict):
 # process_single_chunk
 # ---------------------------------------------------------------------------
 
-def process_single_chunk(job_info: dict, chunk_index: int) -> None:
+def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
     """
     Process a single chunk of a job and save the result.
     Does NOT update status.json (caller must call update_job_progress after a parallel batch).
@@ -253,8 +256,9 @@ def process_single_chunk(job_info: dict, chunk_index: int) -> None:
     chunk_file = os.path.join(job_dir, f"chunk_{chunk_index}.json")
     result_file = os.path.join(job_dir, f"result_{chunk_index}.json")
 
-    logger.info(f"[Worker] Processing Job {job_id} - Chunk {chunk_index}/{total_chunks}")
+    logger.info(f"[Worker] job={job_id} chunk={chunk_index}/{total_chunks} — start")
 
+    chunk_start = time.time()
     df_chunk = pd.read_json(chunk_file, orient="records")
 
     # Use hierarchy already parsed in get_active_jobs (avoids re-decoding base64+Excel per chunk)
@@ -269,6 +273,7 @@ def process_single_chunk(job_info: dict, chunk_index: int) -> None:
     desc_col = status.get("desc_column", "Descricao")
     models_dir = get_models_dir()
 
+    llm_start = time.time()
     results = process_dataframe_chunk(
         df_chunk,
         desc_column=desc_col,
@@ -282,16 +287,23 @@ def process_single_chunk(job_info: dict, chunk_index: int) -> None:
         project_id=project_id,
         kb_retriever=kb_retriever,
     )
+    llm_duration = time.time() - llm_start
 
     with open(result_file, "w") as rf:
         json.dump(results, rf)
+
+    chunk_duration = time.time() - chunk_start
+    logger.info(
+        f"[Worker] job={job_id} chunk={chunk_index}/{total_chunks} — done "
+        f"({len(results)} items, classify={llm_duration:.1f}s, total={chunk_duration:.1f}s)"
+    )
 
 
 # ---------------------------------------------------------------------------
 # update_job_progress  (internal helper, kept public for clarity)
 # ---------------------------------------------------------------------------
 
-def update_job_progress(job_info: dict) -> None:
+def update_job_progress(job_info: JobInfoDict) -> None:
     """Update processed_chunks count in status.json.
 
     Called from the main thread after each chunk completes (via as_completed loop).
@@ -312,7 +324,7 @@ def update_job_progress(job_info: dict) -> None:
 # consolidate_job
 # ---------------------------------------------------------------------------
 
-def consolidate_job(job_info: dict) -> None:
+def consolidate_job(job_info: JobInfoDict) -> None:
     """
     Consolidate results from all chunks into a final Excel file and mark as CLASSIFIED.
     Status is set to "CLASSIFIED" (not "COMPLETED") because human review must happen first.
@@ -326,7 +338,8 @@ def consolidate_job(job_info: dict) -> None:
     total_chunks = job_info["total_chunks"]
     status_path = job_info["status_path"]
 
-    logger.info(f"[Worker] Job {job_id} completed all chunks. Consolidating...")
+    consolidate_start = time.time()
+    logger.info(f"[Worker] job={job_id} — consolidating {total_chunks} chunks")
 
     # Accumulate classification results
     results_accumulated = []
@@ -427,7 +440,11 @@ def consolidate_job(job_info: dict) -> None:
         except OSError:
             pass
 
-    logger.info(f"[Worker] Job {job_id} consolidated and marked as CLASSIFIED.")
+    consolidate_duration = time.time() - consolidate_start
+    logger.info(
+        f"[Worker] job={job_id} — CLASSIFIED "
+        f"({len(results_accumulated)} items, consolidate={consolidate_duration:.1f}s)"
+    )
 
 
 # ---------------------------------------------------------------------------

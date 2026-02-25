@@ -28,7 +28,7 @@ export default function DownloadCard({ fileContentBase64, downloadFilename }: Do
                 byteArrays.push(byteNumbers);
             }
 
-            const blob = new Blob(byteArrays, {
+            const blob = new Blob(byteArrays as BlobPart[], {
                 type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
 

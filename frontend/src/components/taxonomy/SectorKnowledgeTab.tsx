@@ -85,7 +85,7 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
     setIsDeleting(true);
     try {
       const api = await getApi();
-      for (const entryId of selectedEntries) {
+      for (const entryId of Array.from(selectedEntries)) {
         await api.deleteSectorKBEntry(sectorName, entryId);
       }
       setSelectedEntries(new Set());

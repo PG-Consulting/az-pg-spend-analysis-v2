@@ -153,7 +153,7 @@ export interface KBVersion {
 
 // ==================== JOB STATUS ====================
 
-export type JobStatus = 'PENDING' | 'PROCESSING' | 'CLASSIFIED' | 'COMPLETED' | 'ERROR';
+export type JobStatus = 'PENDING' | 'PROCESSING' | 'CLASSIFIED' | 'COMPLETED' | 'ERROR' | 'CANCELLED';
 
 export interface JobStatusResponse {
   jobId: string;
