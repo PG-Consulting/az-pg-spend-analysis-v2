@@ -179,12 +179,30 @@ def find_next_chunks(job_info: JobInfoDict, max_count: int = 1, exclude: Optiona
 
 def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[HierarchyEntryDict]]:
     """
-    Decode custom_hierarchy_b64 from job status, if present.
-    Robust: detects the header row (N1,N2,N3,N4) even if there are blank rows above it.
+    Resolve the custom hierarchy from job status.
+
+    Priority:
+      1. custom_hierarchy_b64 (per-job Excel upload — always overrides)
+      2. custom_hierarchy_list (from project config — already parsed as list of dicts)
+      3. None (open classification, no hierarchy constraint)
+
+    For b64 path: robust header detection (N1,N2,N3,N4) even with blank rows above.
     Returns a list of dicts (preserves duplicate N4 names across different N3 branches).
     """
     import pandas as pd
 
+    # Path 2: project-based hierarchy already stored as list of dicts
+    hierarchy_list = status.get("custom_hierarchy_list")
+    if hierarchy_list and isinstance(hierarchy_list, list) and len(hierarchy_list) > 0:
+        logger.info(
+            f"Custom hierarchy from project config: {len(hierarchy_list)} entries "
+            "(list format, preserves duplicates)"
+        )
+        return hierarchy_list
+
+    # Path 1: per-job Excel upload (base64-encoded) — checked second because
+    # SubmitTaxonomyJob already sets custom_hierarchy_list=None when b64 is present,
+    # so if we reach here with b64, it means per-job upload was the intended source.
     if not status.get("custom_hierarchy_b64"):
         return None
     try:
