@@ -268,7 +268,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
             </div>
             <div className="max-h-48 overflow-y-auto">
               {versions.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-6">Nenhuma versao salva ainda.</p>
+                <p className="text-xs text-gray-400 text-center py-6">Nenhuma versão salva ainda.</p>
               ) : (
                 <div className="divide-y divide-gray-50">
                   {versions.map(v => (

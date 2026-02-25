@@ -134,12 +134,12 @@ export function KnowledgeTable({
                       />
                     </th>
                   )}
-                  <th className="text-left px-3 py-2.5 font-medium text-gray-500" style={{ width: '30%' }}>Descricao</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-gray-500" style={{ width: '30%' }}>Descrição</th>
                   <th className="text-left px-2 py-2.5 font-medium text-gray-500" style={{ width: '13%' }}>N1</th>
                   <th className="text-left px-2 py-2.5 font-medium text-gray-500" style={{ width: '15%' }}>N2</th>
                   <th className="text-left px-2 py-2.5 font-medium text-gray-500" style={{ width: '15%' }}>N3</th>
                   <th className="text-left px-2 py-2.5 font-medium text-gray-500" style={{ width: '15%' }}>N4</th>
-                  <th className="text-center px-2 py-2.5 font-medium text-gray-500" style={{ width: 72 }}>Acoes</th>
+                  <th className="text-center px-2 py-2.5 font-medium text-gray-500" style={{ width: 72 }}>Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">

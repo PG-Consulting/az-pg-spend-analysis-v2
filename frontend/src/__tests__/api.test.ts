@@ -129,7 +129,7 @@ describe('apiClient', () => {
             N4: 'Parafuso Sextavado',
             confidence: 0.92,
             source: 'LLM',
-            status: 'Unico',
+            status: 'Único',
           },
         ],
         total: 1,

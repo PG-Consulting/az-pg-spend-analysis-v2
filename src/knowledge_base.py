@@ -236,15 +236,15 @@ class KnowledgeBase:
         for e in self.entries:
             rows.append(
                 {
-                    "Descricao": e.get("description", ""),
+                    "Descrição": e.get("description", ""),
                     "N1": e.get("N1", ""),
                     "N2": e.get("N2", ""),
                     "N3": e.get("N3", ""),
                     "N4": e.get("N4", ""),
                     "Fonte": e.get("source", ""),
-                    "Confianca": e.get("confidence", ""),
+                    "Confiança": e.get("confidence", ""),
                     "Data": e.get("date_added", ""),
-                    "Instrucao": e.get("instruction_used", ""),
+                    "Instrução": e.get("instruction_used", ""),
                 }
             )
         df = pd.DataFrame(rows)
@@ -259,14 +259,14 @@ class KnowledgeBase:
         for _, row in df.iterrows():
             entries.append(
                 {
-                    "description": str(row.get("Descricao", row.get("description", ""))),
+                    "description": str(row.get("Descrição", row.get("Descricao", row.get("description", "")))),
                     "N1": str(row.get("N1", "")),
                     "N2": str(row.get("N2", "")),
                     "N3": str(row.get("N3", "")),
                     "N4": str(row.get("N4", "")),
                     "source": str(row.get("Fonte", row.get("source", "consultant_correction"))),
-                    "confidence": float(row.get("Confianca", row.get("confidence", 1.0))),
-                    "instruction_used": row.get("Instrucao", row.get("instruction_used")),
+                    "confidence": float(row.get("Confiança", row.get("Confianca", row.get("confidence", 1.0)))),
+                    "instruction_used": row.get("Instrução", row.get("Instrucao", row.get("instruction_used"))),
                 }
             )
         added = self.add_entries(entries)

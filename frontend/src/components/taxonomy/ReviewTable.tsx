@@ -4,7 +4,7 @@ import type { ClassifiedItem, ReviewItemState } from '../../lib/types';
 function getSourceLabel(source: string): string {
   if (source === 'KB (Direct Match)') return 'Base de Aprendizado';
   if (source.startsWith('LLM')) return 'Grok';
-  if (source === 'Taxonomy (Dict)') return 'Dicionario';
+  if (source === 'Taxonomy (Dict)') return 'Dicionário';
   if (source === 'ML') return 'ML';
   return source || '--';
 }
@@ -111,10 +111,10 @@ export function ReviewTable({
           />
         </div>
         <div className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center pl-2">
-          Descricao
+          Descrição
         </div>
         <div className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center">
-          Classificacao
+          Classificação
         </div>
         <div className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center justify-center">
           Status

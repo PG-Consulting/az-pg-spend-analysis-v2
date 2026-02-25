@@ -6,7 +6,7 @@ import { Badge, ConfidenceBadge } from '../ui/Badge';
 function getSourceLabel(source: string): string {
   if (source === 'KB (Direct Match)') return 'Base de Aprendizado';
   if (source.startsWith('LLM')) return 'Grok';
-  if (source === 'Taxonomy (Dict)') return 'Dicionario';
+  if (source === 'Taxonomy (Dict)') return 'Dicionário';
   if (source === 'ML') return 'ML';
   return source || '--';
 }
@@ -184,7 +184,7 @@ export function ItemDetailPanel({
       <div className="p-5 space-y-5 animate-fade-in" key={item.index}>
         {/* Description */}
         <div>
-          <p className="text-[11px] font-medium text-primary-400 uppercase tracking-wider mb-1.5">Descricao</p>
+          <p className="text-[11px] font-medium text-primary-400 uppercase tracking-wider mb-1.5">Descrição</p>
           <p className="text-sm text-[#32373c] font-medium leading-relaxed">{item.description}</p>
         </div>
 
@@ -213,7 +213,7 @@ export function ItemDetailPanel({
 
         {/* N1-N4 Cascading Dropdowns */}
         <div className="space-y-3">
-          <p className="text-[11px] font-medium text-primary-400 uppercase tracking-wider">Classificacao</p>
+          <p className="text-[11px] font-medium text-primary-400 uppercase tracking-wider">Classificação</p>
           {renderField('N1', n1, handleN1Change, n1Options)}
           {renderField('N2', n2, handleN2Change, n2Options)}
           {renderField('N3', n3, handleN3Change, n3Options)}

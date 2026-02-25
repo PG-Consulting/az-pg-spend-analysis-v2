@@ -43,15 +43,15 @@ export default function ClassifyTab({
         c.includes('sku') || c.includes('codigo') || c.includes('code')
       )
       const checks: ValidationCheck[] = [
-        { label: 'Coluna "Descricao" encontrada', status: hasDesc ? 'ok' : 'error', message: hasDesc ? 'Encontrada' : 'Nao encontrada' },
-        { label: 'Quantidade de Itens', status: data.length > 0 ? 'ok' : 'error', message: `${data.length.toLocaleString('pt-BR')} linhas validas` },
-        { label: 'Coluna SKU', status: hasSku ? 'ok' : 'warning', message: hasSku ? 'Encontrada' : 'Nao encontrada (opcional)' },
+        { label: 'Coluna "Descrição" encontrada', status: hasDesc ? 'ok' : 'error', message: hasDesc ? 'Encontrada' : 'Não encontrada' },
+        { label: 'Quantidade de Itens', status: data.length > 0 ? 'ok' : 'error', message: `${data.length.toLocaleString('pt-BR')} linhas válidas` },
+        { label: 'Coluna SKU', status: hasSku ? 'ok' : 'warning', message: hasSku ? 'Encontrada' : 'Não encontrada (opcional)' },
       ]
       setBaseValidation({ file, content, isValid: hasDesc && data.length > 0, checks, previewData: data.slice(0, 3) })
     } catch {
       setBaseValidation({
         file, content, isValid: false,
-        checks: [{ label: 'Erro', status: 'error', message: 'Nao foi possivel ler o arquivo' }],
+        checks: [{ label: 'Erro', status: 'error', message: 'Não foi possível ler o arquivo' }],
         previewData: [],
       })
     }
@@ -70,13 +70,13 @@ export default function ClassifyTab({
       const uniqueN4s = n4Col ? new Set(data.map(r => r[n4Col]).filter(Boolean)).size : 0
       const checks: ValidationCheck[] = [
         { label: 'Colunas N1-N4', status: missing.length === 0 ? 'ok' : 'error', message: missing.length === 0 ? 'Todas presentes' : `Faltando: ${missing.join(', ')}` },
-        { label: 'Categorias N4', status: uniqueN4s > 0 ? 'ok' : 'warning', message: `${uniqueN4s} categorias unicas` },
+        { label: 'Categorias N4', status: uniqueN4s > 0 ? 'ok' : 'warning', message: `${uniqueN4s} categorias únicas` },
       ]
       setHierarchyValidation({ file, content, isValid: missing.length === 0, checks, previewData: data.slice(0, 3) })
     } catch {
       setHierarchyValidation({
         file, content, isValid: false,
-        checks: [{ label: 'Erro', status: 'error', message: 'Nao foi possivel ler o arquivo' }],
+        checks: [{ label: 'Erro', status: 'error', message: 'Não foi possível ler o arquivo' }],
         previewData: [],
       })
     }

@@ -189,7 +189,7 @@ def TrainModel(req: func.HttpRequest) -> func.HttpResponse:
     df["Descricao_Normalizada"] = df["Item_Description"].map(normalize_text)
 
     df_new = df[
-        df["N4"].notna() & (df["N4"] != "") & (df["N4"] != "Nenhum") & (df["N4"] != "Ambiguo")
+        df["N4"].notna() & (df["N4"] != "") & (df["N4"] != "Nenhum") & (df["N4"] != "Ambíguo")
     ].copy()
 
     if len(df_new) < 1:

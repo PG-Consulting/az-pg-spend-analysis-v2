@@ -113,7 +113,7 @@ class TestHierarchyLookup:
 # validate_and_correct — cascade strategies
 # ============================================================
 
-def _make_result(n1, n2, n3, n4, source="LLM", status="Unico"):
+def _make_result(n1, n2, n3, n4, source="LLM", status="Único"):
     """Helper: creates a classification result dict."""
     return {
         "N1": n1, "N2": n2, "N3": n3, "N4": n4,
@@ -205,11 +205,11 @@ class TestValidateAndCorrect:
         corrected, stats = validate_and_correct(results, test_hierarchy)
         # Should fall to no_match since the tie cannot be broken and score is 0
         assert stats["no_match"] == 1
-        assert corrected[0]["N1"] == "Nao Identificado" or corrected[0]["N1"] == u"N\u00e3o Identificado"
+        assert corrected[0]["N1"] == "Não Identificado"
 
     # --- Step E: No match ---
     def test_no_match_zeroed(self, test_hierarchy):
-        """Completely invalid path -> set to 'Nao Identificado'."""
+        """Completely invalid path -> set to 'Não Identificado'."""
         results = [_make_result("XYZ", "ABC", "DEF", "GHI")]
         corrected, stats = validate_and_correct(results, test_hierarchy)
         assert stats["no_match"] == 1
@@ -226,7 +226,7 @@ class TestValidateAndCorrect:
         assert corrected[0]["N1"] == "Anything"
 
     def test_skips_nao_identificado(self, test_hierarchy):
-        """Items with N1='Nao Identificado' should be skipped."""
+        """Items with N1='Não Identificado' should be skipped."""
         results = [_make_result(u"N\u00e3o Identificado", "", "", "", source="LLM")]
         corrected, stats = validate_and_correct(results, test_hierarchy)
         assert stats["skipped"] == 1
@@ -250,7 +250,7 @@ class TestValidateAndCorrect:
         results = [_make_result("A", "B", "C", "D")]
         corrected, stats = validate_and_correct(results, [])
         # With empty hierarchy, N1 "A" is not a valid N1 and no matches exist,
-        # but the item is LLM-sourced and not "Nao Identificado", so it goes to no_match
+        # but the item is LLM-sourced and not "Não Identificado", so it goes to no_match
         assert stats["no_match"] == 1
 
     def test_empty_results(self):

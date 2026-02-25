@@ -378,17 +378,17 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
             items.append({
                 "index": idx,
                 "description": row.get(desc_col, row.get("description", "")),
-                "N1": row.get("N1", "Nao Identificado"),
-                "N2": row.get("N2", "Nao Identificado"),
-                "N3": row.get("N3", "Nao Identificado"),
-                "N4": row.get("N4", "Nao Identificado"),
+                "N1": row.get("N1", "Não Identificado"),
+                "N2": row.get("N2", "Não Identificado"),
+                "N3": row.get("N3", "Não Identificado"),
+                "N4": row.get("N4", "Não Identificado"),
                 "confidence": row.get("confidence", 0.0),
                 "source": row.get("source", ""),
                 "status": row.get("status", "") or (
                     "Nenhum" if any(
-                        str(row.get(lvl, "")).strip() in ("", "Não Identificado", "Nao Identificado")
+                        str(row.get(lvl, "")).strip() in ("", "Não Identificado", "Não Identificado")
                         for lvl in ("N1", "N2", "N3", "N4")
-                    ) else "Unico"
+                    ) else "Único"
                 ),
             })
     else:
@@ -415,17 +415,17 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                 item = {
                     "index": global_index,
                     "description": result.get("description") or original_descriptions.get(j, ""),
-                    "N1": result.get("N1", "Nao Identificado"),
-                    "N2": result.get("N2", "Nao Identificado"),
-                    "N3": result.get("N3", "Nao Identificado"),
-                    "N4": result.get("N4", "Nao Identificado"),
+                    "N1": result.get("N1", "Não Identificado"),
+                    "N2": result.get("N2", "Não Identificado"),
+                    "N3": result.get("N3", "Não Identificado"),
+                    "N4": result.get("N4", "Não Identificado"),
                     "confidence": result.get("confidence", 0.0),
                     "source": result.get("source", ""),
                     "status": result.get("status", "") or (
                         "Nenhum" if any(
-                            str(result.get(lvl, "")).strip() in ("", "Não Identificado", "Nao Identificado")
+                            str(result.get(lvl, "")).strip() in ("", "Não Identificado", "Não Identificado")
                             for lvl in ("N1", "N2", "N3", "N4")
-                        ) else "Unico"
+                        ) else "Único"
                     ),
                 }
                 items.append(item)

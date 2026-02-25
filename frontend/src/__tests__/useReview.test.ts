@@ -35,23 +35,23 @@ function createMockItems(count: number): ClassifiedItem[] {
       N4: `Parafuso Tipo ${i}`,
       confidence: 0.5 + (i % 5) * 0.1, // 0.5, 0.6, 0.7, 0.8, 0.9, 0.5, ...
       source: 'LLM',
-      status: i % 3 === 0 ? 'Nenhum' : i % 3 === 1 ? 'Ambiguo' : 'Unico',
+      status: i % 3 === 0 ? 'Nenhum' : i % 3 === 1 ? 'Ambíguo' : 'Único',
     });
   }
   return items;
 }
 
 const baseMockItems: ClassifiedItem[] = [
-  { index: 0, description: 'Parafuso M8', N1: 'MRO', N2: 'Fixacao', N3: 'Parafusos', N4: 'Parafuso Sextavado', confidence: 0.9, source: 'LLM', status: 'Unico' },
-  { index: 1, description: 'Oleo motor', N1: 'MRO', N2: 'Lubrificacao', N3: 'Oleos', N4: 'Oleo Motor', confidence: 0.3, source: 'LLM', status: 'Ambiguo' },
-  { index: 2, description: 'Chave de fenda', N1: 'MRO', N2: 'Ferramentas', N3: 'Manuais', N4: 'Chave Fenda', confidence: 0.85, source: 'LLM', status: 'Unico' },
-  { index: 3, description: 'Peca desconhecida', N1: 'Nao Identificado', N2: 'Nao Identificado', N3: 'Nao Identificado', N4: 'Nao Identificado', confidence: 0.1, source: 'LLM', status: 'Nenhum' },
-  { index: 4, description: 'Tinta azul', N1: 'MRO', N2: 'Pintura', N3: 'Tintas', N4: 'Tinta Azul', confidence: 0.75, source: 'LLM', status: 'Unico' },
-  { index: 5, description: 'Eletrodo', N1: 'MRO', N2: 'Soldagem', N3: 'Consumiveis', N4: 'Eletrodo Revestido', confidence: 0.4, source: 'LLM', status: 'Ambiguo' },
-  { index: 6, description: 'Graxa industrial', N1: 'MRO', N2: 'Lubrificacao', N3: 'Graxas', N4: 'Graxa Industrial', confidence: 0.65, source: 'LLM', status: 'Unico' },
-  { index: 7, description: 'Correia dentada', N1: 'MRO', N2: 'Transmissao', N3: 'Correias', N4: 'Correia Dentada', confidence: 0.55, source: 'LLM', status: 'Unico' },
-  { index: 8, description: 'Rolamento 6205', N1: 'MRO', N2: 'Rolamentos', N3: 'Rolamentos Rigidos', N4: 'Rolamento 6205', confidence: 0.92, source: 'LLM', status: 'Unico' },
-  { index: 9, description: 'Filtro de ar', N1: 'MRO', N2: 'Filtragem', N3: 'Filtros', N4: 'Filtro Ar', confidence: 0.88, source: 'LLM', status: 'Unico' },
+  { index: 0, description: 'Parafuso M8', N1: 'MRO', N2: 'Fixacao', N3: 'Parafusos', N4: 'Parafuso Sextavado', confidence: 0.9, source: 'LLM', status: 'Único' },
+  { index: 1, description: 'Oleo motor', N1: 'MRO', N2: 'Lubrificacao', N3: 'Oleos', N4: 'Oleo Motor', confidence: 0.3, source: 'LLM', status: 'Ambíguo' },
+  { index: 2, description: 'Chave de fenda', N1: 'MRO', N2: 'Ferramentas', N3: 'Manuais', N4: 'Chave Fenda', confidence: 0.85, source: 'LLM', status: 'Único' },
+  { index: 3, description: 'Peca desconhecida', N1: 'Não Identificado', N2: 'Não Identificado', N3: 'Não Identificado', N4: 'Não Identificado', confidence: 0.1, source: 'LLM', status: 'Nenhum' },
+  { index: 4, description: 'Tinta azul', N1: 'MRO', N2: 'Pintura', N3: 'Tintas', N4: 'Tinta Azul', confidence: 0.75, source: 'LLM', status: 'Único' },
+  { index: 5, description: 'Eletrodo', N1: 'MRO', N2: 'Soldagem', N3: 'Consumiveis', N4: 'Eletrodo Revestido', confidence: 0.4, source: 'LLM', status: 'Ambíguo' },
+  { index: 6, description: 'Graxa industrial', N1: 'MRO', N2: 'Lubrificacao', N3: 'Graxas', N4: 'Graxa Industrial', confidence: 0.65, source: 'LLM', status: 'Único' },
+  { index: 7, description: 'Correia dentada', N1: 'MRO', N2: 'Transmissao', N3: 'Correias', N4: 'Correia Dentada', confidence: 0.55, source: 'LLM', status: 'Único' },
+  { index: 8, description: 'Rolamento 6205', N1: 'MRO', N2: 'Rolamentos', N3: 'Rolamentos Rigidos', N4: 'Rolamento 6205', confidence: 0.92, source: 'LLM', status: 'Único' },
+  { index: 9, description: 'Filtro de ar', N1: 'MRO', N2: 'Filtragem', N3: 'Filtros', N4: 'Filtro Ar', confidence: 0.88, source: 'LLM', status: 'Único' },
 ];
 
 // ---------------------------------------------------------------------------

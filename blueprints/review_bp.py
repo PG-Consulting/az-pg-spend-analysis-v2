@@ -98,13 +98,13 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         results.append({
             "index": item.get("index", i),
             "description": item["description"],
-            "N1": r.get("N1", "Nao Identificado"),
-            "N2": r.get("N2", "Nao Identificado"),
-            "N3": r.get("N3", "Nao Identificado"),
-            "N4": r.get("N4", "Nao Identificado"),
+            "N1": r.get("N1", "Não Identificado"),
+            "N2": r.get("N2", "Não Identificado"),
+            "N3": r.get("N3", "Não Identificado"),
+            "N4": r.get("N4", "Não Identificado"),
             "source": r.get("source", "LLM (Reclassified)"),
             "confidence": r.get("confidence", 0.0),
-            "status": r.get("status", "Unico"),
+            "status": r.get("status", "Único"),
         })
 
     return json_response({"results": results})
@@ -152,7 +152,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     kb_added = 0
     if project_id:
         kb_entries_to_add = []
-        _incomplete = {"", "Não Identificado", "Nao Identificado"}
+        _incomplete = {"", "Não Identificado", "Não Identificado"}
         for d in decisions:
             if d.get("decision") in ("approved", "edited") and (
                 d.get("contribute_to_kb", True) or d.get("decision") == "edited"
@@ -191,7 +191,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     for d in decisions:
         if d.get("decision") != "rejected":
             rows.append({
-                "Descricao": d.get("description", ""),
+                "Descrição": d.get("description", ""),
                 "N1": d.get("N1", ""),
                 "N2": d.get("N2", ""),
                 "N3": d.get("N3", ""),
