@@ -113,12 +113,12 @@ class TestHierarchyLookup:
 # validate_and_correct — cascade strategies
 # ============================================================
 
-def _make_result(n1, n2, n3, n4, source="LLM", status="Único"):
-    """Helper: creates a classification result dict."""
+def _make_result(n1, n2, n3, n4, source="LLM (Batch)", status="Único"):
+    """Helper: creates a classification result dict matching real pipeline output."""
     return {
         "N1": n1, "N2": n2, "N3": n3, "N4": n4,
         "status": status,
-        "classification_source": source,
+        "source": source,
     }
 
 
@@ -218,8 +218,8 @@ class TestValidateAndCorrect:
 
     # --- Skips ---
     def test_skips_non_llm_source(self, test_hierarchy):
-        """Items with classification_source not containing 'LLM' should be skipped."""
-        results = [_make_result("Anything", "Anything", "Anything", "Anything", source="Dictionary")]
+        """Items with source not containing 'LLM' should be skipped."""
+        results = [_make_result("Anything", "Anything", "Anything", "Anything", source="KB (Direct Match)")]
         corrected, stats = validate_and_correct(results, test_hierarchy)
         assert stats["skipped"] == 1
         # Original values preserved
@@ -227,7 +227,7 @@ class TestValidateAndCorrect:
 
     def test_skips_nao_identificado(self, test_hierarchy):
         """Items with N1='Não Identificado' should be skipped."""
-        results = [_make_result(u"N\u00e3o Identificado", "", "", "", source="LLM")]
+        results = [_make_result(u"N\u00e3o Identificado", "", "", "", source="LLM (Batch)")]
         corrected, stats = validate_and_correct(results, test_hierarchy)
         assert stats["skipped"] == 1
 
@@ -237,7 +237,7 @@ class TestValidateAndCorrect:
         results = [
             _make_result("Materiais", "Componentes Mecanicos", "Fixacao", "Parafusos"),  # exact
             _make_result("XYZ", "ABC", "DEF", "GHI"),  # no_match
-            _make_result("X", "Y", "Z", "W", source="Dictionary"),  # skipped
+            _make_result("X", "Y", "Z", "W", source="KB (Direct Match)"),  # skipped
         ]
         _, stats = validate_and_correct(results, test_hierarchy)
         assert stats["exact_match"] == 1
@@ -286,3 +286,32 @@ class TestValidateAndCorrect:
         corrected, stats = validate_and_correct(results, test_hierarchy, lookup=lookup)
         assert stats["exact_match"] == 1
         assert corrected[0]["N1"] == "Materiais"
+
+    # --- Integration: real pipeline field name ---
+    def test_reads_source_field_from_llm_pipeline(self, test_hierarchy):
+        """Validate that results with 'source' field (from LLM pipeline) are processed."""
+        # Simulates exact output from _llm_direct_pipeline in core_classification.py
+        result = {
+            "description": "Parafuso M10x50",
+            "N1": "Wrong", "N2": "Wrong", "N3": "Wrong", "N4": "GPS Diferencial",
+            "source": "LLM (Batch)",
+            "confidence": 0.8,
+        }
+        corrected, stats = validate_and_correct([result], test_hierarchy)
+        assert stats["skipped"] == 0, "LLM pipeline results must NOT be skipped"
+        assert stats["n4_reverse"] == 1
+        assert corrected[0]["N1"] == "Equipamentos"
+
+    def test_n4_reverse_fixes_skipped_level(self, test_hierarchy):
+        """LLM returned correct N4 but skipped intermediate level in path."""
+        # Simulates: hierarchy has Materiais > Componentes Mecanicos > Fixacao > Parafusos
+        # LLM returned: N1=Materiais, N2=Fixacao, N3=Parafusos, N4=Parafusos (skipped N2)
+        results = [_make_result("Materiais", "Fixacao", "Parafusos", "Parafusos")]
+        corrected, stats = validate_and_correct(results, test_hierarchy)
+        assert stats["skipped"] == 0
+        # N4 "Parafusos" is unique → n4_reverse should fix the path
+        assert stats["n4_reverse"] == 1
+        assert corrected[0]["N1"] == "Materiais"
+        assert corrected[0]["N2"] == "Componentes Mecanicos"
+        assert corrected[0]["N3"] == "Fixacao"
+        assert corrected[0]["N4"] == "Parafusos"

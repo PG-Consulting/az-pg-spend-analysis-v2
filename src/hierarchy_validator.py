@@ -94,7 +94,7 @@ def validate_and_correct(
       E. No match (conservador - mantém resultado do LLM)
 
     Args:
-        chunk_results: Lista de dicts com N1, N2, N3, N4, status, classification_source
+        chunk_results: Lista de dicts com N1, N2, N3, N4, status, source
         hierarchy: Hierarquia customizada (list of dicts ou dict)
         lookup: HierarchyLookup pré-construído (se None, constrói internamente)
 
@@ -117,7 +117,7 @@ def validate_and_correct(
 
     for res in chunk_results:
         # Só validar itens classificados pelo LLM
-        source = res.get("classification_source", "")
+        source = res.get("source", res.get("classification_source", ""))
         if "LLM" not in source:
             stats["skipped"] += 1
             continue
