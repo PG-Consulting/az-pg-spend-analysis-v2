@@ -38,6 +38,9 @@ models/taxonomy_jobs/
 CLAUDE.md
 .claude/
 
+# ==== WORKTREES ====
+.worktrees/
+
 # ==== IDE / EDITOR ====
 .vscode/
 .idea/
