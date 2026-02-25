@@ -7,7 +7,7 @@ from src.exceptions import NotFoundError, ConflictError, ValidationError
 from src.project_manager import (
     list_sectors, create_sector, update_sector, delete_sector,
     list_projects, get_project, create_project, update_project, delete_project,
-    resolve_hierarchy,
+    resolve_hierarchy, resolve_hierarchy_from_body,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,9 +86,11 @@ def list_projects_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 @handle_errors("CreateProject")
 def create_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CreateProject
-    Body: {display_name, sector, client_context?, custom_hierarchy?, hierarchy_filename?}
+    Body: {display_name, sector, client_context?, custom_hierarchy?, hierarchy_file_base64?,
+           hierarchy_filename?, hierarchy_source?}
     """
     body = req.get_json()
+    resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
     project = create_project(body, models_dir)
     return json_response(project, 201)
@@ -98,12 +100,13 @@ def create_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 @handle_errors("UpdateProject")
 def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """PUT /api/UpdateProject
-    Body: {project_id, display_name?, client_context?, custom_hierarchy?, ...}
+    Body: {project_id, display_name?, client_context?, custom_hierarchy?, hierarchy_file_base64?, ...}
     """
     body = req.get_json()
     project_id = body.get("project_id", "").strip()
     if not project_id:
         raise ValidationError("project_id is required")
+    resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
     project = update_project(project_id, body, models_dir)
     return json_response(project)

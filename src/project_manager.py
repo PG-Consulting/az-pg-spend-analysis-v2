@@ -1,11 +1,13 @@
 """CRUD operations for sectors and projects stored as JSON files on disk."""
 import os
+import io
 import json
 import re
+import base64
 import shutil
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from src.utils import get_models_dir, get_sectors_dir, get_projects_dir
 
@@ -179,7 +181,7 @@ def create_project(data: dict, models_dir: str) -> dict:
         "sector": sector,
         "client_context": data.get("client_context", ""),
         "custom_hierarchy": data.get("custom_hierarchy", None),
-        "hierarchy_source": data.get("hierarchy_source", "own"),
+        "hierarchy_source": data.get("hierarchy_source", "padrao"),
         "hierarchy_filename": data.get("hierarchy_filename", None),
         "created_at": now,
         "updated_at": now,
@@ -267,6 +269,96 @@ def delete_sector(name: str, models_dir: str, force: bool = False) -> dict:
     shutil.rmtree(sector_dir)
     logger.info(f"Sector '{name}' deleted")
     return {"deleted_sector": name, "deleted_projects": deleted_project_ids}
+
+
+# ---------------------------------------------------------------------------
+# Hierarchy parsing from base64 Excel
+# ---------------------------------------------------------------------------
+
+def parse_hierarchy_from_b64(b64_string: str) -> Optional[List[dict]]:
+    """Parse a base64-encoded Excel file into a list of {N1,N2,N3,N4} dicts.
+
+    Used when the frontend sends hierarchy_file_base64 (raw Excel) instead of
+    a pre-parsed custom_hierarchy list. Detects header row automatically.
+    Returns list of dicts or None on failure.
+    """
+    import pandas as pd
+
+    if not b64_string:
+        return None
+    try:
+        cust_bytes = base64.b64decode(b64_string)
+        df_raw = pd.read_excel(io.BytesIO(cust_bytes), header=None)
+
+        # Find header row containing N1 and N4
+        header_row = None
+        for idx, row in df_raw.iterrows():
+            values = [str(v).strip().upper() for v in row.values]
+            if "N1" in values and "N4" in values:
+                header_row = idx
+                break
+
+        if header_row is None:
+            logger.error("Hierarchy file: headers N1/N4 not found")
+            return None
+
+        df_hier = pd.read_excel(io.BytesIO(cust_bytes), header=header_row)
+        df_hier.columns = [str(c).strip().upper() for c in df_hier.columns]
+
+        if "N4" not in df_hier.columns:
+            logger.error(f"Hierarchy file: N4 column missing. Columns: {list(df_hier.columns)}")
+            return None
+
+        hierarchy: List[dict] = []
+        for _, row in df_hier.iterrows():
+            n4 = str(row.get("N4", "")).strip()
+            if n4 and n4.upper() != "NAN":
+                hierarchy.append({
+                    "N1": str(row.get("N1", "")).strip() if pd.notna(row.get("N1")) else "",
+                    "N2": str(row.get("N2", "")).strip() if pd.notna(row.get("N2")) else "",
+                    "N3": str(row.get("N3", "")).strip() if pd.notna(row.get("N3")) else "",
+                    "N4": n4,
+                })
+
+        logger.info(f"Hierarchy file parsed: {len(hierarchy)} entries")
+        return hierarchy if hierarchy else None
+    except Exception as e:
+        logger.error(f"Failed to parse hierarchy file: {e}")
+        return None
+
+
+def resolve_hierarchy_from_body(body: dict) -> None:
+    """Mutate body in-place: if hierarchy_file_base64 is present, parse it
+    into custom_hierarchy and set hierarchy_source accordingly.
+
+    Called by CreateProject/UpdateProject endpoints before saving to config.
+
+    Priority:
+      1. custom_hierarchy already provided as list → use as-is
+      2. hierarchy_file_base64 (base64 Excel) → parse into custom_hierarchy
+      3. Neither → ensure hierarchy_source reflects 'padrao'
+    """
+    # Already have a parsed hierarchy? Nothing to do
+    existing = body.get("custom_hierarchy")
+    if existing and isinstance(existing, list) and len(existing) > 0:
+        body.setdefault("hierarchy_source", "own")
+        return
+
+    # Try parsing from base64 file
+    b64 = body.pop("hierarchy_file_base64", None)
+    if b64:
+        parsed = parse_hierarchy_from_b64(b64)
+        if parsed:
+            body["custom_hierarchy"] = parsed
+            body.setdefault("hierarchy_source", "own")
+            logger.info(f"Hierarchy parsed from file: {len(parsed)} entries")
+            return
+        else:
+            logger.warning("hierarchy_file_base64 provided but parsing failed")
+
+    # No hierarchy provided — ensure source reflects reality
+    if not body.get("custom_hierarchy"):
+        body.setdefault("hierarchy_source", "padrao")
 
 
 # ---------------------------------------------------------------------------
