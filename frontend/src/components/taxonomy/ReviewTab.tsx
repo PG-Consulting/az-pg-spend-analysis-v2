@@ -44,6 +44,7 @@ export function ReviewTab({
     progress, filterCounts, canFinalize, isLoading,
     approveItem, editItem, rejectItem, rejectItems, reclassifyItems, bulkApprove, bulkApproveHighConfidence,
     toggleSelection, toggleAll, finalizeReview, getItemState,
+    globalContributeToKB, setGlobalContributeToKB,
   } = useReview({
     sessionId,
     items: localItems,
@@ -310,6 +311,27 @@ export function ReviewTab({
           <span className={`text-[11px] font-bold tabular-nums flex-shrink-0 ${progress.pct === 100 ? 'text-mint-500' : 'text-accent-500'}`}>
             {progress.pct}%
           </span>
+          <div className="h-4 w-px bg-gray-200 flex-shrink-0" />
+          <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0 select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={globalContributeToKB}
+              onClick={() => setGlobalContributeToKB(!globalContributeToKB)}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 ${
+                globalContributeToKB ? 'bg-mint-400' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  globalContributeToKB ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className={`text-[11px] font-medium ${globalContributeToKB ? 'text-mint-600' : 'text-gray-400'}`}>
+              {globalContributeToKB ? 'Contribuir para KB' : 'Não contribuir para KB'}
+            </span>
+          </label>
         </div>
 
         {/* Table */}
