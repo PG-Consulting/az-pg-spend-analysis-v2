@@ -34,6 +34,7 @@ export function ReviewTab({
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [itemsToReject, setItemsToReject] = useState<ClassifiedItem[]>([]);
   const [isReclassifying, setIsReclassifying] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [localItems, setLocalItems] = useState(items);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,6 +140,27 @@ export function ReviewTab({
     }
   };
 
+  const handleDownloadAsIs = async () => {
+    setIsDownloading(true);
+    try {
+      const api = await import('../../lib/api').then(m => m.apiClient);
+      const result = await api.downloadJobExcel(jobId);
+      const bytes = atob(result.file_content_base64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = result.filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      console.error('Download failed:', e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   // FilterDropdown options
   const filterOptions = useMemo(() => [
     { value: 'all', label: 'Todos', count: filterCounts.all },
@@ -210,6 +232,18 @@ export function ReviewTab({
               </button>
             )}
           </div>
+
+          <button
+            onClick={handleDownloadAsIs}
+            disabled={isDownloading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-50"
+            title="Baixar Excel com resultado bruto da classificação"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {isDownloading ? 'Baixando...' : 'Baixar Excel'}
+          </button>
 
           <div className="flex-1" />
 

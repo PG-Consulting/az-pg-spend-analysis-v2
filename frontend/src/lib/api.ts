@@ -453,6 +453,15 @@ export const apiClient = {
     return response.data;
   },
 
+  /** Downloads raw classification results as Excel (before review). */
+  async downloadJobExcel(jobId: string): Promise<{ filename: string; file_content_base64: string }> {
+    const response = await axios.get(`${API_BASE_URL}/DownloadJobExcel`, {
+      params: { jobId },
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
   // ==================== V3: KNOWLEDGE BASE ====================
 
   /** Returns a paginated list of KB entries for a project. */
