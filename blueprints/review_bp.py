@@ -187,17 +187,32 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     # 2. Generate approved Excel from decisions
     import pandas as pd
 
+    # Load status.json + result.json to recover the ID column (SKU) per item index
+    status_path = os.path.join(job_dir, "status.json")
+    with open(status_path, "r", encoding="utf-8") as f:
+        status_data = json.load(f)
+    id_col = status_data.get("id_column")
+    id_lookup = {}
+    result_path = os.path.join(job_dir, "result.json")
+    if id_col and os.path.exists(result_path):
+        with open(result_path, "r", encoding="utf-8") as rf:
+            result_tmp = json.load(rf)
+        for idx, item in enumerate(result_tmp.get("items", [])):
+            id_lookup[idx] = item.get(id_col, "")
+
     rows = []
     for d in decisions:
         if d.get("decision") != "rejected":
-            rows.append({
-                "Descrição": d.get("description", ""),
-                "N1": d.get("N1", ""),
-                "N2": d.get("N2", ""),
-                "N3": d.get("N3", ""),
-                "N4": d.get("N4", ""),
-                "Fonte": friendly_source_label(d.get("source", "")),
-            })
+            row = {}
+            if id_col:
+                row[id_col] = id_lookup.get(d.get("index", -1), "")
+            row["Descrição"] = d.get("description", "")
+            row["N1"] = d.get("N1", "")
+            row["N2"] = d.get("N2", "")
+            row["N3"] = d.get("N3", "")
+            row["N4"] = d.get("N4", "")
+            row["Fonte"] = friendly_source_label(d.get("source", ""))
+            rows.append(row)
 
     rejected_count = sum(1 for d in decisions if d.get("decision") == "rejected")
     approved_count = sum(1 for d in decisions if d.get("decision") == "approved")
@@ -212,10 +227,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
 
     # 3. Update job status
     download_filename = None
-    status_path = os.path.join(job_dir, "status.json")
-    if os.path.exists(status_path):
-        with open(status_path, "r", encoding="utf-8") as f:
-            status_data = json.load(f)
+    if status_data:
         status_data["status"] = "COMPLETED"
         status_data["review_completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
         status_data["review_summary"] = {

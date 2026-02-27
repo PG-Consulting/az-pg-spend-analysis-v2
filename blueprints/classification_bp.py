@@ -181,6 +181,8 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     # --- Chunking ---
     num_chunks = math.ceil(len(df) / CHUNK_SIZE)
 
+    id_col = valid_cols[0]
+
     # Build metadata / status
     metadata = {
         "job_id": session_id,
@@ -188,6 +190,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         "status": "PENDING",
         "sector": sector,
         "filename": req_body.get("originalFilename", "upload.xlsx"),
+        "id_column": id_col,
         "desc_column": desc_col,
         "total_rows": len(df),
         "total_chunks": num_chunks,
@@ -488,20 +491,23 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     with open(result_file, "r", encoding="utf-8") as rf:
         result_json = json.load(rf)
 
+    id_col = status_data.get("id_column")
     desc_col = status_data.get("desc_column", "Descricao")
     raw_items = result_json.get("items", [])
 
     rows = []
     for item in raw_items:
-        rows.append({
-            "Descricao": item.get(desc_col, item.get("description", "")),
-            "N1": item.get("N1", ""),
-            "N2": item.get("N2", ""),
-            "N3": item.get("N3", ""),
-            "N4": item.get("N4", ""),
-            "Fonte": friendly_source_label(item.get("source", "")),
-            "Confianca": item.get("confidence", 0.0),
-        })
+        row = {}
+        if id_col:
+            row[id_col] = item.get(id_col, "")
+        row["Descricao"] = item.get(desc_col, item.get("description", ""))
+        row["N1"] = item.get("N1", "")
+        row["N2"] = item.get("N2", "")
+        row["N3"] = item.get("N3", "")
+        row["N4"] = item.get("N4", "")
+        row["Fonte"] = friendly_source_label(item.get("source", ""))
+        row["Confianca"] = item.get("confidence", 0.0)
+        rows.append(row)
 
     df = pd.DataFrame(rows)
     buf = io.BytesIO()
