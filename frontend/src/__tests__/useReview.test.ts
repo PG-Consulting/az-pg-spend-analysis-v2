@@ -445,4 +445,61 @@ describe('useReview', () => {
     );
     expect(pendingInList).toHaveLength(7);
   });
+
+  // 16. Global contributeToKB toggle
+  it('should default globalContributeToKB to true', async () => {
+    const { result } = renderUseReview();
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    expect(result.current.globalContributeToKB).toBe(true);
+  });
+
+  // 17. approveItem uses globalContributeToKB
+  it('should use globalContributeToKB=false when approving items', async () => {
+    const { result } = renderUseReview();
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+
+    act(() => { result.current.setGlobalContributeToKB(false); });
+    act(() => { result.current.approveItem(0); });
+
+    expect(result.current.getItemState(0).contributeToKB).toBe(false);
+  });
+
+  // 18. bulkApprove uses globalContributeToKB
+  it('should use globalContributeToKB=false in bulk approve', async () => {
+    const { result } = renderUseReview();
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+
+    act(() => { result.current.setGlobalContributeToKB(false); });
+    act(() => { result.current.bulkApprove([0, 1, 2]); });
+
+    expect(result.current.getItemState(0).contributeToKB).toBe(false);
+    expect(result.current.getItemState(1).contributeToKB).toBe(false);
+    expect(result.current.getItemState(2).contributeToKB).toBe(false);
+  });
+
+  // 19. editItem uses globalContributeToKB as default
+  it('should use globalContributeToKB as default for editItem', async () => {
+    const { result } = renderUseReview();
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+
+    act(() => { result.current.setGlobalContributeToKB(false); });
+    act(() => {
+      result.current.editItem(1, { N1: 'A', N2: 'B', N3: 'C', N4: 'D' });
+    });
+
+    expect(result.current.getItemState(1).contributeToKB).toBe(false);
+  });
+
+  // 20. editItem explicit override still works
+  it('should allow explicit contributeToKB override in editItem', async () => {
+    const { result } = renderUseReview();
+    await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+
+    act(() => { result.current.setGlobalContributeToKB(false); });
+    act(() => {
+      result.current.editItem(1, { N1: 'A', N2: 'B', N3: 'C', N4: 'D', contributeToKB: true });
+    });
+
+    expect(result.current.getItemState(1).contributeToKB).toBe(true);
+  });
 });

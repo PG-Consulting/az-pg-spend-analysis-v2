@@ -15,6 +15,7 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [globalContributeToKB, setGlobalContributeToKB] = useState(true);
   const autoSaveTimer = useRef<NodeJS.Timeout>();
 
   // Load saved progress on mount
@@ -113,10 +114,10 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     setReviewStates(prev => {
       const next = new Map(prev);
       const existing = next.get(index) || { decision: 'pending' as ReviewDecision };
-      next.set(index, { ...existing, decision: 'approved', contributeToKB: existing.contributeToKB ?? true });
+      next.set(index, { ...existing, decision: 'approved', contributeToKB: existing.contributeToKB ?? globalContributeToKB });
       return next;
     });
-  }, []);
+  }, [globalContributeToKB]);
 
   const editItem = useCallback((index: number, edits: { N1: string; N2: string; N3: string; N4: string; contributeToKB?: boolean }) => {
     setReviewStates(prev => {
@@ -127,12 +128,12 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
         editedN2: edits.N2,
         editedN3: edits.N3,
         editedN4: edits.N4,
-        contributeToKB: edits.contributeToKB ?? true,
+        contributeToKB: edits.contributeToKB ?? globalContributeToKB,
       });
       return next;
     });
     setExpandedIndex(null);
-  }, []);
+  }, [globalContributeToKB]);
 
   const rejectItem = useCallback((index: number, instruction?: string) => {
     setReviewStates(prev => {
@@ -169,12 +170,12 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
       const next = new Map(prev);
       for (const idx of indices) {
         const existing = next.get(idx) || { decision: 'pending' as ReviewDecision };
-        next.set(idx, { ...existing, decision: 'approved', contributeToKB: true });
+        next.set(idx, { ...existing, decision: 'approved', contributeToKB: globalContributeToKB });
       }
       return next;
     });
     setSelectedIndices(new Set());
-  }, []);
+  }, [globalContributeToKB]);
 
   const bulkApproveHighConfidence = useCallback(() => {
     const highConfItems = items.filter(i => i.confidence >= 0.7 && !reviewStates.get(i.index)?.decision);
@@ -237,6 +238,8 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     filterCounts,
     canFinalize,
     isLoading,
+    globalContributeToKB,
+    setGlobalContributeToKB,
     // Actions
     approveItem,
     editItem,
