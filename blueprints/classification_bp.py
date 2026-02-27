@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 import azure.functions as func
-from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps
+from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps, friendly_source_label
 from src.api_helpers import json_response, error_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError, ConflictError
 
@@ -443,3 +443,78 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     }
 
     return json_response(response)
+
+
+@classification_bp.route(route="DownloadJobExcel", methods=["GET", "OPTIONS"],
+                          auth_level=func.AuthLevel.ANONYMOUS)
+@handle_errors
+def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
+    """GET /api/DownloadJobExcel?jobId=xxx
+    Returns the classified results as a base64-encoded Excel file.
+    Only works for CLASSIFIED, APPROVED, or COMPLETED jobs.
+
+    Returns: {filename: "{original}_resultado.xlsx", file_content_base64: "..."}
+    """
+    import pandas as pd
+
+    if req.method == "OPTIONS":
+        return options_response("GET, OPTIONS")
+
+    job_id = req.params.get("jobId", "").strip()
+    if not job_id:
+        raise ValidationError("Missing jobId")
+
+    jobs_dir = get_jobs_dir()
+    job_dir = os.path.join(jobs_dir, job_id)
+    status_file = os.path.join(job_dir, "status.json")
+
+    if not os.path.isdir(job_dir) or not os.path.exists(status_file):
+        raise NotFoundError("Job", job_id)
+
+    with open(status_file, "r", encoding="utf-8") as f:
+        status_data = json.load(f)
+
+    job_status = status_data.get("status", "UNKNOWN")
+    if job_status not in ("CLASSIFIED", "COMPLETED", "APPROVED"):
+        raise ValidationError(
+            f"Job com status '{job_status}' não pode ser baixado. "
+            "Apenas jobs CLASSIFIED, APPROVED ou COMPLETED."
+        )
+
+    result_file = os.path.join(job_dir, "result.json")
+    if not os.path.exists(result_file):
+        raise NotFoundError("Result file", job_id)
+
+    with open(result_file, "r", encoding="utf-8") as rf:
+        result_json = json.load(rf)
+
+    desc_col = status_data.get("desc_column", "Descricao")
+    raw_items = result_json.get("items", [])
+
+    rows = []
+    for item in raw_items:
+        rows.append({
+            "Descricao": item.get(desc_col, item.get("description", "")),
+            "N1": item.get("N1", ""),
+            "N2": item.get("N2", ""),
+            "N3": item.get("N3", ""),
+            "N4": item.get("N4", ""),
+            "Fonte": friendly_source_label(item.get("source", "")),
+            "Confianca": item.get("confidence", 0.0),
+        })
+
+    df = pd.DataFrame(rows)
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False, sheet_name="Resultados", engine="openpyxl")
+    excel_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    original_filename = status_data.get("filename", "resultado.xlsx")
+    base_name = os.path.splitext(original_filename)[0]
+    output_filename = f"{base_name}_resultado.xlsx"
+
+    logger.info(f"[DownloadJobExcel] Job {job_id}: {len(rows)} rows, file={output_filename}")
+
+    return json_response({
+        "filename": output_filename,
+        "file_content_base64": excel_b64,
+    })
