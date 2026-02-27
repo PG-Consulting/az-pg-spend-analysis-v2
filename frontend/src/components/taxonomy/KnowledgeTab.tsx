@@ -24,6 +24,14 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
   const [searchQuery, setSearchQuery] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    rows: Array<Record<string, string>>;
+    totalRows: number;
+    columns: string[];
+    file: File;
+    b64: string;
+  } | null>(null);
+  const [importResult, setImportResult] = useState<{ added: number; total: number } | null>(null);
   const [showSectorEntries, setShowSectorEntries] = useState(true);
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
   const [isPromoting, setIsPromoting] = useState(false);
@@ -112,28 +120,84 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
     URL.revokeObjectURL(url);
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!projectId || !e.target.files?.[0]) return;
+    setImportError(null);
+    setImportResult(null);
+
+    const file = e.target.files[0];
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: '' });
+
+      const columns = jsonData.length > 0 ? Object.keys(jsonData[0]) : [];
+
+      // Validar colunas obrigatórias
+      const requiredAliases: Record<string, string[]> = {
+        'Descrição': ['Descrição', 'Descricao', 'description'],
+        'N1': ['N1'],
+        'N2': ['N2'],
+        'N3': ['N3'],
+        'N4': ['N4'],
+      };
+
+      const missing: string[] = [];
+      for (const [label, aliases] of Object.entries(requiredAliases)) {
+        if (!aliases.some(a => columns.includes(a))) {
+          missing.push(label);
+        }
+      }
+
+      if (missing.length > 0) {
+        setImportError(`Colunas obrigatórias não encontradas: ${missing.join(', ')}. Colunas detectadas: ${columns.join(', ')}`);
+        e.target.value = '';
+        return;
+      }
+
+      // Converter para base64
+      const b64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      setImportPreview({
+        rows: jsonData.slice(0, 5),
+        totalRows: jsonData.length,
+        columns,
+        file,
+        b64,
+      });
+    } catch (err: any) {
+      setImportError(err.message || 'Erro ao ler o arquivo');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    if (!projectId || !importPreview) return;
     setIsImporting(true);
     setImportError(null);
     try {
-      const file = e.target.files[0];
-      const b64 = await new Promise<string>((res, rej) => {
-        const reader = new FileReader();
-        reader.onload = () => res((reader.result as string).split(',')[1]);
-        reader.onerror = rej;
-        reader.readAsDataURL(file);
-      });
       const api = await getApi();
-      const result = await api.importKB(projectId, b64);
+      const result = await api.importKB(projectId, importPreview.b64);
+      setImportResult(result);
+      setImportPreview(null);
       await loadKB();
-      alert(`Importacao concluida: ${result.added} entradas adicionadas. Total: ${result.total}`);
-    } catch (e: any) {
-      setImportError(e.message || 'Erro ao importar');
+      await loadCoverage();
+    } catch (err: any) {
+      setImportError(err.message || 'Erro ao importar');
     } finally {
       setIsImporting(false);
-      e.target.value = '';
     }
+  };
+
+  const handleImportCancel = () => {
+    setImportPreview(null);
+    setImportError(null);
   };
 
   const handleRollback = async (versionId: string) => {
@@ -233,7 +297,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
             {/* Import */}
             <label className={`p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors ${isImporting ? 'opacity-50' : ''}`} title="Importar">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-              <input type="file" accept=".xlsx" onChange={handleImport} className="hidden" disabled={isImporting} />
+              <input type="file" accept=".xlsx" onChange={handleImportSelect} className="hidden" disabled={isImporting} />
             </label>
             {/* Export */}
             <button onClick={handleExport} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" title="Exportar">
@@ -255,6 +319,73 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
 
         {importError && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-3">{importError}</div>
+        )}
+
+        {/* Import preview */}
+        {importPreview && (
+          <div className="mb-3 border border-accent-200 rounded-xl overflow-hidden bg-accent-50/30">
+            <div className="px-3 py-2 bg-accent-50 border-b border-accent-100 flex items-center justify-between">
+              <span className="text-xs font-medium text-accent-700">
+                Preview: {importPreview.file.name} ({importPreview.totalRows} linhas)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleImportCancel}
+                  className="text-xs px-2.5 py-1 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleImportConfirm}
+                  disabled={isImporting}
+                  className="text-xs px-2.5 py-1 bg-accent-500 text-white hover:bg-accent-600 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isImporting ? 'Importando...' : `Confirmar Importação (${importPreview.totalRows})`}
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    {importPreview.columns.slice(0, 7).map(col => (
+                      <th key={col} className="px-2 py-1.5 text-left font-medium text-gray-500 whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.rows.map((row, i) => (
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      {importPreview.columns.slice(0, 7).map(col => (
+                        <td key={col} className="px-2 py-1.5 text-gray-700 whitespace-nowrap max-w-[200px] truncate">
+                          {String(row[col] ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {importPreview.totalRows > 5 && (
+                <p className="text-[10px] text-gray-400 px-2 py-1 text-center">
+                  ... e mais {importPreview.totalRows - 5} linhas
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Import result feedback */}
+        {importResult && (
+          <div className="mb-3 rounded-lg bg-mint-50 border border-mint-200 px-3 py-2 text-sm text-mint-700 flex items-center justify-between">
+            <span>{importResult.added} entradas adicionadas. Total na base: {importResult.total}</span>
+            <button onClick={() => setImportResult(null)} className="text-mint-500 hover:text-mint-700 ml-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         )}
 
         {/* Version history panel (inline, toggled by icon button) */}
