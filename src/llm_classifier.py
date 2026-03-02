@@ -300,7 +300,21 @@ def _call_openai_api(
             
         data = response.json()
         content = data['choices'][0]['message']['content']
-        
+
+        # Log token usage (input, output, reasoning)
+        usage = data.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", 0)
+        reasoning_tokens = 0
+        details = usage.get("completion_tokens_details") or {}
+        if details:
+            reasoning_tokens = details.get("reasoning_tokens", 0)
+        logging.info(
+            f"TOKEN USAGE: input={prompt_tokens}, output={completion_tokens}, "
+            f"reasoning={reasoning_tokens}, total={total_tokens}, items={len(items)}"
+        )
+
         # LOG RAW CONTENT FOR DEBUGGING (Info level to keep it visible but correct)
         logging.info(f"RAW LLM RESPONSE: {content[:200]}...") 
 
