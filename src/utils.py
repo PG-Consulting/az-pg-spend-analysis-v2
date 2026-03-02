@@ -60,6 +60,7 @@ _SOURCE_LABELS = {
     "LLM (Reclassified)": "Grok",
     "Taxonomy (Dict)": "Dicionário",
     "ML": "ML",
+    "consultant_correction": "Ajuste Manual",
 }
 
 

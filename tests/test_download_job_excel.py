@@ -47,7 +47,6 @@ def _generate_excel_from_items(items, desc_column="Descricao"):
             "N3": item.get("N3", ""),
             "N4": item.get("N4", ""),
             "Fonte": friendly_source_label(item.get("source", "")),
-            "Confianca": item.get("confidence", 0.0),
         })
     df = pd.DataFrame(rows)
     buf = io.BytesIO()
@@ -81,12 +80,11 @@ class TestDownloadJobExcel:
         excel_bytes = _generate_excel_from_items(items)
 
         df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Resultados")
-        assert list(df.columns) == ["Descricao", "N1", "N2", "N3", "N4", "Fonte", "Confianca"]
+        assert list(df.columns) == ["Descricao", "N1", "N2", "N3", "N4", "Fonte"]
         assert len(df) == 2
         assert df.iloc[0]["Descricao"] == "Parafuso M8"
         assert df.iloc[0]["Fonte"] == "Grok"
         assert df.iloc[1]["Fonte"] == "Base de Aprendizado"
-        assert df.iloc[0]["Confianca"] == pytest.approx(0.92)
 
     def test_filename_uses_original_name(self, tmp_path):
         """Output filename is '{original}_resultado.xlsx'."""

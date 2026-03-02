@@ -506,7 +506,6 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
         row["N3"] = item.get("N3", "")
         row["N4"] = item.get("N4", "")
         row["Fonte"] = friendly_source_label(item.get("source", ""))
-        row["Confianca"] = item.get("confidence", 0.0)
         rows.append(row)
 
     df = pd.DataFrame(rows)

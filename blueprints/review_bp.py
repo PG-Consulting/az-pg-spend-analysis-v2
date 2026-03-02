@@ -211,7 +211,8 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             row["N2"] = d.get("N2", "")
             row["N3"] = d.get("N3", "")
             row["N4"] = d.get("N4", "")
-            row["Fonte"] = friendly_source_label(d.get("source", ""))
+            source = "consultant_correction" if d.get("decision") == "edited" else d.get("source", "")
+            row["Fonte"] = friendly_source_label(source)
             rows.append(row)
 
     rejected_count = sum(1 for d in decisions if d.get("decision") == "rejected")
