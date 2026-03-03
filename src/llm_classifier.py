@@ -117,6 +117,8 @@ def classify_items_with_llm(
 
     logging.info(f"Starting aggressive parallel LLM classification ({len(chunks)} chunks)...")
 
+    total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}
+
     with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_chunk = {
             executor.submit(
@@ -130,7 +132,11 @@ def classify_items_with_llm(
         for future in as_completed(future_to_chunk):
             chunk_start = future_to_chunk[future]
             try:
-                chunk_results = future.result()
+                chunk_results, chunk_usage = future.result()
+                # Aggregate token usage
+                if chunk_usage:
+                    for k in total_usage:
+                        total_usage[k] += chunk_usage.get(k, 0)
                 # Place results back in correct order
                 for offset, res in enumerate(chunk_results):
                     if chunk_start + offset < len(results):
@@ -143,6 +149,16 @@ def classify_items_with_llm(
                     idx = chunk_start + offset
                     if idx < len(results):
                         results[idx] = _create_manual_fallback("Erro no processamento paralelo")
+
+    # Log aggregated token usage on main thread (visible in Azure log stream)
+    if total_usage["total_tokens"] > 0:
+        logging.warning(
+            f"TOKEN USAGE TOTAL: input={total_usage['prompt_tokens']}, "
+            f"output={total_usage['completion_tokens']}, "
+            f"reasoning={total_usage['reasoning_tokens']}, "
+            f"total={total_usage['total_tokens']}, "
+            f"items={len(descriptions)}, llm_calls={len(chunks)}"
+        )
 
     return [r if r is not None else _create_manual_fallback("Falha no mapeamento", "Falha Crítica no Processamento") for r in results]
 
@@ -291,32 +307,27 @@ def _call_openai_api(
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
             else:
-                return [_create_manual_fallback(item) for item in items]
+                return [_create_manual_fallback(item) for item in items], None
 
+    _empty_usage = None
     try:
         if response is None or response.status_code != 200:
             code = response.status_code if response else "N/A"
-            return [_create_manual_fallback(item, f"Erro {code} após retentativas") for item in items]
+            return [_create_manual_fallback(item, f"Erro {code} após retentativas") for item in items], _empty_usage
             
         data = response.json()
         content = data['choices'][0]['message']['content']
 
-        # Log token usage (input, output, reasoning)
+        # Extract token usage to return alongside results
         usage = data.get("usage", {})
-        prompt_tokens = usage.get("prompt_tokens", 0)
-        completion_tokens = usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-        reasoning_tokens = 0
         details = usage.get("completion_tokens_details") or {}
-        if details:
-            reasoning_tokens = details.get("reasoning_tokens", 0)
-        logging.info(
-            f"TOKEN USAGE: input={prompt_tokens}, output={completion_tokens}, "
-            f"reasoning={reasoning_tokens}, total={total_tokens}, items={len(items)}"
-        )
-
-        # LOG RAW CONTENT FOR DEBUGGING (Info level to keep it visible but correct)
-        logging.info(f"RAW LLM RESPONSE: {content[:200]}...") 
+        token_usage = {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "reasoning_tokens": details.get("reasoning_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "items": len(items),
+        } 
 
         # Clean Markdown code blocks if present
         if "```" in content:
@@ -329,7 +340,7 @@ def _call_openai_api(
         if isinstance(parsed, dict) and "error" in parsed:
             error_msg = parsed.get("error", "Unknown error")
             logging.error(f"Azure OpenAI returned error: {error_msg}")
-            return [_create_manual_fallback(item, f"API Error: {error_msg}") for item in items]
+            return [_create_manual_fallback(item, f"API Error: {error_msg}") for item in items], token_usage
         
         # Handle different response formats:
         # 1. Direct dict with N1-N4 keys (single item)
@@ -350,11 +361,11 @@ def _call_openai_api(
                 else:
                     # No list found and no N1-N4 keys - unexpected format
                     logging.warning(f"LLM returned unexpected dict format: {list(parsed.keys())}")
-                    return [_create_manual_fallback(item, "Formato inesperado") for item in items]
+                    return [_create_manual_fallback(item, "Formato inesperado") for item in items], token_usage
         
         if not isinstance(parsed, list):
             logging.warning("LLM returned unexpected format (not list after processing)")
-            return [_create_manual_fallback(item, "Formato inesperado") for item in items]
+            return [_create_manual_fallback(item, "Formato inesperado") for item in items], token_usage
             
         # Map back to results
         formatted_results = []
@@ -391,11 +402,11 @@ def _call_openai_api(
             else:
                 formatted_results.append(_create_manual_fallback(item_text, "Item não retornado pelo LLM"))
                 
-        return formatted_results
+        return formatted_results, token_usage
 
     except Exception as e:
         logging.error(f"Exception calling Azure OpenAI: {e}")
-        return [_create_manual_fallback(item) for item in items]
+        return [_create_manual_fallback(item) for item in items], None
 
 def _create_manual_fallback(item_text: str, reason: str = "Erro na API") -> ClassificationResultDict:
     return {
