@@ -150,14 +150,15 @@ def classify_items_with_llm(
                     if idx < len(results):
                         results[idx] = _create_manual_fallback("Erro no processamento paralelo")
 
-    # Log aggregated token usage on main thread (visible in Azure log stream)
+    # Log aggregated token usage via print() — logging from threads doesn't reach Azure log stream
     if total_usage["total_tokens"] > 0:
-        logging.warning(
+        print(
             f"TOKEN USAGE TOTAL: input={total_usage['prompt_tokens']}, "
             f"output={total_usage['completion_tokens']}, "
             f"reasoning={total_usage['reasoning_tokens']}, "
             f"total={total_usage['total_tokens']}, "
-            f"items={len(descriptions)}, llm_calls={len(chunks)}"
+            f"items={len(descriptions)}, llm_calls={len(chunks)}",
+            flush=True
         )
 
     return [r if r is not None else _create_manual_fallback("Falha no mapeamento", "Falha Crítica no Processamento") for r in results]
