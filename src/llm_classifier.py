@@ -80,6 +80,7 @@ def classify_items_with_llm(
     custom_hierarchy: Optional[Union[Dict[str, HierarchyEntryDict], List[HierarchyEntryDict]]] = None,
     few_shot_examples: Optional[List[KBEntryDict]] = None,
     user_instruction: Optional[str] = None,
+    use_web_search: bool = False,
 ) -> List[ClassificationResultDict]:
     """
     Classifies a list of item descriptions using Azure OpenAI.
@@ -124,7 +125,7 @@ def classify_items_with_llm(
             executor.submit(
                 _call_openai_api,
                 chunk_items, config, sector, client_context, custom_hierarchy,
-                few_shot_examples, user_instruction
+                few_shot_examples, user_instruction, use_web_search
             ): chunk_start
             for chunk_start, chunk_items in chunks
         }
@@ -178,6 +179,7 @@ def _call_openai_api(
     custom_hierarchy: Optional[Union[Dict[str, HierarchyEntryDict], List[HierarchyEntryDict]]] = None,
     few_shot_examples: Optional[List[KBEntryDict]] = None,
     user_instruction: Optional[str] = None,
+    use_web_search: bool = False,
 ) -> List[ClassificationResultDict]:
     """Helper to call the API for a chunk of items."""
 
@@ -255,6 +257,19 @@ def _call_openai_api(
             f"{user_instruction}\n"
         )
 
+    # Add web search instruction if enabled
+    if use_web_search:
+        system_message += (
+            "\n\nBUSCA NA INTERNET (HABILITADA):\n"
+            "Você tem acesso à internet. Para itens com descrições ambíguas, "
+            "códigos, siglas, nomes de fornecedores, fabricantes ou marcas "
+            "que você não reconhece com certeza:\n"
+            "- Pesquise na web o que o fornecedor/fabricante produz\n"
+            "- Pesquise o que o produto/material/serviço é\n"
+            "- Use essa informação para escolher a categoria mais precisa\n\n"
+            "Mantenha o formato de saída JSON idêntico."
+        )
+
     user_content = "Classifique os seguintes itens:\n" + "\n".join([f"- {item}" for item in items])
 
     payload = {
@@ -265,6 +280,9 @@ def _call_openai_api(
         ],
         "temperature": 0.0,
     }
+
+    if use_web_search:
+        payload["tools"] = [{"type": "web_search"}]
 
     # xAI (Grok) API endpoint
     endpoint = f"{config['endpoint'].rstrip('/')}/chat/completions"

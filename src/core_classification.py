@@ -34,6 +34,7 @@ def process_dataframe_chunk(
     project_id: Optional[str] = None,
     user_instruction: Optional[str] = None,
     kb_retriever: Optional[object] = None,
+    use_web_search: bool = False,
 ) -> List[ClassificationResultDict]:
     """
     Classify a DataFrame chunk.
@@ -56,6 +57,7 @@ def process_dataframe_chunk(
             descriptions, sector, client_context, custom_hierarchy,
             few_shot_examples, hierarchy_lookup, user_instruction,
             kb_retriever=kb_retriever,
+            use_web_search=use_web_search,
         )
 
     return results
@@ -70,6 +72,7 @@ def _llm_direct_pipeline(
     hierarchy_lookup: Optional[object],
     user_instruction: Optional[str] = None,
     kb_retriever: Optional[object] = None,
+    use_web_search: bool = False,
 ) -> List[ClassificationResultDict]:
     """Two-Phase LLM-direct path:
 
@@ -147,6 +150,7 @@ def _llm_direct_pipeline(
             custom_hierarchy=custom_hierarchy,
             few_shot_examples=enriched_examples,
             user_instruction=user_instruction,
+            use_web_search=use_web_search,
         )
 
         # Merge LLM results back into correct positions

@@ -199,6 +199,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         "dictionary_content_b64": req_body.get("dictionaryContent"),
         # Project-based fields
         "project_id": project_id or None,
+        "use_web_search": bool(req_body.get("useWebSearch", False)),
     }
 
     # Hierarchy storage: prefer list (project path) over b64 (legacy path)

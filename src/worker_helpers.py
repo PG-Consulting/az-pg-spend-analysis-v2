@@ -289,6 +289,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
     client_context = status.get("client_context", "")
     sector = status.get("sector", "Padrão")
     desc_col = status.get("desc_column", "Descricao")
+    use_web_search = status.get("use_web_search", False)
     models_dir = get_models_dir()
 
     llm_start = time.time()
@@ -304,6 +305,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
         use_legacy_ml=(not project_id),   # legacy path only when no project
         project_id=project_id,
         kb_retriever=kb_retriever,
+        use_web_search=use_web_search,
     )
     llm_duration = time.time() - llm_start
 
