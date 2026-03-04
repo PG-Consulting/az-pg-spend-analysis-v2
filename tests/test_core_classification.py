@@ -583,3 +583,74 @@ class TestMergedKBInPipeline:
         assert len(results) == 1
         assert results[0]["N4"] == "Project Category"  # project overrides sector
         mock_llm.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Web Search toggle tests
+# ---------------------------------------------------------------------------
+
+import os
+from unittest.mock import patch as _patch
+
+class TestWebSearchToggle:
+    """Test use_web_search parameter propagation."""
+
+    @patch("src.llm_classifier.requests.post")
+    @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
+    def test_web_search_adds_tools_to_payload(self, mock_post):
+        """When use_web_search=True, payload must include tools."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_post.return_value = mock_response
+
+        from src.llm_classifier import classify_items_with_llm
+        classify_items_with_llm(["item test"], use_web_search=True)
+
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        assert "tools" in payload, "Payload should include 'tools' when use_web_search=True"
+        assert payload["tools"] == [{"type": "web_search"}]
+
+    @patch("src.llm_classifier.requests.post")
+    @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
+    def test_no_web_search_by_default(self, mock_post):
+        """When use_web_search is not set, payload must NOT include tools."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_post.return_value = mock_response
+
+        from src.llm_classifier import classify_items_with_llm
+        classify_items_with_llm(["item test"])
+
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        assert "tools" not in payload, "Payload should NOT include 'tools' by default"
+
+    @patch("src.llm_classifier.requests.post")
+    @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
+    def test_web_search_adds_prompt_instruction(self, mock_post):
+        """When use_web_search=True, system message must include search instruction."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_post.return_value = mock_response
+
+        from src.llm_classifier import classify_items_with_llm
+        classify_items_with_llm(["item test"], use_web_search=True)
+
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        system_msg = payload["messages"][0]["content"]
+        assert "BUSCA NA INTERNET" in system_msg
+        assert "Pesquise na web" in system_msg
