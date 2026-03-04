@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 import type { FileValidation, ValidationCheck } from '@/components/ui/ValidationCard'
 
 interface ClassifyTabProps {
-  onFileSelect: (file: File, fileContent: string, hierarchyContent?: string) => void
+  onFileSelect: (file: File, fileContent: string, hierarchyContent?: string, useWebSearch?: boolean) => void
   isProcessing: boolean
   projectId?: string | null
   projectHierarchy?: any[] | null
@@ -18,6 +18,7 @@ export default function ClassifyTab({
   const [baseValidation, setBaseValidation] = useState<FileValidation | null>(null)
   const [hierarchyValidation, setHierarchyValidation] = useState<FileValidation | null>(null)
   const [hierarchyOpen, setHierarchyOpen] = useState(false)
+  const [useWebSearch, setUseWebSearch] = useState(false)
 
   const hasProjectHierarchy = projectHierarchy && projectHierarchy.length > 0
   const n4Count = hasProjectHierarchy
@@ -87,7 +88,8 @@ export default function ClassifyTab({
       onFileSelect(
         baseValidation.file,
         baseValidation.content,
-        hierarchyValidation?.isValid ? hierarchyValidation.content : undefined
+        hierarchyValidation?.isValid ? hierarchyValidation.content : undefined,
+        useWebSearch
       )
     }
   }
@@ -162,6 +164,39 @@ export default function ClassifyTab({
             )}
           </div>
         )}
+      </div>
+
+      {/* ── Web Search Toggle ── */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl">
+        <div className="flex items-center gap-2.5">
+          <svg className="w-4 h-4 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <div>
+            <span className="text-sm font-medium text-gray-700">Busca na Internet</span>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              O Grok pesquisa na web sobre cada item para classificar com mais contexto
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setUseWebSearch(prev => !prev)}
+          disabled={isProcessing}
+          className={[
+            'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent-500/20',
+            useWebSearch ? 'bg-accent-500' : 'bg-gray-200',
+            isProcessing && 'opacity-50 cursor-not-allowed',
+          ].join(' ')}
+        >
+          <span
+            className={[
+              'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              useWebSearch ? 'translate-x-4' : 'translate-x-0',
+            ].join(' ')}
+          />
+        </button>
       </div>
 
       {/* ── CTA Button ── */}

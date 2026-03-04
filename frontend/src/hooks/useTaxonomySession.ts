@@ -31,7 +31,7 @@ interface UseTaxonomySessionReturn {
     setActiveSessionId: (id: string | null) => void
     setActiveProjectId: (id: string | null) => void
     handleNewUpload: () => void
-    handleFileSelect: (file: File, fileContent: string, hierarchyContent?: string) => Promise<void>
+    handleFileSelect: (file: File, fileContent: string, hierarchyContent?: string, useWebSearch?: boolean) => Promise<void>
     handleClearHistory: () => void
     handleDeleteSession: (sessionId: string) => void
     setReviewCompleted: (summary: ReviewSummary, approvedFileB64: string, approvedFilename: string) => Promise<void>
@@ -81,7 +81,8 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
     const handleFileSelect = async (
         file: File,
         fileContent: string,
-        hierarchyContent?: string
+        hierarchyContent?: string,
+        useWebSearch?: boolean
     ) => {
         setIsProcessing(true)
         setIsCancelling(false)
@@ -95,6 +96,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                 originalFilename: file.name,
                 projectId: activeProjectId || undefined,
                 customHierarchy: hierarchyContent,
+                useWebSearch,
             })
 
             currentJobIdRef.current = jobId

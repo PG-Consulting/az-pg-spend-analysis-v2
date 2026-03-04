@@ -350,6 +350,7 @@ export const apiClient = {
     descColumn?: string;
     customHierarchy?: string;  // base64, no data-URL prefix
     clientContext?: string;
+    useWebSearch?: boolean;
   }): Promise<{ jobId: string }> {
     const requestBody: Record<string, unknown> = {
       fileContent: params.fileContent,
@@ -361,6 +362,7 @@ export const apiClient = {
     if (params.descColumn) requestBody.descColumn = params.descColumn;
     if (params.customHierarchy) requestBody.customHierarchy = params.customHierarchy;
     if (params.clientContext) requestBody.clientContext = params.clientContext;
+    if (params.useWebSearch) requestBody.useWebSearch = true;
 
     console.log('[API] Submitting classification job (raw base64, v3)...');
 
