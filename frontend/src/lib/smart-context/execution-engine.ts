@@ -134,19 +134,19 @@ export const executeIntent = (
 
             // CRITICAL OVERRIDE: If user explicitly asks for ITEMS, ignore extracted 'level'
             if (entities.targetType === 'item') {
-                groupLevel = '_desc_original';
+                groupLevel = 'description';
             }
 
             // Logical inference for grouping key if not yet defined
             if (!groupLevel) {
                 // Heuristic: If we are deep in the tree (N4) or asking for items, show items.
                 if (entities.targetType === 'item') {
-                    groupLevel = '_desc_original';
+                    groupLevel = 'description';
                 } else if (entities.targetType === 'word') {
                     groupLevel = 'word_token'; // Special marker
                 } else if (currentScopeLevel === 'N4') {
                     // Leaves -> must show items
-                    groupLevel = '_desc_original';
+                    groupLevel = 'description';
                 } else if (currentScopeLevel === 'N3') {
                     groupLevel = 'N4';
                 } else if (currentScopeLevel === 'N2') {
@@ -165,7 +165,7 @@ export const executeIntent = (
                     if (groupLevel === 'N1') groupLevel = 'N2';
                     else if (groupLevel === 'N2') groupLevel = 'N3';
                     else if (groupLevel === 'N3') groupLevel = 'N4';
-                    else if (groupLevel === 'N4') groupLevel = '_desc_original';
+                    else if (groupLevel === 'N4') groupLevel = 'description';
                 }
             }
 
@@ -175,7 +175,7 @@ export const executeIntent = (
             if (groupLevel === 'word_token') {
                 // Tokenizer Logic
                 scopeItems.forEach(i => {
-                    const desc = (i._desc_original || i.Item_Description || '').toLowerCase();
+                    const desc = (i.description || '').toLowerCase();
                     // Tokenize, remove short words
                     const tokens = desc.split(/[\s,.\-+/()]+/).filter((t: string) => t.length > 3 && !['para', 'com', 'item'].includes(t));
                     tokens.forEach((t: string) => {
@@ -186,8 +186,8 @@ export const executeIntent = (
                 scopeItems.forEach(i => {
                     let key = i[groupLevel!] || 'Unknown';
                     // Fallback for description if missing
-                    if (groupLevel === '_desc_original' && !i[groupLevel!]) {
-                        key = i.Item_Description || 'Unknown';
+                    if (groupLevel === 'description' && !i[groupLevel!]) {
+                        key = i.description || 'Unknown';
                     }
                     counts[key] = (counts[key] || 0) + 1;
                 });
@@ -227,12 +227,12 @@ export const executeIntent = (
             const data = {
                 analysis_type: `top_${isTop ? 'highest' : 'lowest'}_frequency`,
                 scope: entities.category || 'Global',
-                grouping: groupLevel === '_desc_original' ? 'Item Description' : groupLevel,
+                grouping: groupLevel === 'description' ? 'Item Description' : groupLevel,
                 data_points: result.map((r, i) => ({
                     rank: i + 1,
                     name: r[0],
                     count: r[1],
-                    type: groupLevel === '_desc_original' ? 'item' : 'category'
+                    type: groupLevel === 'description' ? 'item' : 'category'
                 }))
             };
 
@@ -292,7 +292,7 @@ export const executeIntent = (
             const termNorm = normalize(entities.term);
             // Filter by term
             const matches = scopeItems.filter(i => {
-                const desc = normalize(i._desc_original || i.Item_Description || "");
+                const desc = normalize(i.description || "");
                 const hasTerm = desc.includes(termNorm);
 
                 if (intent === IntentType.TERM_EXCEPTION) {
@@ -344,9 +344,9 @@ export const executeIntent = (
                     term: entities.term,
                     scope: entities.category || 'Global',
                     count: matches.length,
-                    examples: matches.slice(0, 10).map(m => ({ desc: m._desc_original || m.Item_Description, n4: m.N4 }))
+                    examples: matches.slice(0, 10).map(m => ({ desc: m.description, n4: m.N4 }))
                 },
-                text: `Found ${matches.length} items containing "${entities.term}". Examples:\n${matches.slice(0, 10).map(m => `- ${m._desc_original || m.Item_Description} [${m.N4}]`).join('\n')}`,
+                text: `Found ${matches.length} items containing "${entities.term}". Examples:\n${matches.slice(0, 10).map(m => `- ${m.description} [${m.N4}]`).join('\n')}`,
                 instructions: "Summarize the findings. If count is high, mention it strongly.",
                 relevantItems: matches.slice(0, 20)
             }
@@ -356,7 +356,7 @@ export const executeIntent = (
         if (intent === IntentType.OUTLIER_DETECTION) {
             const limit = entities.threshold || 5;
             const outliers = scopeItems.filter(i => {
-                const desc = (i._desc_original || i.Item_Description || "").trim();
+                const desc = (i.description || "").trim();
                 return desc.length > 0 && desc.length < limit;
             });
 
@@ -365,9 +365,9 @@ export const executeIntent = (
                     type: 'outlier_detection',
                     criteria: `Length < ${limit}`,
                     count: outliers.length,
-                    examples: outliers.slice(0, 10).map(m => m._desc_original || m.Item_Description)
+                    examples: outliers.slice(0, 10).map(m => m.description)
                 },
-                text: `Found ${outliers.length} items with length < ${limit}. Examples:\n${outliers.slice(0, 10).map(m => `- ${m._desc_original || m.Item_Description}`).join('\n')}`,
+                text: `Found ${outliers.length} items with length < ${limit}. Examples:\n${outliers.slice(0, 10).map(m => `- ${m.description}`).join('\n')}`,
                 instructions: "List these outliers as potential data quality issues.",
                 relevantItems: outliers
             }
@@ -439,13 +439,13 @@ export const executeIntent = (
             if (!entities.term) return null;
 
             const target = scopeItems.find(i =>
-                (i._desc_original || i.Item_Description || '').toLowerCase() === entities.term?.toLowerCase()
+                (i.description || '').toLowerCase() === entities.term?.toLowerCase()
             );
 
             if (!target) {
                 // Try fuzzy
                 const fuzzyTarget = scopeItems.find(i =>
-                    (i._desc_original || i.Item_Description || '').toLowerCase().includes(entities.term!.toLowerCase())
+                    (i.description || '').toLowerCase().includes(entities.term!.toLowerCase())
                 );
 
                 if (!fuzzyTarget) return {
@@ -461,10 +461,10 @@ export const executeIntent = (
                         type: 'hierarchy_lookup',
                         found: true,
                         match_type: 'approximate',
-                        item: fuzzyTarget._desc_original || fuzzyTarget.Item_Description,
+                        item: fuzzyTarget.description,
                         hierarchy: { N1: fuzzyTarget.N1, N2: fuzzyTarget.N2, N3: fuzzyTarget.N3, N4: fuzzyTarget.N4 }
                     },
-                    text: `Hierarchy for "${fuzzyTarget._desc_original}": ${fuzzyTarget.N1} > ${fuzzyTarget.N2} > ${fuzzyTarget.N3} > ${fuzzyTarget.N4}`,
+                    text: `Hierarchy for "${fuzzyTarget.description}": ${fuzzyTarget.N1} > ${fuzzyTarget.N2} > ${fuzzyTarget.N3} > ${fuzzyTarget.N4}`,
                     instructions: "Present the full taxonomy path clearly.",
                     relevantItems: [fuzzyTarget]
                 }
@@ -475,10 +475,10 @@ export const executeIntent = (
                     type: 'hierarchy_lookup',
                     found: true,
                     match_type: 'exact',
-                    item: target._desc_original || target.Item_Description,
+                    item: target.description,
                     hierarchy: { N1: target.N1, N2: target.N2, N3: target.N3, N4: target.N4 }
                 },
-                text: `Hierarchy for "${target._desc_original}": ${target.N1} > ${target.N2} > ${target.N3} > ${target.N4}`,
+                text: `Hierarchy for "${target.description}": ${target.N1} > ${target.N2} > ${target.N3} > ${target.N4}`,
                 instructions: "Present the full taxonomy path clearly.",
                 relevantItems: [target]
             }
