@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from src.utils import safe_json_dumps, get_models_dir, get_sectors_dir
+from src.utils import safe_json_dumps, get_models_dir, get_sectors_dir, friendly_source_label
 
 
 # ============================================================
@@ -78,3 +78,21 @@ class TestGetSectorsDir:
         monkeypatch.setenv("MODELS_DIR_PATH", models_dir)
         result = get_sectors_dir()
         assert result == os.path.join(models_dir, "sectors")
+
+
+# ============================================================
+# friendly_source_label
+# ============================================================
+
+class TestFriendlySourceLabel:
+    def test_friendly_source_label_reclassified_with_guidance(self):
+        assert friendly_source_label("reclassified_with_guidance") == "Reclassificado"
+
+    def test_friendly_source_label_known_sources(self):
+        assert friendly_source_label("KB (Direct Match)") == "Base de Aprendizado"
+        assert friendly_source_label("LLM (Batch)") == "Grok"
+        assert friendly_source_label("consultant_correction") == "Ajuste Manual"
+
+    def test_friendly_source_label_unknown_passthrough(self):
+        assert friendly_source_label("unknown_source") == "unknown_source"
+        assert friendly_source_label("") == ""

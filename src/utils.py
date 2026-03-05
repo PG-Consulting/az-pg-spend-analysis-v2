@@ -61,6 +61,7 @@ _SOURCE_LABELS = {
     "Taxonomy (Dict)": "Dicionário",
     "ML": "ML",
     "consultant_correction": "Ajuste Manual",
+    "reclassified_with_guidance": "Reclassificado",
 }
 
 
