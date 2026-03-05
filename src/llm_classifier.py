@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
+LLM_MAX_RETRIES = 2  # Backoff exponencial em chamadas à API
+
 # UNSPSC Segment/Family definitions for prompt context
 # We use a simplified subset to guide the model, or rely on its internal knowledge (GPT-4 handles UNSPSC well)
 UNSPSC_CONTEXT = """
@@ -297,7 +299,7 @@ def _call_openai_api(
         logging.warning("CRITICAL: Grok API Key missing or too short!")
 
     import time
-    max_retries = 3
+    max_retries = LLM_MAX_RETRIES
     response = None
     for attempt in range(max_retries + 1):
         try:
