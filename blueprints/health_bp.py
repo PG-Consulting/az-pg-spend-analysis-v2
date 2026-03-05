@@ -20,7 +20,7 @@ def HealthCheck(req: func.HttpRequest) -> func.HttpResponse:
     checks = {
         "filesystem": os.path.isdir(models_dir),
         "grok_api_configured": bool(os.environ.get("GROK_API_KEY")),
-        "models_dir": models_dir,
+        "models_dir_configured": bool(models_dir),
     }
 
     status = "healthy" if checks["filesystem"] else "degraded"

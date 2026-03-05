@@ -79,7 +79,7 @@ class TestHealthCheck:
         assert body["version"] == "3.0"
         assert body["checks"]["filesystem"] is True
         assert body["checks"]["grok_api_configured"] is True
-        assert body["checks"]["models_dir"] == models_dir
+        assert body["checks"]["models_dir_configured"] is True
 
     def test_degraded_when_models_dir_missing(self):
         """Health reports degraded when models_dir doesn't exist."""
