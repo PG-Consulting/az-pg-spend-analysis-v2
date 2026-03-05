@@ -131,3 +131,34 @@ def build_tfidf_vectorizer(
         strip_accents=None,  # Already handled by normalize_text
         token_pattern=r"(?u)\b\w+\b",  # Word tokens
     )
+
+
+# ================================
+# HEADER NORMALIZATION
+# ================================
+
+def normalize_header(header: str) -> str:
+    """
+    Normaliza nomes de colunas de arquivos de treinamento para nomes canônicos.
+
+    Mapeia variações comuns (com/sem acento, inglês/português) para os nomes
+    esperados pelo pipeline: Descricao, N1, N2, N3, N4.
+
+    Args:
+        header: Nome original da coluna.
+
+    Returns:
+        Nome canônico da coluna ou o header original se não houver mapeamento.
+    """
+    normalized = unicodedata.normalize("NFD", str(header)).encode("ascii", "ignore").decode("utf-8").lower().strip()
+    if normalized in ("descricao", "item_description", "description", "desc"):
+        return "Descricao"
+    if normalized in ("n1", "nivel 1", "level 1", "categoria"):
+        return "N1"
+    if normalized in ("n2", "nivel 2", "level 2", "subcategoria1"):
+        return "N2"
+    if normalized in ("n3", "nivel 3", "level 3", "subcategoria2"):
+        return "N3"
+    if normalized in ("n4", "nivel 4", "level 4", "subcategoria"):
+        return "N4"
+    return header

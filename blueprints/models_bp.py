@@ -158,21 +158,7 @@ def TrainModel(req: func.HttpRequest) -> func.HttpResponse:
         raise ValidationError(f"Error reading file: {e}")
 
     from src.taxonomy_engine import normalize_text
-
-    def normalize_header(header: str) -> str:
-        import unicodedata
-        normalized = unicodedata.normalize("NFD", str(header)).encode("ascii", "ignore").decode("utf-8").lower().strip()
-        if normalized in ("descricao", "item_description", "description", "desc"):
-            return "Descricao"
-        if normalized in ("n1", "nivel 1", "level 1", "categoria"):
-            return "N1"
-        if normalized in ("n2", "nivel 2", "level 2", "subcategoria1"):
-            return "N2"
-        if normalized in ("n3", "nivel 3", "level 3", "subcategoria2"):
-            return "N3"
-        if normalized in ("n4", "nivel 4", "level 4", "subcategoria"):
-            return "N4"
-        return header
+    from src.preprocessing import normalize_header
 
     df.rename(columns=lambda x: normalize_header(x), inplace=True)
 
