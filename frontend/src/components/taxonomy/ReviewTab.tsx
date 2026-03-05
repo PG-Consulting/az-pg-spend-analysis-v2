@@ -204,7 +204,7 @@ export function ReviewTab({
             <input
               type="checkbox"
               checked={selectedIndices.size === displayItems.length && displayItems.length > 0}
-              onChange={toggleAll}
+              onChange={() => toggleAll(displayItems)}
               className="w-3.5 h-3.5 rounded border-gray-300 text-accent-500 focus:ring-accent-500/25"
             />
             <span className="text-xs text-primary-400">

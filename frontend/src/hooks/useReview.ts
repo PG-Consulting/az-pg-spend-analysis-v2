@@ -210,11 +210,12 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     });
   }, []);
 
-  const toggleAll = useCallback(() => {
-    if (selectedIndices.size === filteredItems.length) {
+  const toggleAll = useCallback((visibleItems?: ClassifiedItem[]) => {
+    const target = visibleItems || filteredItems;
+    if (selectedIndices.size === target.length) {
       setSelectedIndices(new Set());
     } else {
-      setSelectedIndices(new Set(filteredItems.map(i => i.index)));
+      setSelectedIndices(new Set(target.map(i => i.index)));
     }
   }, [selectedIndices.size, filteredItems]);
 
