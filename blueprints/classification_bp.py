@@ -152,7 +152,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     # Build metadata / status
     metadata = {
         "job_id": session_id,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "PENDING",
         "sector": sector,
         "filename": req_body.get("originalFilename", "upload.xlsx"),

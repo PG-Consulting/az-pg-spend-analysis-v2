@@ -233,7 +233,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     download_filename = None
     if status_data:
         status_data["status"] = "COMPLETED"
-        status_data["review_completed_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        status_data["review_completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         status_data["review_summary"] = {
             "total": len(decisions),
             "approved": approved_count,
