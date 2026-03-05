@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Set
 from src.types import HierarchyEntryDict, JobInfoDict, KBEntryDict
 from src.utils import get_jobs_dir, get_models_dir, friendly_source_label
 from src.project_manager import get_project, resolve_hierarchy
+from src.file_lock import read_status, write_status, update_status
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,7 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
         if not os.path.isdir(job_dir) or not os.path.exists(status_path):
             continue
         try:
-            with open(status_path, "r") as f:
-                status = json.load(f)
+            status = read_status(status_path)
             if status.get("status") != "PROCESSING":
                 continue
             created_at = status.get("created_at")
@@ -63,10 +63,10 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
                 logger.warning(
                     f"[Worker] Job {job_id} stuck for {elapsed/60:.0f}min. Marking as ERROR."
                 )
-                status["status"] = "ERROR"
-                status["error"] = f"Job expired after {elapsed/60:.0f} minutes without completing"
-                with open(status_path, "w") as f:
-                    json.dump(status, f)
+                update_status(status_path, {
+                    "status": "ERROR",
+                    "error": f"Job expired after {elapsed/60:.0f} minutes without completing",
+                })
         except Exception as e:
             logger.error(f"[Worker] Error checking stale job {job_id}: {e}")
 
@@ -89,16 +89,13 @@ def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
         if not os.path.isdir(job_dir) or not os.path.exists(status_path):
             continue
         try:
-            with open(status_path, "r") as f:
-                status = json.load(f)
+            status = read_status(status_path)
 
             if status.get("status") in ["COMPLETED", "CLASSIFIED", "ERROR", "CANCELLED"]:
                 continue
 
             if status["status"] == "PENDING":
-                status["status"] = "PROCESSING"
-                with open(status_path, "w") as f:
-                    json.dump(status, f)
+                status = update_status(status_path, {"status": "PROCESSING"})
 
             # Parse hierarchy once per job (avoids re-decoding base64+Excel per chunk)
             custom_hierarchy = parse_custom_hierarchy(status)
@@ -336,8 +333,7 @@ def update_job_progress(job_info: JobInfoDict) -> None:
         if os.path.exists(os.path.join(job_dir, f"result_{j}.json"))
     )
     job_info["status"]["processed_chunks"] = processed_so_far
-    with open(job_info["status_path"], "w") as f:
-        json.dump(job_info["status"], f)
+    write_status(job_info["status_path"], job_info["status"])
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +441,7 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     # Set status to CLASSIFIED (not COMPLETED - review must happen first)
     status_data = status
     status_data["status"] = "CLASSIFIED"  # Was: "COMPLETED"
-    with open(status_path, "w") as f:
-        json.dump(status_data, f)
+    write_status(status_path, status_data)
 
     # Clean up intermediate chunk and result files
     for chunk_file in glob_mod.glob(os.path.join(job_dir, "chunk_*.json")):
@@ -550,8 +545,7 @@ def run_worker_cycle() -> None:
                     logger.error(f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}")
                     job["status"]["status"] = "ERROR"
                     job["status"]["error"] = str(e)
-                    with open(job["status_path"], "w") as f:
-                        json.dump(job["status"], f)
+                    write_status(job["status_path"], job["status"])
 
     # 4. Consolidate jobs that have completed all chunks
     for job_info in active_jobs:
@@ -572,5 +566,4 @@ def run_worker_cycle() -> None:
                 )
                 job_info["status"]["status"] = "ERROR"
                 job_info["status"]["error"] = f"Consolidation error: {e}"
-                with open(job_info["status_path"], "w") as f:
-                    json.dump(job_info["status"], f)
+                write_status(job_info["status_path"], job_info["status"])

@@ -12,6 +12,7 @@ import azure.functions as func
 from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps, friendly_source_label
 from src.api_helpers import json_response, error_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError, ConflictError
+from src.file_lock import read_status, write_status, update_status
 
 logger = logging.getLogger(__name__)
 classification_bp = func.Blueprint()
@@ -253,8 +254,7 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     if not os.path.exists(status_file):
         raise NotFoundError("Job", job_id)
 
-    with open(status_file, "r", encoding="utf-8") as f:
-        status = json.load(f)
+    status = read_status(status_file)
 
     # Calculate progress
     total = status.get("total_chunks", 1)
@@ -311,8 +311,7 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     if not os.path.exists(status_file):
         raise NotFoundError("Job", job_id)
 
-    with open(status_file, "r", encoding="utf-8") as f:
-        status = json.load(f)
+    status = read_status(status_file)
 
     current_status = status.get("status", "")
     if current_status not in ("PENDING", "PROCESSING"):
@@ -321,11 +320,10 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
             "Only PENDING or PROCESSING jobs can be cancelled."
         )
 
-    status["status"] = "CANCELLED"
-    status["cancelled_at"] = datetime.utcnow().isoformat()
-
-    with open(status_file, "w", encoding="utf-8") as f:
-        json.dump(status, f, ensure_ascii=False)
+    update_status(status_file, {
+        "status": "CANCELLED",
+        "cancelled_at": datetime.utcnow().isoformat(),
+    })
 
     logger.info(f"[CancelJob] Job {job_id} cancelled (was {current_status})")
 
@@ -357,8 +355,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     if not os.path.isdir(job_dir) or not os.path.exists(status_file):
         raise NotFoundError("Job", job_id)
 
-    with open(status_file, "r", encoding="utf-8") as f:
-        status_data = json.load(f)
+    status_data = read_status(status_file)
 
     job_status = status_data.get("status", "UNKNOWN")
     total_chunks = status_data.get("total_chunks", 0)
@@ -480,8 +477,7 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     if not os.path.isdir(job_dir) or not os.path.exists(status_file):
         raise NotFoundError("Job", job_id)
 
-    with open(status_file, "r", encoding="utf-8") as f:
-        status_data = json.load(f)
+    status_data = read_status(status_file)
 
     job_status = status_data.get("status", "UNKNOWN")
     if job_status not in ("CLASSIFIED", "COMPLETED", "APPROVED"):

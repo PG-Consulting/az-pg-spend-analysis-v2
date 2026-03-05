@@ -11,6 +11,7 @@ from src.utils import get_models_dir, get_jobs_dir, friendly_source_label
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
 from src.api_helpers import json_response, error_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError
+from src.file_lock import read_status, write_status
 
 logger = logging.getLogger(__name__)
 review_bp = func.Blueprint()
@@ -193,8 +194,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
 
     # Load status.json + result.json to recover the ID column (SKU) per item index
     status_path = os.path.join(job_dir, "status.json")
-    with open(status_path, "r", encoding="utf-8") as f:
-        status_data = json.load(f)
+    status_data = read_status(status_path)
     id_col = status_data.get("id_column")
     id_lookup = {}
     result_path = os.path.join(job_dir, "result.json")
@@ -250,8 +250,7 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
         base_name = os.path.splitext(original_filename)[0]
         download_filename = f"{base_name}_classificado.xlsx"
         status_data["approved_download_filename"] = download_filename
-        with open(status_path, "w", encoding="utf-8") as f:
-            json.dump(status_data, f, ensure_ascii=False)
+        write_status(status_path, status_data)
 
     return json_response({
         "success": True,
