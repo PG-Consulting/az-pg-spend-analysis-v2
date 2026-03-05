@@ -3,6 +3,7 @@ import ChatMessage, { ChatMessageLoading } from '@/components/chat/ChatMessage'
 import SuggestedPrompts from '@/components/chat/SuggestedPrompts'
 import AiAvatar from '@/components/ui/AiAvatar'
 import type { Message } from '@/components/chat/ChatMessage'
+import { downloadBase64AsFile } from '@/lib/utils'
 
 interface ReviewSummary {
   total: number
@@ -58,19 +59,7 @@ export default function AnalyzeTab({
           {approvedFileContentBase64 && approvedDownloadFilename && (
             <button
               onClick={() => {
-                const base64 = approvedFileContentBase64!
-                const bytes = atob(base64)
-                const arr = new Uint8Array(bytes.length)
-                for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
-                const blob = new Blob([arr], {
-                  type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = approvedDownloadFilename!
-                a.click()
-                URL.revokeObjectURL(url)
+                downloadBase64AsFile(approvedFileContentBase64!, approvedDownloadFilename!)
               }}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-mint-500 text-white rounded-xl hover:bg-mint-600 transition-colors"
             >

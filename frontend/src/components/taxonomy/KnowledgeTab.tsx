@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { KBEntry, KBPage, KBCoverage, KBVersion } from '../../lib/types';
+import { downloadBase64AsFile } from '../../lib/utils';
 import { KnowledgeTable } from './KnowledgeTable';
 import { KnowledgeCoverage } from './KnowledgeCoverage';
 
@@ -129,16 +130,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
     try {
       const api = await getApi();
       const b64 = await api.exportKB(projectId);
-      const bytes = atob(b64);
-      const arr = new Uint8Array(bytes.length);
-      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `knowledge_base_${projectId}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBase64AsFile(b64, `knowledge_base_${projectId}.xlsx`);
     } catch (e) {
       console.error('Failed to export KB:', e);
     }

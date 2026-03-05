@@ -17,3 +17,29 @@ export function getSourceLabel(source: string): string {
   if (source === 'reclassified_with_guidance') return 'Reclassificado';
   return source || '--';
 }
+
+/**
+ * Decodes a base64 string and triggers a browser file download.
+ *
+ * @param base64 - The base64-encoded file content
+ * @param filename - The filename to use for the download
+ * @param mimeType - The MIME type of the file (defaults to Excel .xlsx)
+ */
+export function downloadBase64AsFile(
+  base64: string,
+  filename: string,
+  mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+) {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Uint8Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const blob = new Blob([byteNumbers], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

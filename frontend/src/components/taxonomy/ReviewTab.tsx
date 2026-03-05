@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import type { ClassifiedItem, HierarchyEntry, ReviewFilter } from '../../lib/types';
+import { downloadBase64AsFile } from '../../lib/utils';
 import { useReview } from '../../hooks/useReview';
 import { ReviewTable } from './ReviewTable';
 import { ItemDetailPanel } from './ItemDetailPanel';
@@ -156,15 +157,7 @@ export function ReviewTab({
     try {
       const api = await import('../../lib/api').then(m => m.apiClient);
       const result = await api.downloadJobExcel(jobId);
-      const bytes = atob(result.file_content_base64);
-      const arr = new Uint8Array(bytes.length);
-      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = result.filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      downloadBase64AsFile(result.file_content_base64, result.filename);
     } catch (e) {
       console.error('Download failed:', e);
     } finally {
