@@ -22,7 +22,7 @@ CHUNK_SIZE = 500
 
 @classification_bp.route(route="SubmitTaxonomyJob", methods=["POST", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("SubmitTaxonomyJob")
 def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/SubmitTaxonomyJob
     Accepts a file upload, splits it into chunks, and queues it for async processing.
@@ -179,7 +179,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
 
 @classification_bp.route(route="GetTaxonomyJobStatus", methods=["GET", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("GetTaxonomyJobStatus")
 def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetTaxonomyJobStatus?jobId=xxx
     Polls the status of a specific job.
@@ -236,7 +236,7 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
 
 @classification_bp.route(route="CancelJob", methods=["POST", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("CancelJob")
 def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CancelJob?jobId=xxx
     Cancels a PENDING or PROCESSING job by writing CANCELLED to status.json.
@@ -277,7 +277,7 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
 
 @classification_bp.route(route="GetJobResults", methods=["GET", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("GetJobResults")
 def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetJobResults?jobId=xxx
     Returns classified items as a flat JSON array for human review.
@@ -398,7 +398,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
 
 @classification_bp.route(route="DownloadJobExcel", methods=["GET", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("DownloadJobExcel")
 def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/DownloadJobExcel?jobId=xxx
     Returns the classified results as a base64-encoded Excel file.

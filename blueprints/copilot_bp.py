@@ -12,7 +12,7 @@ copilot_bp = func.Blueprint()
 
 
 @copilot_bp.route(route="get-token", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("GetDirectLineToken")
 def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/get-token
     Generate a temporary Direct Line token for the frontend to use.
@@ -56,7 +56,7 @@ def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @copilot_bp.route(route="SearchMemory", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("SearchMemory")
 def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/SearchMemory?query=xxx
     Search the memory engine (RAG rules) by query string.
@@ -78,7 +78,7 @@ def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
 
 @copilot_bp.route(route="DeleteMemoryRule", methods=["DELETE", "OPTIONS"],
                    auth_level=func.AuthLevel.ANONYMOUS)
-@handle_errors
+@handle_errors("DeleteMemoryRule")
 def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteMemoryRule?id=xxx
     Delete a memory rule by ID.
