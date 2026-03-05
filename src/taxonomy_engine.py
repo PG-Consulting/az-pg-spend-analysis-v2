@@ -550,12 +550,13 @@ def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -
     """
     total_items = len(df_items)
 
-    # "Não classificado" = any N-level is empty or "Não Identificado"
-    _incomplete = {"", "Não Identificado", "Nao Identificado"}
-    nenhum_count = int(df_items.apply(
-        lambda row: any(str(row.get(lvl, "")).strip() in _incomplete for lvl in ("N1", "N2", "N3", "N4")),
-        axis=1
-    ).sum())
+    # "Não classificado" = any N-level is empty or "Não Identificado" (vetorizado)
+    _incomplete = {"", "Não Identificado"}
+    incomplete_mask = pd.Series(False, index=df_items.index)
+    for lvl in ("N1", "N2", "N3", "N4"):
+        if lvl in df_items.columns:
+            incomplete_mask = incomplete_mask | df_items[lvl].fillna("").astype(str).str.strip().isin(_incomplete)
+    nenhum_count = int(incomplete_mask.sum())
     unico_count = total_items - nenhum_count
 
     return {
