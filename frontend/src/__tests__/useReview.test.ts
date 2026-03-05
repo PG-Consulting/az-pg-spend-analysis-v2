@@ -502,4 +502,67 @@ describe('useReview', () => {
 
     expect(result.current.getItemState(1).contributeToKB).toBe(true);
   });
+
+  // bulkEdit — edição em massa
+  it('should mark multiple items as edited with same N1-N4 via bulkEdit', async () => {
+    const { result } = renderUseReview();
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 10));
+    });
+
+    act(() => {
+      result.current.bulkEdit([1, 3, 5], {
+        N1: 'Servicos',
+        N2: 'Manutencao',
+        N3: 'Preventiva',
+        N4: 'Inspecao Geral',
+        contributeToKB: true,
+      });
+    });
+
+    // All 3 items should be edited with same classification
+    for (const idx of [1, 3, 5]) {
+      const state = result.current.getItemState(idx);
+      expect(state.decision).toBe('edited');
+      expect(state.editedN1).toBe('Servicos');
+      expect(state.editedN2).toBe('Manutencao');
+      expect(state.editedN3).toBe('Preventiva');
+      expect(state.editedN4).toBe('Inspecao Geral');
+      expect(state.contributeToKB).toBe(true);
+    }
+
+    // Other items remain pending
+    expect(result.current.getItemState(0).decision).toBe('pending');
+    expect(result.current.getItemState(2).decision).toBe('pending');
+
+    // Progress reflects edits
+    expect(result.current.progress.edited).toBe(3);
+    expect(result.current.progress.pending).toBe(7);
+
+    // Selection should be cleared
+    expect(result.current.selectedIndices.size).toBe(0);
+  });
+
+  it('should count bulkEdit items in corrected filter', async () => {
+    const { result } = renderUseReview();
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 10));
+    });
+
+    act(() => {
+      result.current.bulkEdit([0, 4, 8], {
+        N1: 'A', N2: 'B', N3: 'C', N4: 'D',
+        contributeToKB: false,
+      });
+    });
+
+    act(() => {
+      result.current.setFilter('corrected');
+    });
+
+    expect(result.current.filteredItems).toHaveLength(3);
+    expect(result.current.filterCounts.corrected).toBe(3);
+  });
 });

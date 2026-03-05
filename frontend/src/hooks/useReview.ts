@@ -165,6 +165,24 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     setSelectedIndices(new Set());
   }, []);
 
+  const bulkEdit = useCallback((indices: number[], edits: { N1: string; N2: string; N3: string; N4: string; contributeToKB: boolean }) => {
+    setReviewStates(prev => {
+      const next = new Map(prev);
+      for (const idx of indices) {
+        next.set(idx, {
+          decision: 'edited',
+          editedN1: edits.N1,
+          editedN2: edits.N2,
+          editedN3: edits.N3,
+          editedN4: edits.N4,
+          contributeToKB: edits.contributeToKB,
+        });
+      }
+      return next;
+    });
+    setSelectedIndices(new Set());
+  }, []);
+
   const bulkApprove = useCallback((indices: number[]) => {
     setReviewStates(prev => {
       const next = new Map(prev);
@@ -246,6 +264,7 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     rejectItem,
     rejectItems,
     reclassifyItems,
+    bulkEdit,
     bulkApprove,
     bulkApproveHighConfidence,
     toggleSelection,
