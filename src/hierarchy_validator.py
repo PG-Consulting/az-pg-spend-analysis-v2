@@ -66,7 +66,7 @@ class HierarchyLookup:
 def _fuzzy_match(value: str, candidates: Set[str], cutoff: float = 0.6, cache: Optional[Dict] = None) -> Optional[str]:
     """Fuzzy match de um valor contra candidatos. Usa cache se fornecido."""
     if cache is not None:
-        cache_key = (value, frozenset(candidates))
+        cache_key = (value, id(candidates))
         if cache_key in cache:
             return cache[cache_key]
 
