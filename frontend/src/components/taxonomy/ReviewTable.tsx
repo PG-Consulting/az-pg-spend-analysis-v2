@@ -1,13 +1,6 @@
 import React, { useRef, useMemo } from 'react';
 import type { ClassifiedItem, ReviewItemState } from '../../lib/types';
-
-function getSourceLabel(source: string): string {
-  if (source === 'KB (Direct Match)') return 'Base de Aprendizado';
-  if (source.startsWith('LLM')) return 'Grok';
-  if (source === 'Taxonomy (Dict)') return 'Dicionário';
-  if (source === 'ML') return 'ML';
-  return source || '--';
-}
+import { getSourceLabel } from '../../lib/utils';
 
 const ROW_HEIGHT = 44;
 const OVERSCAN = 10;

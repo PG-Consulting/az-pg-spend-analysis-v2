@@ -2,14 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { ClassifiedItem, ReviewItemState, HierarchyEntry } from '../../lib/types';
 import { useHierarchy } from '../../hooks/useHierarchy';
 import { Badge, ConfidenceBadge } from '../ui/Badge';
-
-function getSourceLabel(source: string): string {
-  if (source === 'KB (Direct Match)') return 'Base de Aprendizado';
-  if (source.startsWith('LLM')) return 'Grok';
-  if (source === 'Taxonomy (Dict)') return 'Dicionário';
-  if (source === 'ML') return 'ML';
-  return source || '--';
-}
+import { getSourceLabel } from '../../lib/utils';
 
 interface ItemDetailPanelProps {
   item: ClassifiedItem | null;
