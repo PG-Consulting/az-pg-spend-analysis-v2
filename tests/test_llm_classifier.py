@@ -1,8 +1,9 @@
-"""Tests for src.llm_classifier — fallback chunk size bug."""
+"""Tests for src.llm_classifier — fallback chunk size and prompt correctness."""
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.llm_classifier import classify_items_with_llm
+from src.llm_classifier import classify_items_with_llm, _call_openai_api
+import inspect
 
 
 FAKE_CONFIG = {"endpoint": "https://fake.api/v1", "api_key": "fake-key-1234567890", "deployment": "grok-test"}
@@ -57,3 +58,22 @@ class TestFallbackChunkSize:
         for r in results:
             assert r["N1"] == "Não Identificado"
             assert r["confidence"] == 0.0
+
+
+class TestPromptNoOldModelReference:
+    """Prompt LLM nao deve referenciar modelo antigo grok-4-0709."""
+
+    def test_no_grok_4_0709_in_prompt(self):
+        """O source code de _call_openai_api nao deve conter referencia ao modelo antigo."""
+        source = inspect.getsource(_call_openai_api)
+        assert "grok-4-0709" not in source, (
+            "Prompt ainda referencia modelo antigo 'grok-4-0709'. "
+            "Remover referencia hardcoded a modelo especifico."
+        )
+
+    def test_prompt_contains_disambiguation_instruction(self):
+        """A instrucao de desambiguacao deve existir sem referencia a modelo."""
+        source = inspect.getsource(_call_openai_api)
+        assert "desambiguar contextos" in source, (
+            "Instrucao de desambiguacao deve estar presente no prompt."
+        )
