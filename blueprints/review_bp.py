@@ -10,7 +10,7 @@ import azure.functions as func
 from src.utils import get_models_dir, get_jobs_dir, friendly_source_label
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
 from src.api_helpers import json_response, error_response, handle_errors
-from src.exceptions import NotFoundError
+from src.exceptions import NotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
 review_bp = func.Blueprint()
@@ -30,6 +30,8 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """
     body = req.get_json()
     job_id = body.get("jobId", "")
+    if not job_id:
+        raise ValidationError("jobId is required")
     project_id = body.get("projectId", "")
     items = body.get("items", [])
     instruction = body.get("instruction", "")
@@ -138,6 +140,8 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     """
     body = req.get_json()
     job_id = body.get("jobId", "")
+    if not job_id:
+        raise ValidationError("jobId is required")
     project_id = body.get("projectId", "")
     decisions = body.get("decisions", [])
 
