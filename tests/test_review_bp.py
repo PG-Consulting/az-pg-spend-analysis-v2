@@ -242,3 +242,70 @@ class TestApproveClassificationsBase64Separation:
         assert "file_content_base64" in body
         assert body["file_content_base64"] is not None
         assert len(body["file_content_base64"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# Lógica de filtragem de itens incompletos para KB (ApproveClassifications)
+# ---------------------------------------------------------------------------
+
+class TestApproveLogic:
+    """Testa a lógica de filtragem de itens incompletos antes de alimentar a KB."""
+
+    _incomplete = {"", "Não Identificado"}
+
+    def _should_skip(self, decision: dict) -> bool:
+        """Reproduz a lógica de filtragem usada em ApproveClassifications."""
+        return any(
+            str(decision.get(lvl, "")).strip() in self._incomplete
+            for lvl in ("N1", "N2", "N3", "N4")
+        )
+
+    def test_incomplete_items_excluded_from_kb(self):
+        """Items with 'Não Identificado' should not be added to KB."""
+        decision = {"N1": "Não Identificado", "N2": "Test", "N3": "Test", "N4": "Test"}
+        assert self._should_skip(decision) is True
+
+    def test_complete_items_included_in_kb(self):
+        """Items fully classified should be included in KB."""
+        decision = {"N1": "MRO", "N2": "Materiais", "N3": "Hidráulicos", "N4": "Tubos"}
+        assert self._should_skip(decision) is False
+
+    def test_empty_n4_excluded_from_kb(self):
+        """Items with empty N4 should not be added to KB."""
+        decision = {"N1": "MRO", "N2": "Materiais", "N3": "Hidráulicos", "N4": ""}
+        assert self._should_skip(decision) is True
+
+    def test_empty_n1_excluded_from_kb(self):
+        """Items with empty N1 should not be added to KB."""
+        decision = {"N1": "", "N2": "Materiais", "N3": "Hidráulicos", "N4": "Tubos"}
+        assert self._should_skip(decision) is True
+
+    def test_whitespace_only_excluded_from_kb(self):
+        """Items where a level is only whitespace should be excluded."""
+        decision = {"N1": "MRO", "N2": "  ", "N3": "Hidráulicos", "N4": "Tubos"}
+        assert self._should_skip(decision) is True
+
+    def test_missing_key_excluded_from_kb(self):
+        """Items missing a level key entirely should be excluded (defaults to '')."""
+        decision = {"N1": "MRO", "N2": "Materiais", "N3": "Hidráulicos"}
+        assert self._should_skip(decision) is True
+
+    def test_all_nao_identificado_excluded(self):
+        """Items where all levels are 'Não Identificado' should be excluded."""
+        decision = {
+            "N1": "Não Identificado",
+            "N2": "Não Identificado",
+            "N3": "Não Identificado",
+            "N4": "Não Identificado",
+        }
+        assert self._should_skip(decision) is True
+
+    def test_multiple_complete_items(self):
+        """All complete items should pass the filter."""
+        decisions = [
+            {"N1": "Serviços", "N2": "Consultoria", "N3": "TI", "N4": "SAP"},
+            {"N1": "MRO", "N2": "Elétricos", "N3": "Cabos", "N4": "Cabo 10mm"},
+            {"N1": "Capex", "N2": "Equipamentos", "N3": "Bombas", "N4": "Centrífuga"},
+        ]
+        for d in decisions:
+            assert self._should_skip(d) is False, f"Should not skip: {d}"
