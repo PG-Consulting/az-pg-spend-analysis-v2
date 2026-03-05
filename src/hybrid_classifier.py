@@ -11,17 +11,12 @@ This module orchestrates the classification logic:
 5. Return complete taxonomy (N1, N2, N3, N4) + matched terms + ambiguity info
 """
 
-import sys
-import os
 import logging
 from typing import Dict, List, Tuple, Optional
 
-# Add src to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
-from ml_classifier import predict_single, load_model
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from taxonomy_engine import match_n4_without_priority
-from llm_classifier import classify_items_with_llm
+from src.ml_classifier import predict_single, load_model
+from src.taxonomy_engine import match_n4_without_priority
+from src.llm_classifier import classify_items_with_llm
 
 
 def find_ambiguity_level(candidates: List[Dict]) -> Tuple[Optional[str], List[str]]:
