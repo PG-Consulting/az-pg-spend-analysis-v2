@@ -22,6 +22,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<{
@@ -37,14 +38,20 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
   const [isPromoting, setIsPromoting] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
 
+  // Debounce search query to avoid API flood on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const loadKB = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
     try {
       const api = await getApi();
       const [projectData, sectorData] = await Promise.all([
-        api.getKnowledgeBase(projectId, { page, pageSize: 50, search: searchQuery || undefined }),
-        sectorName && useSectorKb ? api.getSectorKB(sectorName, { page: 1, pageSize: 200, search: searchQuery || undefined }) : Promise.resolve(null),
+        api.getKnowledgeBase(projectId, { page, pageSize: 50, search: debouncedSearch || undefined }),
+        sectorName && useSectorKb ? api.getSectorKB(sectorName, { page: 1, pageSize: 200, search: debouncedSearch || undefined }) : Promise.resolve(null),
       ]);
       setKbPage(projectData);
       setSectorKbPage(sectorData);
@@ -53,7 +60,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
     } finally {
       setLoading(false);
     }
-  }, [projectId, sectorName, useSectorKb, page, searchQuery]);
+  }, [projectId, sectorName, useSectorKb, page, debouncedSearch]);
 
   const loadCoverage = useCallback(async () => {
     if (!projectId) return;
@@ -91,33 +98,45 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
 
   const handleDelete = async (entryId: string) => {
     if (!projectId) return;
-    const api = await getApi();
-    await api.deleteKBEntry(projectId, entryId);
-    loadKB();
-    loadCoverage();
+    try {
+      const api = await getApi();
+      await api.deleteKBEntry(projectId, entryId);
+      loadKB();
+      loadCoverage();
+    } catch (e) {
+      console.error('Failed to delete KB entry:', e);
+    }
   };
 
   const handleUpdate = async (entryId: string, data: any) => {
     if (!projectId) return;
-    const api = await getApi();
-    await api.updateKBEntry(projectId, entryId, data);
-    loadKB();
+    try {
+      const api = await getApi();
+      await api.updateKBEntry(projectId, entryId, data);
+      loadKB();
+    } catch (e) {
+      console.error('Failed to update KB entry:', e);
+    }
   };
 
   const handleExport = async () => {
     if (!projectId) return;
-    const api = await getApi();
-    const b64 = await api.exportKB(projectId);
-    const bytes = atob(b64);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `knowledge_base_${projectId}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const api = await getApi();
+      const b64 = await api.exportKB(projectId);
+      const bytes = atob(b64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `knowledge_base_${projectId}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to export KB:', e);
+    }
   };
 
   const handleImportSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,10 +222,14 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
   const handleRollback = async (versionId: string) => {
     if (!projectId) return;
     if (!confirm(`Reverter para a versao ${versionId}? As entradas atuais serao substituidas.`)) return;
-    const api = await getApi();
-    await api.rollbackKB(projectId, versionId);
-    await loadKB();
-    setShowVersions(false);
+    try {
+      const api = await getApi();
+      await api.rollbackKB(projectId, versionId);
+      await loadKB();
+      setShowVersions(false);
+    } catch (e) {
+      console.error('Failed to rollback KB:', e);
+    }
   };
 
   const handlePromoteToSector = async () => {

@@ -17,25 +17,32 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
 
+  // Debounce search query to avoid API flood on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const loadKB = useCallback(async () => {
     if (!sectorName) return;
     setLoading(true);
     try {
       const api = await getApi();
-      const data = await api.getSectorKB(sectorName, { page, pageSize: 50, search: searchQuery || undefined });
+      const data = await api.getSectorKB(sectorName, { page, pageSize: 50, search: debouncedSearch || undefined });
       setKbPage(data);
     } catch (e) {
       console.error('Error loading sector KB:', e);
     } finally {
       setLoading(false);
     }
-  }, [sectorName, page, searchQuery]);
+  }, [sectorName, page, debouncedSearch]);
 
   const loadCoverage = useCallback(async () => {
     if (!sectorName) return;
@@ -73,10 +80,14 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
 
   const handleDelete = async (entryId: string) => {
     if (!sectorName) return;
-    const api = await getApi();
-    await api.deleteSectorKBEntry(sectorName, entryId);
-    loadKB();
-    loadCoverage();
+    try {
+      const api = await getApi();
+      await api.deleteSectorKBEntry(sectorName, entryId);
+      loadKB();
+      loadCoverage();
+    } catch (e) {
+      console.error('Failed to delete sector KB entry:', e);
+    }
   };
 
   const handleBulkDelete = async () => {
@@ -100,25 +111,33 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
 
   const handleUpdate = async (entryId: string, data: any) => {
     if (!sectorName) return;
-    const api = await getApi();
-    await api.updateSectorKBEntry(sectorName, entryId, data);
-    loadKB();
+    try {
+      const api = await getApi();
+      await api.updateSectorKBEntry(sectorName, entryId, data);
+      loadKB();
+    } catch (e) {
+      console.error('Failed to update sector KB entry:', e);
+    }
   };
 
   const handleExport = async () => {
     if (!sectorName) return;
-    const api = await getApi();
-    const b64 = await api.exportSectorKB(sectorName);
-    const bytes = atob(b64);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `knowledge_base_sector_${sectorName}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const api = await getApi();
+      const b64 = await api.exportSectorKB(sectorName);
+      const bytes = atob(b64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `knowledge_base_sector_${sectorName}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to export sector KB:', e);
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,10 +167,14 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
   const handleRollback = async (versionId: string) => {
     if (!sectorName) return;
     if (!confirm(`Reverter para a versao ${versionId}? As entradas atuais serao substituidas.`)) return;
-    const api = await getApi();
-    await api.rollbackSectorKB(sectorName, versionId);
-    await loadKB();
-    setShowVersions(false);
+    try {
+      const api = await getApi();
+      await api.rollbackSectorKB(sectorName, versionId);
+      await loadKB();
+      setShowVersions(false);
+    } catch (e) {
+      console.error('Failed to rollback sector KB:', e);
+    }
   };
 
   if (!sectorName) {
