@@ -334,6 +334,55 @@ class TestKBCoverage:
         assert coverage["covered"] == 0
         assert coverage["pct"] == 0.0
 
+    def test_get_coverage_with_separate_instance_no_mutation(self, tmp_path):
+        """Coverage calculation with merged entries must NOT mutate the original KB.
+
+        Regression test for the thread-unsafe pattern in GetKBCoverage that
+        temporarily swapped project_kb.entries with merged entries.
+        """
+        hierarchy = [
+            {"N1": "MRO", "N2": "Fixação", "N3": "Parafusos", "N4": "Parafuso Sextavado"},
+            {"N1": "MRO", "N2": "Lubrificação", "N3": "Óleos", "N4": "Óleo Motor"},
+            {"N1": "MRO", "N2": "Filtração", "N3": "Filtros", "N4": "Filtro de Ar"},
+        ]
+        # Project KB has 1 entry
+        project_kb = make_kb(tmp_path, initial_entries=[
+            {
+                "id": "p1", "description": "Parafuso M8",
+                "description_norm": "parafuso m8",
+                "N1": "MRO", "N2": "Fixação", "N3": "Parafusos",
+                "N4": "Parafuso Sextavado",
+                "source": "llm_approved", "confidence": 0.9,
+                "version": "v1", "date_added": "2026-01-01T00:00:00",
+            },
+        ])
+        assert len(project_kb.entries) == 1
+
+        # Merged entries have 2 entries (simulating sector + project merge)
+        merged = project_kb.entries + [
+            {
+                "id": "s1", "description": "Óleo Motor",
+                "description_norm": "oleo motor",
+                "N1": "MRO", "N2": "Lubrificação", "N3": "Óleos",
+                "N4": "Óleo Motor",
+                "source": "llm_approved", "confidence": 0.85,
+                "version": "v1", "date_added": "2026-01-01T00:00:00",
+            },
+        ]
+
+        # Safe pattern: use a temporary KnowledgeBase for coverage
+        temp_kb = KnowledgeBase.__new__(KnowledgeBase)
+        temp_kb.entries = merged
+        coverage = temp_kb.get_coverage(hierarchy)
+
+        # Coverage should reflect merged data (2 out of 3 covered)
+        assert coverage["covered"] == 2
+        assert coverage["total_n4s"] == 3
+
+        # CRITICAL: original KB must not be mutated
+        assert len(project_kb.entries) == 1
+        assert project_kb.entries[0]["id"] == "p1"
+
 
 # ---------------------------------------------------------------------------
 # Tests: versioning

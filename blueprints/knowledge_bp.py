@@ -176,12 +176,11 @@ def get_kb_coverage_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     else:
         merged = project_kb.entries
 
-    # Calculate coverage with merged entries
-    # Temporarily swap entries for coverage calculation
-    original_entries = project_kb.entries
-    project_kb.entries = merged
-    coverage = project_kb.get_coverage(hierarchy)
-    project_kb.entries = original_entries
+    # Calculate coverage with merged entries using a temporary instance
+    # (avoids mutating project_kb.entries, which is thread-unsafe)
+    temp_kb = KnowledgeBase.__new__(KnowledgeBase)
+    temp_kb.entries = merged
+    coverage = temp_kb.get_coverage(hierarchy)
 
     coverage["hierarchy_source"] = source
     coverage["project_entries"] = project_entry_count
