@@ -270,9 +270,9 @@ def train_model_core(
                 # Mark previous active as inactive
                 for h in history:
                     h['status'] = 'inactive'
-        except:
+        except Exception:
             pass
-            
+
     history.insert(0, history_entry) # Add new at top
     
     # Limit Versions (Retention Policy: Keep max 3)
