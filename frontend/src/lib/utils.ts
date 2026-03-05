@@ -13,5 +13,7 @@ export function getSourceLabel(source: string): string {
   if (source.startsWith('LLM')) return 'Grok';
   if (source === 'Taxonomy (Dict)') return 'Dicionário';
   if (source === 'ML') return 'ML';
+  if (source === 'consultant_correction') return 'Ajuste Manual';
+  if (source === 'reclassified_with_guidance') return 'Reclassificado';
   return source || '--';
 }
