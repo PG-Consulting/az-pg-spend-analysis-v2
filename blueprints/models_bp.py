@@ -549,9 +549,7 @@ def GetTrainingData(req: func.HttpRequest) -> func.HttpResponse:
     df = pd.read_csv(master_file)
 
     # Group duplicates and count occurrences for display
-    desc_col = "Descricao" if "Descricao" in df.columns else (
-        "Descricao" if "Descricao" in df.columns else df.columns[0]
-    )
+    desc_col = "Descricao" if "Descricao" in df.columns else df.columns[0]
     df["_count"] = df.groupby([desc_col, "N4", "added_version"])[desc_col].transform("count")
     df_display = df.drop_duplicates(subset=[desc_col, "N4", "added_version"], keep="first").copy()
     df_display.rename(columns={"_count": "Ocorrencias"}, inplace=True)
