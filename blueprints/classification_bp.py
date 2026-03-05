@@ -158,12 +158,17 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     # --- Decode and load file ---
     file_bytes = base64.b64decode(file_content_b64)
     try:
-        df = pd.read_excel(io.BytesIO(file_bytes))
-    except Exception:
         try:
-            df = pd.read_csv(io.BytesIO(file_bytes), sep=";", encoding="utf-8", on_bad_lines="skip")
+            df = pd.read_excel(io.BytesIO(file_bytes))
         except Exception:
-            df = pd.read_csv(io.BytesIO(file_bytes), sep=",", encoding="utf-8", on_bad_lines="skip")
+            try:
+                df = pd.read_csv(io.BytesIO(file_bytes), sep=";", encoding="utf-8", on_bad_lines="skip")
+            except Exception:
+                df = pd.read_csv(io.BytesIO(file_bytes), sep=",", encoding="utf-8", on_bad_lines="skip")
+    except Exception as e:
+        import shutil
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise ValidationError(f"Formato de arquivo invalido: {e}")
 
     # Identify description column (second non-unnamed column heuristic, same as v2)
     valid_cols = [c for c in df.columns if not str(c).startswith("Unnamed")]
