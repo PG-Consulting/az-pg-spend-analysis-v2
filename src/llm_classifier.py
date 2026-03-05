@@ -13,6 +13,8 @@ from src.types import ClassificationResultDict, HierarchyEntryDict, KBEntryDict
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+logger = logging.getLogger(__name__)
+
 # UNSPSC Segment/Family definitions for prompt context
 # We use a simplified subset to guide the model, or rely on its internal knowledge (GPT-4 handles UNSPSC well)
 UNSPSC_CONTEXT = """
@@ -153,15 +155,16 @@ def classify_items_with_llm(
                     if idx < len(results):
                         results[idx] = _create_manual_fallback("Erro no processamento paralelo")
 
-    # Log aggregated token usage via print() — logging from threads doesn't reach Azure log stream
+    # Log aggregated token usage
     if total_usage["total_tokens"] > 0:
-        print(
-            f"TOKEN USAGE TOTAL: input={total_usage['prompt_tokens']}, "
-            f"output={total_usage['completion_tokens']}, "
-            f"reasoning={total_usage['reasoning_tokens']}, "
-            f"total={total_usage['total_tokens']}, "
-            f"items={len(descriptions)}, llm_calls={len(chunks)}",
-            flush=True
+        logger.info(
+            "TOKEN USAGE TOTAL: input=%d, output=%d, reasoning=%d, total=%d, items=%d, llm_calls=%d",
+            total_usage['prompt_tokens'],
+            total_usage['completion_tokens'],
+            total_usage['reasoning_tokens'],
+            total_usage['total_tokens'],
+            len(descriptions),
+            len(chunks),
         )
 
     return [r if r is not None else _create_manual_fallback("Falha no mapeamento", "Falha Crítica no Processamento") for r in results]
