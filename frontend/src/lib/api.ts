@@ -90,7 +90,6 @@ export const apiClient = {
   },
 
   async postActivity(conversationId: string, token: string, activity: unknown): Promise<unknown> {
-    console.log('[DIRECT LINE ACTIVITY]', JSON.stringify(activity, null, 2));
     const response = await axios.post(
       `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
       activity,
@@ -117,7 +116,6 @@ export const apiClient = {
       text,
       value,
     };
-    console.log('[DIRECT LINE PAYLOAD]', JSON.stringify(payload, null, 2));
     await axios.post(
       `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
       payload,
