@@ -68,3 +68,10 @@ _SOURCE_LABELS = {
 def friendly_source_label(source: str) -> str:
     """Map internal source identifier to a user-friendly label."""
     return _SOURCE_LABELS.get(source, source or "")
+
+
+# ---------------------------------------------------------------------------
+# Incomplete classification values (centralised)
+# ---------------------------------------------------------------------------
+
+INCOMPLETE_VALUES = frozenset({"", "Não Identificado", "Nao Identificado"})

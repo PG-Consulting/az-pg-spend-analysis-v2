@@ -7,7 +7,7 @@ import logging
 import datetime
 
 import azure.functions as func
-from src.utils import get_models_dir, get_jobs_dir, friendly_source_label
+from src.utils import get_models_dir, get_jobs_dir, friendly_source_label, INCOMPLETE_VALUES
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
 from src.api_helpers import json_response, error_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError
@@ -157,14 +157,13 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     kb_added = 0
     if project_id:
         kb_entries_to_add = []
-        _incomplete = {"", "Não Identificado", "Não Identificado"}
         for d in decisions:
             if d.get("decision") in ("approved", "edited") and (
                 d.get("contribute_to_kb", True) or d.get("decision") == "edited"
             ):
                 # Skip entries with incomplete classification (any N-level is "Não Identificado")
                 if any(
-                    str(d.get(lvl, "")).strip() in _incomplete
+                    str(d.get(lvl, "")).strip() in INCOMPLETE_VALUES
                     for lvl in ("N1", "N2", "N3", "N4")
                 ):
                     continue

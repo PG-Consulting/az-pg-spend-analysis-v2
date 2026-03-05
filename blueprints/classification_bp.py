@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 import azure.functions as func
-from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps, friendly_source_label
+from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps, friendly_source_label, INCOMPLETE_VALUES
 from src.api_helpers import json_response, error_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError, ConflictError
 from src.file_lock import read_status, write_status, update_status, locked_status
@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 classification_bp = func.Blueprint()
 
 CHUNK_SIZE = 500
-
-_UNIDENTIFIED = frozenset({"", "Não Identificado"})
 
 
 def _derive_status(row: dict) -> str:
@@ -32,7 +30,7 @@ def _derive_status(row: dict) -> str:
     existing = row.get("status", "")
     if existing:
         return existing
-    if any(str(row.get(lvl, "")).strip() in _UNIDENTIFIED for lvl in ("N1", "N2", "N3", "N4")):
+    if any(str(row.get(lvl, "")).strip() in INCOMPLETE_VALUES for lvl in ("N1", "N2", "N3", "N4")):
         return "Nenhum"
     return "Único"
 

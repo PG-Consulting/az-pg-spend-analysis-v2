@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 
 from src.preprocessing import normalize_text
+from src.utils import INCOMPLETE_VALUES
 
 # ================================
 # CONFIGURATION CONSTANTS
@@ -551,11 +552,10 @@ def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -
     total_items = len(df_items)
 
     # "Não classificado" = any N-level is empty or "Não Identificado" (vetorizado)
-    _incomplete = {"", "Não Identificado"}
     incomplete_mask = pd.Series(False, index=df_items.index)
     for lvl in ("N1", "N2", "N3", "N4"):
         if lvl in df_items.columns:
-            incomplete_mask = incomplete_mask | df_items[lvl].fillna("").astype(str).str.strip().isin(_incomplete)
+            incomplete_mask = incomplete_mask | df_items[lvl].fillna("").astype(str).str.strip().isin(INCOMPLETE_VALUES)
     nenhum_count = int(incomplete_mask.sum())
     unico_count = total_items - nenhum_count
 
