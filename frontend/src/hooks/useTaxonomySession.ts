@@ -53,6 +53,8 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
 
     const cancelledRef = useRef(false)
     const currentJobIdRef = useRef<string | null>(null)
+    const sessionsRef = useRef(sessions)
+    sessionsRef.current = sessions
 
     const activeSession = sessions.find(s => s.sessionId === activeSessionId)
 
@@ -198,28 +200,23 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
     ) => {
         if (!activeSessionId) return
 
-        setSessions(prev => prev.map(s => {
-            if (s.sessionId !== activeSessionId) return s
-            return {
-                ...s,
-                reviewState: 'completed' as ReviewState,
-                reviewSummary: summary,
-                approvedFileContentBase64: approvedFileB64,
-                approvedDownloadFilename: approvedFilename,
-            }
-        }))
+        const currentSession = sessionsRef.current.find(s => s.sessionId === activeSessionId);
+        if (!currentSession) return;
 
-        const currentSession = sessions.find(s => s.sessionId === activeSessionId)
-        if (currentSession) {
-            await saveSession({
-                ...currentSession,
-                reviewState: 'completed',
-                reviewSummary: summary,
-                approvedFileContentBase64: approvedFileB64,
-                approvedDownloadFilename: approvedFilename,
-            })
-        }
-    }, [activeSessionId, sessions])
+        const updatedSession: TaxonomySession = {
+            ...currentSession,
+            reviewState: 'completed' as ReviewState,
+            reviewSummary: summary,
+            approvedFileContentBase64: approvedFileB64,
+            approvedDownloadFilename: approvedFilename,
+        };
+
+        setSessions(prev => prev.map(s =>
+            s.sessionId !== activeSessionId ? s : updatedSession
+        ));
+
+        await saveSession(updatedSession);
+    }, [activeSessionId])
 
     const cancelJob = useCallback(async () => {
         const jobId = currentJobIdRef.current
