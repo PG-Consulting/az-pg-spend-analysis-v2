@@ -364,7 +364,7 @@ export function CreateProjectModal({
           disabled={(step === 'basic' && !canProceedBasic) || loading}
           className="px-5 py-2 text-sm bg-gradient-to-r from-[#0693e3] to-[#9b51e0] text-white rounded-xl hover:from-[#0576b8] hover:to-[#7c3aed] disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
         >
-          {loading ? 'Criando...' : step === 'hierarchy' ? 'Criar Projeto' : 'Proximo'}
+          {loading ? 'Criando...' : step === 'hierarchy' ? 'Criar Projeto' : 'Próximo'}
         </button>
       </div>
     </Modal>

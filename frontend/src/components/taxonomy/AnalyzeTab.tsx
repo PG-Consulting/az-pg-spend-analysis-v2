@@ -51,7 +51,7 @@ export default function AnalyzeTab({
               <span><strong className="text-accent-500">{reviewSummary.kb_added}</strong> <span className="text-primary-400">na base</span></span>
             </>
           ) : (
-            <span className="text-primary-400">Analise Conversacional</span>
+            <span className="text-primary-400">Análise Conversacional</span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -83,7 +83,7 @@ export default function AnalyzeTab({
           )}
           <button
             onClick={onClose}
-            title="Fechar analise"
+            title="Fechar análise"
             className="w-8 h-8 flex items-center justify-center rounded-lg text-primary-400 hover:text-[#32373c] hover:bg-gray-100 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -101,7 +101,7 @@ export default function AnalyzeTab({
         {copilotMessages.length === 0 && !isCopilotLoading && (
           <div className="flex flex-col items-center justify-center h-full py-12">
             <AiAvatar size="lg" pulse className="mb-4" />
-            <p className="text-sm text-primary-400 mb-6">Faca perguntas sobre os dados classificados e revisados.</p>
+            <p className="text-sm text-primary-400 mb-6">Faça perguntas sobre os dados classificados e revisados.</p>
             <SuggestedPrompts onSelect={(prompt) => { onSetUserMessage(prompt); onSendMessage(prompt); }} />
           </div>
         )}

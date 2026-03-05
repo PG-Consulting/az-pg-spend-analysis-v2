@@ -341,7 +341,7 @@ export function ItemDetailPanel({
             {decisionBadge()}
             {itemState.instructionUsed && (
               <span className="text-xs text-primary-400 italic truncate" title={itemState.instructionUsed}>
-                com instrucao
+                com instrução
               </span>
             )}
           </div>
@@ -384,7 +384,7 @@ export function ItemDetailPanel({
               disabled={!canApprove}
               className="w-full py-2.5 px-4 rounded-xl text-sm font-medium transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed bg-accent-500 text-white hover:bg-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-500/25 focus:ring-offset-1"
             >
-              {hasEdits ? 'Aprovar com Edicao' : 'Aprovar'}
+              {hasEdits ? 'Aprovar com Edição' : 'Aprovar'}
             </button>
             <button
               onClick={() => onReject(item.index)}
@@ -419,7 +419,7 @@ export function ItemDetailPanel({
             disabled={!hasNext}
             className="text-sm text-primary-400 hover:text-accent-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
-            Proximo
+            Próximo
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>

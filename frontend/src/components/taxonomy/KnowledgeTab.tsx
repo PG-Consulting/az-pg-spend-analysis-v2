@@ -221,7 +221,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
 
   const handleRollback = async (versionId: string) => {
     if (!projectId) return;
-    if (!confirm(`Reverter para a versao ${versionId}? As entradas atuais serao substituidas.`)) return;
+    if (!confirm(`Reverter para a versão ${versionId}? As entradas atuais serão substituídas.`)) return;
     try {
       const api = await getApi();
       await api.rollbackKB(projectId, versionId);
@@ -311,7 +311,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
                   ? 'bg-[#eff8ff] text-[#0693e3]'
                   : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
               }`}
-              title="Historico de versoes"
+              title="Histórico de versões"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -415,7 +415,7 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
         {showVersions && (
           <div className="mb-3 border border-gray-100 rounded-xl overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-600">Historico de Versoes</span>
+              <span className="text-xs font-medium text-gray-600">Histórico de Versões</span>
               <button onClick={() => setShowVersions(false)} className="text-gray-400 hover:text-gray-600 p-0.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
