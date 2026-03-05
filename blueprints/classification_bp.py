@@ -20,61 +20,6 @@ classification_bp = func.Blueprint()
 CHUNK_SIZE = 500
 
 
-def _parse_custom_hierarchy_b64(custom_hierarchy_b64: str):
-    """Decode a base64-encoded Excel file containing a custom hierarchy (N1,N2,N3,N4).
-    Returns a list of dicts or None on failure.
-    Detects the header row automatically (looks for N1 and N4 in any row).
-    """
-    import pandas as pd
-
-    if not custom_hierarchy_b64:
-        return None
-    try:
-        cust_bytes = base64.b64decode(custom_hierarchy_b64)
-
-        # Read without assuming header position
-        df_raw = pd.read_excel(io.BytesIO(cust_bytes), header=None)
-
-        # Find the row containing N1 and N4 headers
-        header_row = None
-        for idx, row in df_raw.iterrows():
-            values = [str(v).strip().upper() for v in row.values]
-            if "N1" in values and "N4" in values:
-                header_row = idx
-                break
-
-        if header_row is None:
-            logger.error("Custom hierarchy: headers N1/N4 not found in file")
-            return None
-
-        # Re-read with correct header row
-        df_hier = pd.read_excel(io.BytesIO(cust_bytes), header=header_row)
-        df_hier.columns = [str(c).strip().upper() for c in df_hier.columns]
-
-        if "N4" not in df_hier.columns:
-            logger.error(f"Custom hierarchy: N4 column missing. Columns: {list(df_hier.columns)}")
-            return None
-
-        # Build list (preserves duplicate N4 values across different N1/N2/N3 branches)
-        custom_hierarchy = []
-        for _, row in df_hier.iterrows():
-            import pandas as pd_inner
-            n4 = str(row.get("N4", "")).strip()
-            if n4 and n4.upper() != "NAN":
-                custom_hierarchy.append({
-                    "N1": str(row.get("N1", "")).strip() if pd_inner.notna(row.get("N1")) else "",
-                    "N2": str(row.get("N2", "")).strip() if pd_inner.notna(row.get("N2")) else "",
-                    "N3": str(row.get("N3", "")).strip() if pd_inner.notna(row.get("N3")) else "",
-                    "N4": n4,
-                })
-
-        logger.info(f"Custom hierarchy parsed: {len(custom_hierarchy)} entries (list, preserves duplicates)")
-        return custom_hierarchy if custom_hierarchy else None
-    except Exception as e:
-        logger.error(f"Failed to parse custom hierarchy: {e}")
-        return None
-
-
 @classification_bp.route(route="SubmitTaxonomyJob", methods=["POST", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
 @handle_errors
