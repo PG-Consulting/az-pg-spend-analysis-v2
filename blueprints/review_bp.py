@@ -242,7 +242,10 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             "rejected": rejected_count,
             "kb_added": kb_added,
         }
-        status_data["approved_file_content_base64"] = file_b64
+        # Salvar base64 em arquivo separado (não no status.json — evita bloat de 5-15MB no poll)
+        approved_path = os.path.join(job_dir, "approved_result_b64.txt")
+        with open(approved_path, "w", encoding="utf-8") as af:
+            af.write(file_b64)
         original_filename = status_data.get("filename", "upload.xlsx")
         base_name = os.path.splitext(original_filename)[0]
         download_filename = f"{base_name}_classificado.xlsx"
