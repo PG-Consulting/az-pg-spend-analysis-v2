@@ -19,6 +19,23 @@ classification_bp = func.Blueprint()
 
 CHUNK_SIZE = 500
 
+_UNIDENTIFIED = frozenset({"", "Não Identificado"})
+
+
+def _derive_status(row: dict) -> str:
+    """Derive classification status from N1-N4 values.
+
+    Returns the existing status if present, otherwise:
+    - "Nenhum" if any level is empty or "Não Identificado"
+    - "Único" if all levels are identified
+    """
+    existing = row.get("status", "")
+    if existing:
+        return existing
+    if any(str(row.get(lvl, "")).strip() in _UNIDENTIFIED for lvl in ("N1", "N2", "N3", "N4")):
+        return "Nenhum"
+    return "Único"
+
 
 @classification_bp.route(route="SubmitTaxonomyJob", methods=["POST", "OPTIONS"],
                           auth_level=func.AuthLevel.ANONYMOUS)
@@ -335,12 +352,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                 "N4": row.get("N4", "Não Identificado"),
                 "confidence": row.get("confidence", 0.0),
                 "source": row.get("source", ""),
-                "status": row.get("status", "") or (
-                    "Nenhum" if any(
-                        str(row.get(lvl, "")).strip() in ("", "Não Identificado", "Não Identificado")
-                        for lvl in ("N1", "N2", "N3", "N4")
-                    ) else "Único"
-                ),
+                "status": _derive_status(row),
             })
     else:
         # In-progress jobs (PROCESSING): read individual result_X.json chunks
@@ -372,12 +384,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                     "N4": result.get("N4", "Não Identificado"),
                     "confidence": result.get("confidence", 0.0),
                     "source": result.get("source", ""),
-                    "status": result.get("status", "") or (
-                        "Nenhum" if any(
-                            str(result.get(lvl, "")).strip() in ("", "Não Identificado", "Não Identificado")
-                            for lvl in ("N1", "N2", "N3", "N4")
-                        ) else "Único"
-                    ),
+                    "status": _derive_status(result),
                 }
                 items.append(item)
                 global_index += 1
