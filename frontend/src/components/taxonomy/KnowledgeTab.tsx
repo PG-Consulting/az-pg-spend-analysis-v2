@@ -44,6 +44,11 @@ export function KnowledgeTab({ projectId, projectHierarchy, sectorName, useSecto
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Reset page when debounced search changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
   const loadKB = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);

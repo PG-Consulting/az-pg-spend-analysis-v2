@@ -30,6 +30,11 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Reset page when debounced search changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
   const loadKB = useCallback(async () => {
     if (!sectorName) return;
     setLoading(true);
