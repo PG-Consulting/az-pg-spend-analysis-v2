@@ -76,7 +76,7 @@ def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(results)
 
 
-@copilot_bp.route(route="DeleteMemoryRule", methods=["DELETE", "GET", "OPTIONS"],
+@copilot_bp.route(route="DeleteMemoryRule", methods=["DELETE", "OPTIONS"],
                    auth_level=func.AuthLevel.ANONYMOUS)
 @handle_errors
 def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
@@ -89,7 +89,7 @@ def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("DeleteMemoryRule HTTP trigger processed a request.")
 
     if req.method == "OPTIONS":
-        return options_response("DELETE, GET, OPTIONS")
+        return options_response("DELETE, OPTIONS")
 
     rule_id = req.params.get("id")
     if not rule_id:
