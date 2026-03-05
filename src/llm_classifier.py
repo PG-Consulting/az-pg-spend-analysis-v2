@@ -144,9 +144,11 @@ def classify_items_with_llm(
                         results[chunk_start + offset] = res
             except Exception as e:
                 logging.error(f"Chunk starting at {chunk_start} failed: {e}")
-                # Fallback for the whole chunk if it failed
-                num_items = len(chunks[0][1]) if chunks else 1
-                for offset in range(num_items):
+                failed_chunk_items = next(
+                    (items for start, items in chunks if start == chunk_start),
+                    []
+                )
+                for offset in range(len(failed_chunk_items)):
                     idx = chunk_start + offset
                     if idx < len(results):
                         results[idx] = _create_manual_fallback("Erro no processamento paralelo")
