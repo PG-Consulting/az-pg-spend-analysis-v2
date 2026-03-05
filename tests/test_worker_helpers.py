@@ -1,9 +1,10 @@
-"""Tests for worker_helpers — parse_custom_hierarchy and cleanup_stale_jobs."""
+"""Tests for worker_helpers — parse_custom_hierarchy, cleanup_stale_jobs, find_next_chunks, consolidate_job."""
 import json
+import os
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from src.worker_helpers import parse_custom_hierarchy, cleanup_stale_jobs
+from src.worker_helpers import parse_custom_hierarchy, cleanup_stale_jobs, find_next_chunks, consolidate_job
 
 
 # ---------------------------------------------------------------------------
@@ -182,3 +183,280 @@ class TestCleanupStaleJobs:
         cleanup_stale_jobs(str(tmp_path))
         result = json.loads((job_dir / "status.json").read_text())
         assert result["status"] == "COMPLETED"
+
+
+# ---------------------------------------------------------------------------
+# find_next_chunks
+# ---------------------------------------------------------------------------
+
+class TestFindNextChunks:
+    """find_next_chunks retorna índices de chunks sem result correspondente."""
+
+    def test_returns_unprocessed_chunk(self, tmp_path):
+        """Chunk sem result deve ser retornado."""
+        job_dir = str(tmp_path / "job1")
+        os.makedirs(job_dir)
+        # chunk_0 sem result_0
+        with open(os.path.join(job_dir, "chunk_0.json"), "w") as f:
+            json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 1}
+        result = find_next_chunks(job_info, max_count=1)
+        assert result == [0]
+
+    def test_skips_processed_chunk(self, tmp_path):
+        """Chunk com result correspondente deve ser ignorado."""
+        job_dir = str(tmp_path / "job2")
+        os.makedirs(job_dir)
+        with open(os.path.join(job_dir, "chunk_0.json"), "w") as f:
+            json.dump([], f)
+        with open(os.path.join(job_dir, "result_0.json"), "w") as f:
+            json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 1}
+        result = find_next_chunks(job_info, max_count=1)
+        assert result == []
+
+    def test_returns_multiple_unprocessed(self, tmp_path):
+        """Retorna até max_count chunks não processados."""
+        job_dir = str(tmp_path / "job3")
+        os.makedirs(job_dir)
+        for i in range(3):
+            with open(os.path.join(job_dir, f"chunk_{i}.json"), "w") as f:
+                json.dump([], f)
+        # Somente chunk_1 já processado
+        with open(os.path.join(job_dir, "result_1.json"), "w") as f:
+            json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 3}
+        result = find_next_chunks(job_info, max_count=5)
+        assert result == [0, 2]
+
+    def test_respects_max_count(self, tmp_path):
+        """Deve retornar no máximo max_count chunks."""
+        job_dir = str(tmp_path / "job4")
+        os.makedirs(job_dir)
+        for i in range(5):
+            with open(os.path.join(job_dir, f"chunk_{i}.json"), "w") as f:
+                json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 5}
+        result = find_next_chunks(job_info, max_count=2)
+        assert len(result) == 2
+        assert result == [0, 1]
+
+    def test_respects_exclude_set(self, tmp_path):
+        """Chunks na lista de exclusão não devem ser retornados."""
+        job_dir = str(tmp_path / "job5")
+        os.makedirs(job_dir)
+        for i in range(3):
+            with open(os.path.join(job_dir, f"chunk_{i}.json"), "w") as f:
+                json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 3}
+        result = find_next_chunks(job_info, max_count=5, exclude={0, 2})
+        assert result == [1]
+
+    def test_empty_when_all_done(self, tmp_path):
+        """Se todos os chunks já têm result, retorna lista vazia."""
+        job_dir = str(tmp_path / "job6")
+        os.makedirs(job_dir)
+        for i in range(2):
+            with open(os.path.join(job_dir, f"chunk_{i}.json"), "w") as f:
+                json.dump([], f)
+            with open(os.path.join(job_dir, f"result_{i}.json"), "w") as f:
+                json.dump([], f)
+
+        job_info = {"job_dir": job_dir, "total_chunks": 2}
+        result = find_next_chunks(job_info, max_count=5)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# consolidate_job
+# ---------------------------------------------------------------------------
+
+class TestConsolidateJob:
+    """consolidate_job deve mesclar chunks, preencher NaN e marcar CLASSIFIED."""
+
+    def _make_job(self, tmp_path, job_id, chunk_data_list, result_data_list, status_extra=None):
+        """Helper: cria diretório de job com chunks, results e status.json."""
+        job_dir = str(tmp_path / job_id)
+        os.makedirs(job_dir)
+
+        for i, chunk in enumerate(chunk_data_list):
+            with open(os.path.join(job_dir, f"chunk_{i}.json"), "w") as f:
+                json.dump(chunk, f)
+
+        for i, result in enumerate(result_data_list):
+            with open(os.path.join(job_dir, f"result_{i}.json"), "w") as f:
+                json.dump(result, f)
+
+        status = {
+            "status": "PROCESSING",
+            "total_chunks": len(chunk_data_list),
+            "filename": "test.xlsx",
+            "desc_column": "Descricao",
+        }
+        if status_extra:
+            status.update(status_extra)
+
+        status_path = os.path.join(job_dir, "status.json")
+        with open(status_path, "w", encoding="utf-8") as f:
+            json.dump(status, f, ensure_ascii=False)
+
+        return {
+            "job_id": job_id,
+            "job_dir": job_dir,
+            "status_path": status_path,
+            "status": status,
+            "total_chunks": len(chunk_data_list),
+        }
+
+    def test_fills_na_with_nao_identificado(self, tmp_path):
+        """consolidate_job deve preencher N1-N4 vazios com 'Não Identificado'."""
+        chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "Sub1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+            {"description": "Item B", "N1": "", "N2": "", "N3": "", "N4": "",
+             "source": "None", "confidence": 0.0},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-fill", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(job_info["status_path"], encoding="utf-8") as f:
+            final_status = json.load(f)
+        assert final_status["status"] == "CLASSIFIED"
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+        items = result["items"]
+        assert len(items) == 2
+        # Item B tinha N1-N4 vazios, devem ser "Não Identificado"
+        assert items[1]["N1"] == "Não Identificado"
+        assert items[1]["N2"] == "Não Identificado"
+        assert items[1]["N3"] == "Não Identificado"
+        assert items[1]["N4"] == "Não Identificado"
+
+    def test_status_set_to_classified(self, tmp_path):
+        """consolidate_job deve definir status como CLASSIFIED (não COMPLETED)."""
+        chunk_data = [{"Descricao": "Item A"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "Sub1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-status", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(job_info["status_path"], encoding="utf-8") as f:
+            final_status = json.load(f)
+        assert final_status["status"] == "CLASSIFIED"
+
+    def test_result_json_contains_analytics(self, tmp_path):
+        """result.json deve conter analytics com pareto_N1."""
+        chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+            {"description": "Item B", "N1": "Cat1", "N2": "S1", "N3": "B", "N4": "Y",
+             "source": "LLM (Batch)", "confidence": 0.8},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-analytics", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+
+        assert "analytics" in result
+        assert "pareto_N1" in result["analytics"]
+        assert "summary" in result
+        assert result["summary"]["total_linhas"] == 2
+
+    def test_result_json_contains_excel_base64(self, tmp_path):
+        """result.json deve conter fileContent com Excel em base64."""
+        import base64
+        chunk_data = [{"Descricao": "Item A"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-excel", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+
+        assert "fileContent" in result
+        assert len(result["fileContent"]) > 0
+        # Deve ser base64 válido
+        decoded = base64.b64decode(result["fileContent"])
+        assert len(decoded) > 0
+
+    def test_intermediate_files_cleaned_up(self, tmp_path):
+        """Após consolidação, chunk_*.json e result_*.json intermediários devem ser removidos."""
+        chunk_data = [{"Descricao": "Item A"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-cleanup", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        job_dir = job_info["job_dir"]
+        # chunk_0.json e result_0.json devem ter sido removidos
+        assert not os.path.exists(os.path.join(job_dir, "chunk_0.json"))
+        assert not os.path.exists(os.path.join(job_dir, "result_0.json"))
+        # result.json final deve existir
+        assert os.path.exists(os.path.join(job_dir, "result.json"))
+
+    def test_incomplete_classification_gets_zero_confidence(self, tmp_path):
+        """Itens com 'Não Identificado' devem ter confidence zerada."""
+        chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+            {"description": "Item B", "N1": "", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.7},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-conf-zero", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+
+        items = result["items"]
+        # Item B tinha N1 vazio → "Não Identificado" → confidence = 0.0
+        assert items[1]["confidence"] == 0.0
+        # Item A completo → confidence preservada
+        assert items[0]["confidence"] == 0.9
+
+    def test_multiple_chunks_consolidated(self, tmp_path):
+        """consolidate_job deve mesclar resultados de múltiplos chunks."""
+        chunk0 = [{"Descricao": "Item A"}]
+        chunk1 = [{"Descricao": "Item B"}]
+        result0 = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+        result1 = [
+            {"description": "Item B", "N1": "Cat2", "N2": "S2", "N3": "B", "N4": "Y",
+             "source": "LLM (Batch)", "confidence": 0.8},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-multi", [chunk0, chunk1], [result0, result1])
+        consolidate_job(job_info)
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+
+        items = result["items"]
+        assert len(items) == 2
+        assert items[0]["N1"] == "Cat1"
+        assert items[1]["N1"] == "Cat2"
