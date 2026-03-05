@@ -43,6 +43,7 @@ export function ReviewTab({
     filteredItems, filter, setFilter, selectedIndices,
     progress, filterCounts, canFinalize, isLoading,
     approveItem, editItem, rejectItem, rejectItems, reclassifyItems, bulkApprove, bulkApproveHighConfidence,
+    bulkEdit,
     toggleSelection, toggleAll, finalizeReview, getItemState,
     globalContributeToKB, setGlobalContributeToKB,
   } = useReview({
@@ -93,6 +94,15 @@ export function ReviewTab({
     () => activeIndex !== null ? getItemState(activeIndex) : { decision: 'pending' as const },
     [activeIndex, getItemState]
   );
+
+  const selectedItemsList = useMemo(
+    () => selectedIndices.size > 1 ? localItems.filter(i => selectedIndices.has(i.index)) : [],
+    [selectedIndices, localItems]
+  );
+
+  const handleBulkEdit = useCallback((edits: { N1: string; N2: string; N3: string; N4: string; contributeToKB: boolean }) => {
+    bulkEdit(Array.from(selectedIndices), edits);
+  }, [bulkEdit, selectedIndices]);
 
   // Navigation helpers
   const activeDisplayIdx = useMemo(
@@ -383,6 +393,8 @@ export function ReviewTab({
         onNext={navigateNext}
         hasPrev={activeDisplayIdx > 0}
         hasNext={activeDisplayIdx < displayItems.length - 1}
+        selectedItems={selectedItemsList}
+        onBulkEdit={handleBulkEdit}
       />
 
       {/* Finalize sticky footer */}
