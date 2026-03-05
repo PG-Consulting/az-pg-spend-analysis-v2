@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Set
 from src.types import HierarchyEntryDict, JobInfoDict, KBEntryDict
 from src.utils import get_jobs_dir, get_models_dir, friendly_source_label
 from src.project_manager import get_project, resolve_hierarchy
-from src.file_lock import read_status, write_status, update_status
+from src.file_lock import read_status, write_status, update_status, locked_status
 
 logger = logging.getLogger(__name__)
 
@@ -323,8 +323,8 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
 def update_job_progress(job_info: JobInfoDict) -> None:
     """Update processed_chunks count in status.json.
 
-    Called from the main thread after each chunk completes (via as_completed loop).
-    Safe because the loop is sequential — no concurrent writes to status.json.
+    Uses update_status (atomic read-modify-write) to only update progress
+    fields without overwriting the entire status (avoids clobbering CANCELLED).
     """
     job_dir = job_info["job_dir"]
     total_chunks = job_info["total_chunks"]
@@ -333,7 +333,7 @@ def update_job_progress(job_info: JobInfoDict) -> None:
         if os.path.exists(os.path.join(job_dir, f"result_{j}.json"))
     )
     job_info["status"]["processed_chunks"] = processed_so_far
-    write_status(job_info["status_path"], job_info["status"])
+    update_status(job_info["status_path"], {"processed_chunks": processed_so_far})
 
 
 # ---------------------------------------------------------------------------
@@ -439,9 +439,13 @@ def consolidate_job(job_info: JobInfoDict) -> None:
         json.dump(final_result, f)
 
     # Set status to CLASSIFIED (not COMPLETED - review must happen first)
-    status_data = status
-    status_data["status"] = "CLASSIFIED"  # Was: "COMPLETED"
-    write_status(status_path, status_data)
+    # Use locked_status to check if job was CANCELLED concurrently
+    with locked_status(status_path) as current:
+        if current.get("status") == "CANCELLED":
+            logger.info(f"[Worker] job={job_id} was cancelled, skipping consolidation")
+            return
+        current["status"] = "CLASSIFIED"
+        current["download_filename"] = final_result.get("filename", "")
 
     # Clean up intermediate chunk and result files
     for chunk_file in glob_mod.glob(os.path.join(job_dir, "chunk_*.json")):
@@ -545,7 +549,10 @@ def run_worker_cycle() -> None:
                     logger.error(f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}")
                     job["status"]["status"] = "ERROR"
                     job["status"]["error"] = str(e)
-                    write_status(job["status_path"], job["status"])
+                    update_status(job["status_path"], {
+                        "status": "ERROR",
+                        "error": str(e),
+                    })
 
     # 4. Consolidate jobs that have completed all chunks
     for job_info in active_jobs:
@@ -566,4 +573,7 @@ def run_worker_cycle() -> None:
                 )
                 job_info["status"]["status"] = "ERROR"
                 job_info["status"]["error"] = f"Consolidation error: {e}"
-                write_status(job_info["status_path"], job_info["status"])
+                update_status(job_info["status_path"], {
+                    "status": "ERROR",
+                    "error": f"Consolidation error: {e}",
+                })

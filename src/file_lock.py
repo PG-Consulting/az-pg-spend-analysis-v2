@@ -5,6 +5,7 @@ and HTTP endpoints read/write status.json concurrently.
 """
 import json
 import logging
+from contextlib import contextmanager
 from typing import Dict, Any
 
 from filelock import FileLock
@@ -47,3 +48,21 @@ def update_status(status_path: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         with open(status_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
     return data
+
+
+@contextmanager
+def locked_status(status_path: str):
+    """Context manager for atomic read-modify-write on status.json.
+
+    Usage:
+        with locked_status(path) as data:
+            data["status"] = "CLASSIFIED"
+        # Automatically written back on exit
+    """
+    lock = FileLock(status_path + ".lock", timeout=_LOCK_TIMEOUT)
+    with lock:
+        with open(status_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        yield data
+        with open(status_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)

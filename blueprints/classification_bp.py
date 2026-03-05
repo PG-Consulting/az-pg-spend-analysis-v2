@@ -6,13 +6,13 @@ import base64
 import logging
 import math
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import azure.functions as func
 from src.utils import get_models_dir, get_jobs_dir, safe_json_dumps, friendly_source_label
 from src.api_helpers import json_response, error_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError, ConflictError
-from src.file_lock import read_status, write_status, update_status
+from src.file_lock import read_status, write_status, update_status, locked_status
 
 logger = logging.getLogger(__name__)
 classification_bp = func.Blueprint()
@@ -273,19 +273,15 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     if not os.path.exists(status_file):
         raise NotFoundError("Job", job_id)
 
-    status = read_status(status_file)
-
-    current_status = status.get("status", "")
-    if current_status not in ("PENDING", "PROCESSING"):
-        raise ConflictError(
-            f"Cannot cancel job with status '{current_status}'. "
-            "Only PENDING or PROCESSING jobs can be cancelled."
-        )
-
-    update_status(status_file, {
-        "status": "CANCELLED",
-        "cancelled_at": datetime.utcnow().isoformat(),
-    })
+    with locked_status(status_file) as status:
+        current_status = status.get("status", "")
+        if current_status not in ("PENDING", "PROCESSING"):
+            raise ConflictError(
+                f"Cannot cancel job with status '{current_status}'. "
+                "Only PENDING or PROCESSING jobs can be cancelled."
+            )
+        status["status"] = "CANCELLED"
+        status["cancelled_at"] = datetime.now(timezone.utc).isoformat()
 
     logger.info(f"[CancelJob] Job {job_id} cancelled (was {current_status})")
 
