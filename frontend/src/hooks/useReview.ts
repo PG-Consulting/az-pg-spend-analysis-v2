@@ -81,31 +81,44 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     return result;
   }, [items, filter, reviewStates]);
 
-  // Progress
-  const progress = useMemo(() => {
+  // Progress + filter counts in a single pass
+  const { progress, filterCounts } = useMemo(() => {
+    let approved = 0, edited = 0, rejected = 0, pending = 0;
+    let needsAttention = 0, lowConfidence = 0;
+
+    for (const item of items) {
+      const decision = reviewStates.get(item.index)?.decision || 'pending';
+
+      // Progress counts
+      if (decision === 'approved') approved++;
+      else if (decision === 'edited') edited++;
+      else if (decision === 'rejected') rejected++;
+      else pending++;
+
+      // Filter counts
+      if (item.confidence < 0.45 || item.status === 'Nenhum') needsAttention++;
+      if (item.confidence < 0.7) lowConfidence++;
+    }
+
     const total = items.length;
-    const reviewed = items.filter(item => {
-      const state = reviewStates.get(item.index);
-      return state && state.decision !== 'pending';
-    }).length;
-    const approved = items.filter(item => reviewStates.get(item.index)?.decision === 'approved').length;
-    const edited = items.filter(item => reviewStates.get(item.index)?.decision === 'edited').length;
-    const rejected = items.filter(item => reviewStates.get(item.index)?.decision === 'rejected').length;
-    const pending = total - reviewed;
+    const reviewed = approved + edited + rejected;
 
-    return { total, reviewed, approved, edited, rejected, pending, pct: total > 0 ? Math.round((reviewed / total) * 100) : 0 };
+    return {
+      progress: {
+        total, reviewed, approved, edited, rejected, pending,
+        pct: total > 0 ? Math.round((reviewed / total) * 100) : 0,
+      },
+      filterCounts: {
+        all: total,
+        needs_attention: needsAttention,
+        low_confidence: lowConfidence,
+        corrected: edited,
+        approved,
+        rejected,
+        pending,
+      },
+    };
   }, [items, reviewStates]);
-
-  // Filter counts
-  const filterCounts = useMemo(() => ({
-    all: items.length,
-    needs_attention: items.filter(i => i.confidence < 0.45 || i.status === 'Nenhum').length,
-    low_confidence: items.filter(i => i.confidence < 0.7).length,
-    corrected: items.filter(i => reviewStates.get(i.index)?.decision === 'edited').length,
-    approved: items.filter(i => reviewStates.get(i.index)?.decision === 'approved').length,
-    rejected: items.filter(i => reviewStates.get(i.index)?.decision === 'rejected').length,
-    pending: items.filter(i => !reviewStates.get(i.index) || reviewStates.get(i.index)?.decision === 'pending').length,
-  }), [items, reviewStates]);
 
   const canFinalize = progress.pending === 0;
 
