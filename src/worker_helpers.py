@@ -58,7 +58,7 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
             if not created_at:
                 continue
             created_dt = datetime.fromisoformat(created_at)
-            elapsed = (datetime.utcnow() - created_dt).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - created_dt).total_seconds()
             if elapsed > STALE_THRESHOLD_SECONDS:
                 logger.warning(
                     f"[Worker] Job {job_id} stuck for {elapsed/60:.0f}min. Marking as ERROR."

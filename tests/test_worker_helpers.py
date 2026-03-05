@@ -1,7 +1,9 @@
-"""Tests for worker_helpers.parse_custom_hierarchy — hierarchy resolution paths."""
+"""Tests for worker_helpers — parse_custom_hierarchy and cleanup_stale_jobs."""
+import json
 import pytest
+from datetime import datetime, timezone, timedelta
 
-from src.worker_helpers import parse_custom_hierarchy
+from src.worker_helpers import parse_custom_hierarchy, cleanup_stale_jobs
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +144,41 @@ class TestParseHierarchyPriorityOrder:
         }
         # Ambos None → retorna None (classificação aberta)
         assert parse_custom_hierarchy(status) is None
+
+
+# ---------------------------------------------------------------------------
+# Cenário 5: cleanup_stale_jobs — timezone aware/naive
+# ---------------------------------------------------------------------------
+
+class TestCleanupStaleJobs:
+    """cleanup_stale_jobs deve marcar PROCESSING > 1h como ERROR."""
+
+    def test_marks_stale_processing_job_as_error(self, tmp_path):
+        job_dir = tmp_path / "stale-job"
+        job_dir.mkdir()
+        two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        status = {"status": "PROCESSING", "created_at": two_hours_ago}
+        (job_dir / "status.json").write_text(json.dumps(status))
+        cleanup_stale_jobs(str(tmp_path))
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "ERROR"
+
+    def test_ignores_recent_processing_job(self, tmp_path):
+        job_dir = tmp_path / "recent-job"
+        job_dir.mkdir()
+        just_now = datetime.now(timezone.utc).isoformat()
+        status = {"status": "PROCESSING", "created_at": just_now}
+        (job_dir / "status.json").write_text(json.dumps(status))
+        cleanup_stale_jobs(str(tmp_path))
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "PROCESSING"
+
+    def test_ignores_non_processing_jobs(self, tmp_path):
+        job_dir = tmp_path / "done-job"
+        job_dir.mkdir()
+        old = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        status = {"status": "COMPLETED", "created_at": old}
+        (job_dir / "status.json").write_text(json.dumps(status))
+        cleanup_stale_jobs(str(tmp_path))
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "COMPLETED"
