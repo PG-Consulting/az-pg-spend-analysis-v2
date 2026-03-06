@@ -47,6 +47,11 @@ function BulkEditPanel({
 
   const canApply = n1 && n2 && n3 && n4;
 
+  const handleApply = () => {
+    onBulkEdit({ N1: n1, N2: n2, N3: n3, N4: n4, contributeToKB });
+    setN1(''); setN2(''); setN3(''); setN4('');
+  };
+
   const selectClass = "w-full h-10 rounded-xl border border-gray-200 bg-white pl-3 pr-8 text-sm shadow-[0_2px_8px_rgba(28,9,87,0.04)] transition-colors appearance-none focus:ring-2 focus:ring-[#0693e3]/20 focus:border-[#0693e3] focus:outline-none";
   const inputClass = "w-full h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm shadow-[0_2px_8px_rgba(28,9,87,0.04)] transition-colors focus:ring-2 focus:ring-[#0693e3]/20 focus:border-[#0693e3] focus:outline-none";
 
@@ -139,7 +144,7 @@ function BulkEditPanel({
 
         {/* Apply button */}
         <button
-          onClick={() => onBulkEdit({ N1: n1, N2: n2, N3: n3, N4: n4, contributeToKB })}
+          onClick={handleApply}
           disabled={!canApply}
           className="w-full py-2.5 px-4 rounded-xl text-sm font-medium transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed bg-accent-500 text-white hover:bg-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-500/25 focus:ring-offset-1"
         >
@@ -248,6 +253,7 @@ export function ItemDetailPanel({
   if (selectedItems && selectedItems.length > 1 && onBulkEdit) {
     return (
       <BulkEditPanel
+        key={selectedItems.map(i => i.index).join(',')}
         selectedItems={selectedItems}
         hierarchy={hierarchy}
         onBulkEdit={onBulkEdit}
