@@ -191,17 +191,22 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     # 2. Generate approved Excel from decisions
     import pandas as pd
 
-    # Load status.json + result.json to recover the ID column (SKU) per item index
+    # Load status.json + result.json to recover the ID column and extra columns per item
     status_path = os.path.join(job_dir, "status.json")
     status_data = read_status(status_path)
     id_col = status_data.get("id_column")
+    extra_columns = status_data.get("extra_columns", [])
     id_lookup = {}
+    extra_lookup = {}
     result_path = os.path.join(job_dir, "result.json")
-    if id_col and os.path.exists(result_path):
+    if (id_col or extra_columns) and os.path.exists(result_path):
         with open(result_path, "r", encoding="utf-8") as rf:
             result_tmp = json.load(rf)
         for idx, item in enumerate(result_tmp.get("items", [])):
-            id_lookup[idx] = item.get(id_col, "")
+            if id_col:
+                id_lookup[idx] = item.get(id_col, "")
+            if extra_columns:
+                extra_lookup[idx] = {col: item.get(col, "") for col in extra_columns}
 
     rows = []
     for d in decisions:
@@ -210,6 +215,9 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             if id_col:
                 row[id_col] = id_lookup.get(d.get("index", -1), "")
             row["Descrição"] = d.get("description", "")
+            item_extras = extra_lookup.get(d.get("index", -1), {})
+            for col in extra_columns:
+                row[col] = item_extras.get(col, "")
             row["N1"] = d.get("N1", "")
             row["N2"] = d.get("N2", "")
             row["N3"] = d.get("N3", "")

@@ -166,6 +166,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         # Project-based fields
         "project_id": project_id or None,
         "use_web_search": bool(req_body.get("useWebSearch", False)),
+        "extra_columns": valid_cols[2:] if len(valid_cols) > 2 else [],
     }
 
     # Hierarchy storage: prefer list (project path) over b64 (legacy path)
@@ -441,6 +442,7 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
 
     id_col = status_data.get("id_column")
     desc_col = status_data.get("desc_column", "Descricao")
+    extra_columns = status_data.get("extra_columns", [])
     raw_items = result_json.get("items", [])
 
     rows = []
@@ -449,6 +451,8 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
         if id_col:
             row[id_col] = item.get(id_col, "")
         row["Descricao"] = item.get(desc_col, item.get("description", ""))
+        for col in extra_columns:
+            row[col] = item.get(col, "")
         row["N1"] = item.get("N1", "")
         row["N2"] = item.get("N2", "")
         row["N3"] = item.get("N3", "")

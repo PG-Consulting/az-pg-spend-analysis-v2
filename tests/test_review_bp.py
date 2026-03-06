@@ -244,6 +244,134 @@ class TestApproveClassificationsBase64Separation:
         assert len(body["file_content_base64"]) > 0
 
 
+class TestApproveClassificationsExtraColumns:
+    """ApproveClassifications deve incluir colunas extras (ex: Fornecedor) no Excel de saída."""
+
+    def _setup_job_dir(self, tmp_path, job_id="test-extra-cols"):
+        job_dir = tmp_path / "taxonomy_jobs" / job_id
+        job_dir.mkdir(parents=True)
+
+        status_data = {
+            "job_id": job_id,
+            "status": "CLASSIFIED",
+            "sector": "teste",
+            "filename": "base_teste.xlsx",
+            "id_column": "SKU",
+            "desc_column": "Descricao",
+            "extra_columns": ["Fornecedor"],
+            "total_rows": 2,
+            "total_chunks": 1,
+            "processed_chunks": 1,
+        }
+        with open(job_dir / "status.json", "w", encoding="utf-8") as f:
+            json.dump(status_data, f)
+
+        result_data = {
+            "items": [
+                {"SKU": "001", "Descricao": "Parafuso M8", "Fornecedor": "ABC Ltda",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
+                 "source": "LLM (Batch)", "confidence": 0.9},
+                {"SKU": "002", "Descricao": "Porca M10", "Fornecedor": "XYZ SA",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Porcas",
+                 "source": "LLM (Batch)", "confidence": 0.85},
+            ]
+        }
+        with open(job_dir / "result.json", "w", encoding="utf-8") as f:
+            json.dump(result_data, f)
+
+        return job_dir
+
+    @patch("blueprints.review_bp.KnowledgeBase")
+    def test_extra_columns_in_approved_excel(self, mock_kb_class, tmp_path, monkeypatch):
+        """Excel de saída deve conter coluna Fornecedor entre Descrição e N1."""
+        import base64
+
+        job_id = "test-extra-cols"
+        self._setup_job_dir(tmp_path, job_id)
+
+        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
+        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+
+        from blueprints.review_bp import approve_classifications_endpoint
+
+        req = MagicMock()
+        req.get_json.return_value = {
+            "jobId": job_id,
+            "projectId": "",
+            "decisions": [
+                {"index": 0, "description": "Parafuso M8", "decision": "approved",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
+                 "confidence": 0.9, "source": "LLM (Batch)"},
+                {"index": 1, "description": "Porca M10", "decision": "approved",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Porcas",
+                 "confidence": 0.85, "source": "LLM (Batch)"},
+            ],
+        }
+
+        response = approve_classifications_endpoint(req)
+        assert response.status_code == 200
+
+        body = json.loads(response.get_body())
+        excel_bytes = base64.b64decode(body["file_content_base64"])
+
+        import pandas as pd
+        import io
+        df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Classificados")
+
+        assert "Fornecedor" in df.columns
+        assert list(df.columns) == ["SKU", "Descrição", "Fornecedor", "N1", "N2", "N3", "N4", "Fonte"]
+        assert df.iloc[0]["Fornecedor"] == "ABC Ltda"
+        assert df.iloc[1]["Fornecedor"] == "XYZ SA"
+
+    @patch("blueprints.review_bp.KnowledgeBase")
+    def test_no_extra_columns_when_absent(self, mock_kb_class, tmp_path, monkeypatch):
+        """Sem extra_columns no status, Excel deve ter formato padrão."""
+        job_id = "test-no-extra"
+        job_dir = tmp_path / "taxonomy_jobs" / job_id
+        job_dir.mkdir(parents=True)
+
+        status_data = {
+            "job_id": job_id, "status": "CLASSIFIED", "sector": "teste",
+            "filename": "base.xlsx", "id_column": "SKU", "desc_column": "Descricao",
+            "total_rows": 1, "total_chunks": 1, "processed_chunks": 1,
+        }
+        with open(job_dir / "status.json", "w", encoding="utf-8") as f:
+            json.dump(status_data, f)
+
+        result_data = {
+            "items": [
+                {"SKU": "001", "Descricao": "Parafuso M8",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
+                 "source": "LLM (Batch)", "confidence": 0.9},
+            ]
+        }
+        with open(job_dir / "result.json", "w", encoding="utf-8") as f:
+            json.dump(result_data, f)
+
+        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
+        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+
+        from blueprints.review_bp import approve_classifications_endpoint
+
+        req = MagicMock()
+        req.get_json.return_value = {
+            "jobId": job_id, "projectId": "",
+            "decisions": [
+                {"index": 0, "description": "Parafuso M8", "decision": "approved",
+                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
+                 "confidence": 0.9, "source": "LLM (Batch)"},
+            ],
+        }
+
+        response = approve_classifications_endpoint(req)
+        body = json.loads(response.get_body())
+
+        import base64, pandas as pd, io
+        df = pd.read_excel(io.BytesIO(base64.b64decode(body["file_content_base64"])), sheet_name="Classificados")
+        assert "Fornecedor" not in df.columns
+        assert list(df.columns) == ["SKU", "Descrição", "N1", "N2", "N3", "N4", "Fonte"]
+
+
 # ---------------------------------------------------------------------------
 # Lógica de filtragem de itens incompletos para KB (ApproveClassifications)
 # ---------------------------------------------------------------------------

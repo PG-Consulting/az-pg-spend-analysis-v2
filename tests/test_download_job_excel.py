@@ -93,6 +93,59 @@ class TestDownloadJobExcel:
         expected = f"{base}_resultado.xlsx"
         assert expected == "compras_2024_resultado.xlsx"
 
+    def test_extra_columns_included_when_present(self, tmp_path):
+        """Extra columns (e.g. Fornecedor) should appear in Excel between Descricao and N1."""
+        items = [
+            {
+                "Descricao": "Parafuso M8",
+                "Fornecedor": "ABC Ltda",
+                "N1": "Materiais", "N2": "Fixadores", "N3": "Parafusos", "N4": "Parafuso M8",
+                "source": "LLM (Batch)", "confidence": 0.92,
+            },
+            {
+                "Descricao": "Tinta Azul 18L",
+                "Fornecedor": "Tintas XYZ",
+                "N1": "Materiais", "N2": "Pintura", "N3": "Tintas", "N4": "Tinta Esmalte",
+                "source": "KB (Direct Match)", "confidence": 0.95,
+            },
+        ]
+        extra_columns = ["Fornecedor"]
+
+        rows = []
+        for item in items:
+            row = {}
+            row["Descricao"] = item.get("Descricao", "")
+            for col in extra_columns:
+                row[col] = item.get(col, "")
+            row["N1"] = item.get("N1", "")
+            row["N2"] = item.get("N2", "")
+            row["N3"] = item.get("N3", "")
+            row["N4"] = item.get("N4", "")
+            row["Fonte"] = friendly_source_label(item.get("source", ""))
+            rows.append(row)
+        df = pd.DataFrame(rows)
+        buf = io.BytesIO()
+        df.to_excel(buf, index=False, sheet_name="Resultados", engine="openpyxl")
+
+        df_out = pd.read_excel(io.BytesIO(buf.getvalue()), sheet_name="Resultados")
+        assert list(df_out.columns) == ["Descricao", "Fornecedor", "N1", "N2", "N3", "N4", "Fonte"]
+        assert df_out.iloc[0]["Fornecedor"] == "ABC Ltda"
+        assert df_out.iloc[1]["Fornecedor"] == "Tintas XYZ"
+
+    def test_no_extra_columns_when_absent(self, tmp_path):
+        """When extra_columns is empty, output should be the same as before."""
+        items = [
+            {
+                "Descricao": "Parafuso M8",
+                "N1": "Materiais", "N2": "Fixadores", "N3": "Parafusos", "N4": "Parafuso M8",
+                "source": "LLM (Batch)", "confidence": 0.92,
+            },
+        ]
+        excel_bytes = _generate_excel_from_items(items)
+        df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Resultados")
+        assert "Fornecedor" not in df.columns
+        assert list(df.columns) == ["Descricao", "N1", "N2", "N3", "N4", "Fonte"]
+
     def test_rejects_pending_job(self, tmp_path):
         """Status PENDING should not generate Excel."""
         job_dir, status_data = _make_job_dir(tmp_path, status="PENDING")
