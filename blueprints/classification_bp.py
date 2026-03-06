@@ -166,7 +166,11 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         # Project-based fields
         "project_id": project_id or None,
         "use_web_search": bool(req_body.get("useWebSearch", False)),
-        "extra_columns": valid_cols[2:] if len(valid_cols) > 2 else [],
+        "extra_columns": [
+            c for c in valid_cols[2:]
+            if c not in {"N1", "N2", "N3", "N4", "Fonte", "Descricao", "Descrição",
+                         "source", "confidence", "description", "description_norm"}
+        ],
     }
 
     # Hierarchy storage: prefer list (project path) over b64 (legacy path)
