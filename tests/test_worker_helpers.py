@@ -460,3 +460,49 @@ class TestConsolidateJob:
         assert len(items) == 2
         assert items[0]["N1"] == "Cat1"
         assert items[1]["N1"] == "Cat2"
+
+    def test_nan_strings_replaced_with_nao_identificado(self, tmp_path):
+        """Strings 'nan' em N1-N4 devem ser substituídas por 'Não Identificado'."""
+        chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
+        result_data = [
+            {"description": "Item A", "N1": "nan", "N2": "nan", "N3": "nan", "N4": "nan",
+             "source": "KB (Direct Match)", "confidence": 0.92},
+            {"description": "Item B", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-nan", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+            result = json.load(f)
+
+        items = result["items"]
+        # Item A tinha N1-N4 = "nan" — devem ser "Não Identificado"
+        assert items[0]["N1"] == "Não Identificado"
+        assert items[0]["N2"] == "Não Identificado"
+        assert items[0]["N3"] == "Não Identificado"
+        assert items[0]["N4"] == "Não Identificado"
+        assert items[0]["confidence"] == 0.0
+        # Item B intacto
+        assert items[1]["N1"] == "Cat1"
+
+    def test_result_json_is_valid_json(self, tmp_path):
+        """result.json não deve conter NaN literal (JSON inválido) — usa safe_json_dumps."""
+        chunk_data = [{"Descricao": "Item A", "Valor": None}]
+        result_data = [
+            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
+             "source": "LLM (Batch)", "confidence": 0.9},
+        ]
+
+        job_info = self._make_job(tmp_path, "test-valid-json", [chunk_data], [result_data])
+        consolidate_job(job_info)
+
+        result_path = os.path.join(job_info["job_dir"], "result.json")
+        raw = open(result_path, encoding="utf-8").read()
+        # Não deve conter NaN literal (que é JSON inválido)
+        assert "NaN" not in raw
+        # Deve ser JSON válido
+        import json as json_mod
+        parsed = json_mod.loads(raw)
+        assert "items" in parsed

@@ -74,4 +74,7 @@ def friendly_source_label(source: str) -> str:
 # Incomplete classification values (centralised)
 # ---------------------------------------------------------------------------
 
-INCOMPLETE_VALUES = frozenset({"", "Não Identificado", "Nao Identificado"})
+INCOMPLETE_VALUES = frozenset({
+    "", "Não Identificado", "Nao Identificado",
+    "nan", "NaN", "None", "none", "null", "NULL",
+})

@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple, Optional
 from src.ml_classifier import predict_single, load_model
 from src.taxonomy_engine import match_n4_without_priority
 from src.llm_classifier import classify_items_with_llm
+from src.utils import INCOMPLETE_VALUES
 
 
 def find_ambiguity_level(candidates: List[Dict]) -> Tuple[Optional[str], List[str]]:
@@ -151,11 +152,10 @@ def classify_hybrid(
                 source="Deferred to Batch LLM"
             )
         # Direct LLM call (only when use_llm_fallback=True, i.e. not in batch mode)
-        _UNCLASSIFIED = {"Não Identificado", "Nao Identificado", ""}
         llm_results = classify_items_with_llm([description], sector=sector, client_context=client_context, custom_hierarchy=hierarchy)
         if llm_results:
             llm_res = llm_results[0]
-            if llm_res.get("N1") and llm_res.get("N1") not in _UNCLASSIFIED:
+            if llm_res.get("N1") and llm_res.get("N1") not in INCOMPLETE_VALUES:
                  return ClassificationResult(
                     status="Único",
                     n4=llm_res.get("N4", ""),
@@ -287,11 +287,10 @@ def classify_hybrid(
     
     # Decision 4: Try LLM (fallback for non-Padrão sectors)
     if use_llm_fallback:
-        _UNCLASSIFIED_D4 = {"Não Identificado", "Nao Identificado", ""}
         llm_results = classify_items_with_llm([description], sector=sector, client_context=client_context, custom_hierarchy=hierarchy)
         if llm_results:
             llm_res = llm_results[0]
-            if llm_res.get("N1") and llm_res.get("N1") not in _UNCLASSIFIED_D4:
+            if llm_res.get("N1") and llm_res.get("N1") not in INCOMPLETE_VALUES:
                  return ClassificationResult(
                     status="Único", # LLM usually returns one answer
                     n4=llm_res.get("N4", ""),

@@ -12,6 +12,7 @@ from typing import List, Optional
 import pandas as pd
 
 from src.types import KBEntryDict, ClassificationResultDict, HierarchyEntryDict
+from src.utils import INCOMPLETE_VALUES
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +96,12 @@ def _llm_direct_pipeline(
 
         for i, (desc, matches) in enumerate(zip(descriptions, batch_matches)):
             best = matches[0] if matches else None
-            # Only use KB direct match if: high similarity AND complete classification (no "Não Identificado")
+            # Only use KB direct match if: high similarity AND complete classification
             if (
                 best
                 and best["_similarity"] >= KB_DIRECT_MATCH_THRESHOLD
                 and all(
-                    best.get(lvl, "").strip() not in ("", "Não Identificado", "Nao Identificado")
+                    str(best.get(lvl, "")).strip() not in INCOMPLETE_VALUES
                     for lvl in ("N1", "N2", "N3", "N4")
                 )
             ):
@@ -179,10 +180,9 @@ def _llm_direct_pipeline(
         results, stats = validate_and_correct(results, custom_hierarchy, lookup=hierarchy_lookup)
         logger.info(f"Hierarchy validation stats: {stats}")
 
-    # Zero confidence for incomplete classifications (any N-level is "Não Identificado")
-    _incomplete = ("", "Não Identificado", "Nao Identificado")
+    # Zero confidence for incomplete classifications
     for r in results:
-        if r and any(r.get(lvl, "") in _incomplete for lvl in ("N1", "N2", "N3", "N4")):
+        if r and any(str(r.get(lvl, "")).strip() in INCOMPLETE_VALUES for lvl in ("N1", "N2", "N3", "N4")):
             r["confidence"] = 0.0
 
     return results

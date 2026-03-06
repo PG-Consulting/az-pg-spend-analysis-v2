@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from src.utils import safe_json_dumps, get_models_dir, get_sectors_dir, friendly_source_label
+from src.utils import safe_json_dumps, get_models_dir, get_sectors_dir, friendly_source_label, INCOMPLETE_VALUES
 
 
 # ============================================================
@@ -83,6 +83,23 @@ class TestGetSectorsDir:
 # ============================================================
 # friendly_source_label
 # ============================================================
+
+class TestIncompleteValues:
+    """INCOMPLETE_VALUES deve incluir variantes de NaN/None/null."""
+
+    def test_nan_variants_in_incomplete(self):
+        for val in ("nan", "NaN", "None", "none", "null", "NULL"):
+            assert val in INCOMPLETE_VALUES, f"'{val}' deveria estar em INCOMPLETE_VALUES"
+
+    def test_standard_values_still_present(self):
+        assert "" in INCOMPLETE_VALUES
+        assert "Não Identificado" in INCOMPLETE_VALUES
+        assert "Nao Identificado" in INCOMPLETE_VALUES
+
+    def test_valid_categories_not_incomplete(self):
+        assert "Materiais" not in INCOMPLETE_VALUES
+        assert "Serviços" not in INCOMPLETE_VALUES
+
 
 class TestFriendlySourceLabel:
     def test_friendly_source_label_reclassified_with_guidance(self):

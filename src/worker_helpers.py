@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Set
 
 from src.types import HierarchyEntryDict, JobInfoDict, KBEntryDict
-from src.utils import get_jobs_dir, get_models_dir, friendly_source_label
+from src.utils import get_jobs_dir, get_models_dir, friendly_source_label, safe_json_dumps, INCOMPLETE_VALUES
 from src.project_manager import get_project, resolve_hierarchy
 from src.file_lock import read_status, write_status, update_status, locked_status
 
@@ -392,10 +392,16 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     else:
         final_df = results_df
 
-    # Fill blank cells with "Não Identificado"
+    # Fill blank/nan cells with "Não Identificado"
+    _nan_strings = [v for v in INCOMPLETE_VALUES if v not in ("", "Não Identificado", "Nao Identificado")]
     for col in ["N1", "N2", "N3", "N4"]:
         if col in final_df.columns:
-            final_df[col] = final_df[col].fillna("Não Identificado").replace("", "Não Identificado")
+            final_df[col] = (
+                final_df[col]
+                .fillna("Não Identificado")
+                .replace("", "Não Identificado")
+                .replace(_nan_strings, "Não Identificado")
+            )
     if "status" in final_df.columns:
         final_df["status"] = final_df["status"].fillna("Nenhum").replace("", "Nenhum")
 
@@ -436,7 +442,7 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     }
 
     with open(os.path.join(job_dir, "result.json"), "w") as f:
-        json.dump(final_result, f)
+        f.write(safe_json_dumps(final_result))
 
     # Set status to CLASSIFIED (not COMPLETED - review must happen first)
     # Use locked_status to check if job was CANCELLED concurrently

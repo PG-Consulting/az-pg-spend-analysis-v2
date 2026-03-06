@@ -185,6 +185,23 @@ class TestKBAddEntries:
         assert added == 0
         assert len(kb.entries) == 0
 
+    def test_add_entries_rejects_nan_string(self, tmp_path):
+        """Entries with N1-N4='nan' (string from str(NaN)) are silently rejected."""
+        kb = make_kb(tmp_path)
+        for nan_val in ("nan", "NaN", "None", "none", "null", "NULL"):
+            entry = {
+                "description": f"Item with {nan_val}",
+                "N1": nan_val,
+                "N2": "Geral",
+                "N3": "Geral",
+                "N4": "Algo N4",
+                "source": "llm_approved",
+                "confidence": 0.85,
+            }
+            added = kb.add_entries([entry])
+            assert added == 0, f"Entry with N1='{nan_val}' should be rejected"
+        assert len(kb.entries) == 0
+
     def test_add_entries_accepts_complete_classification(self, tmp_path):
         """Entries with all N1-N4 filled are accepted normally."""
         kb = make_kb(tmp_path)
@@ -192,6 +209,51 @@ class TestKBAddEntries:
         added = kb.add_entries([entry])
         assert added == 1
         assert len(kb.entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: import_xlsx with NaN values
+# ---------------------------------------------------------------------------
+
+class TestKBImportXlsxNaN:
+    """import_xlsx deve tratar NaN do Excel como vazio, não como string 'nan'."""
+
+    def test_import_xlsx_nan_cells_rejected(self, tmp_path):
+        """Rows with empty N1-N4 cells in Excel should NOT produce 'nan' entries."""
+        import io
+        import pandas as pd
+
+        kb = make_kb(tmp_path)
+
+        # Create Excel with some empty N1-N4 cells
+        df = pd.DataFrame([
+            {"Descrição": "Item OK", "N1": "Cat1", "N2": "Sub1", "N3": "Area1", "N4": "Det1"},
+            {"Descrição": "Item Vazio", "N1": None, "N2": None, "N3": None, "N4": None},
+            {"Descrição": "Item Parcial", "N1": "Cat2", "N2": None, "N3": "Area2", "N4": "Det2"},
+        ])
+        buf = io.BytesIO()
+        df.to_excel(buf, index=False)
+
+        result = kb.import_xlsx(buf.getvalue())
+        # Only "Item OK" should be added (complete classification)
+        assert result["added"] == 1
+        assert len(kb.entries) == 1
+        assert kb.entries[0]["N1"] == "Cat1"
+        # No entry should have "nan" as a value
+        for entry in kb.entries:
+            for lvl in ("N1", "N2", "N3", "N4"):
+                assert entry[lvl] != "nan", f"Entry has {lvl}='nan'"
+
+    def test_safe_str_converts_nan_to_empty(self):
+        """_safe_str should convert NaN to default, not to 'nan' string."""
+        result = KnowledgeBase._safe_str(float("nan"))
+        assert result == ""
+
+        result2 = KnowledgeBase._safe_str(None, "default")
+        assert result2 == "default"
+
+        result3 = KnowledgeBase._safe_str("valid")
+        assert result3 == "valid"
 
 
 # ---------------------------------------------------------------------------

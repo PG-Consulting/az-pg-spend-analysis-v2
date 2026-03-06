@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 import io
 
 import pandas as pd
-from src.utils import get_projects_dir, get_sectors_dir
+from src.utils import get_projects_dir, get_sectors_dir, INCOMPLETE_VALUES
 from src.types import KBEntryDict, HierarchyEntryDict, KBCoverageDict, KBPaginatedDict
 
 logger = logging.getLogger(__name__)
@@ -63,12 +63,11 @@ class KnowledgeBase:
         version = self._current_version()
 
         source_rank = {"consultant_correction": 2, "reclassified_with_guidance": 1, "llm_approved": 0}
-        _incomplete = {"", "Não Identificado", "Nao Identificado"}
 
         for entry in entries:
             # Reject entries with incomplete classification
             if any(
-                str(entry.get(lvl, "")).strip() in _incomplete
+                str(entry.get(lvl, "")).strip() in INCOMPLETE_VALUES
                 for lvl in ("N1", "N2", "N3", "N4")
             ):
                 continue
@@ -253,18 +252,25 @@ class KnowledgeBase:
             df.to_excel(writer, index=False, sheet_name="KnowledgeBase")
         return buf.getvalue()
 
+    @staticmethod
+    def _safe_str(value, default: str = "") -> str:
+        """Convert a value to string, treating NaN/None as the default."""
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return default
+        return str(value).strip()
+
     def import_xlsx(self, file_bytes: bytes) -> Dict[str, int]:
         df = pd.read_excel(io.BytesIO(file_bytes))
         entries = []
         for _, row in df.iterrows():
             entries.append(
                 {
-                    "description": str(row.get("Descrição", row.get("Descricao", row.get("description", "")))),
-                    "N1": str(row.get("N1", "")),
-                    "N2": str(row.get("N2", "")),
-                    "N3": str(row.get("N3", "")),
-                    "N4": str(row.get("N4", "")),
-                    "source": str(row.get("Fonte", row.get("source", "consultant_correction"))),
+                    "description": self._safe_str(row.get("Descrição", row.get("Descricao", row.get("description", "")))),
+                    "N1": self._safe_str(row.get("N1", "")),
+                    "N2": self._safe_str(row.get("N2", "")),
+                    "N3": self._safe_str(row.get("N3", "")),
+                    "N4": self._safe_str(row.get("N4", "")),
+                    "source": self._safe_str(row.get("Fonte", row.get("source", "consultant_correction")), "consultant_correction"),
                     "confidence": float(row.get("Confiança", row.get("Confianca", row.get("confidence", 1.0)))),
                     "instruction_used": row.get("Instrução", row.get("Instrucao", row.get("instruction_used"))),
                 }

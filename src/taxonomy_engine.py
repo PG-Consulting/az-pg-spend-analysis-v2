@@ -507,11 +507,9 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
             analytics[f"pareto_{level}"] = []
             continue
 
-        # Filter out empty, None, and "Não Identificado" (unclassified placeholder)
+        # Filter out incomplete values (empty, NaN variants, "Não Identificado")
         df_valid = df_items[
-            df_items[level].notna() &
-            (df_items[level] != "") &
-            (df_items[level] != "Não Identificado")
+            ~df_items[level].fillna("").astype(str).str.strip().isin(INCOMPLETE_VALUES)
         ]
 
         if not df_valid.empty:
