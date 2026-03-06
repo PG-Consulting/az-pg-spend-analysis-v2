@@ -253,7 +253,7 @@ export function ItemDetailPanel({
   if (selectedItems && selectedItems.length > 1 && onBulkEdit) {
     return (
       <BulkEditPanel
-        key={`bulk-${selectedItems.length}-${selectedItems[0]?.index}-${selectedItems[selectedItems.length - 1]?.index}`}
+        key={selectedItems.map(i => i.index).join(',')}
         selectedItems={selectedItems}
         hierarchy={hierarchy}
         onBulkEdit={onBulkEdit}

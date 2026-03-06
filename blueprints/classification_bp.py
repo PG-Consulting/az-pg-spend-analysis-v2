@@ -169,7 +169,8 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         "extra_columns": [
             c for c in valid_cols[2:]
             if c not in {"N1", "N2", "N3", "N4", "Fonte", "Descricao", "Descrição",
-                         "source", "confidence", "description", "description_norm"}
+                         "source", "confidence", "description", "description_norm",
+                         "classification_source", "status", "matched_terms"}
         ],
     }
 
