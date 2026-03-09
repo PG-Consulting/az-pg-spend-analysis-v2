@@ -1,4 +1,5 @@
 """Blueprint for taxonomy classification endpoints."""
+
 import os
 import json
 import io
@@ -9,8 +10,17 @@ import uuid
 from datetime import datetime, timezone
 
 import azure.functions as func
-from src.utils import get_models_dir, get_jobs_dir, friendly_source_label, INCOMPLETE_VALUES
-from src.api_helpers import json_response, error_response, options_response, handle_errors
+from src.utils import (
+    get_models_dir,
+    get_jobs_dir,
+    friendly_source_label,
+    INCOMPLETE_VALUES,
+)
+from src.api_helpers import (
+    json_response,
+    options_response,
+    handle_errors,
+)
 from src.exceptions import NotFoundError, ValidationError, ConflictError
 from src.file_lock import read_status, locked_status
 
@@ -30,13 +40,19 @@ def _derive_status(row: dict) -> str:
     existing = row.get("status", "")
     if existing:
         return existing
-    if any(str(row.get(lvl, "")).strip() in INCOMPLETE_VALUES for lvl in ("N1", "N2", "N3", "N4")):
+    if any(
+        str(row.get(lvl, "")).strip() in INCOMPLETE_VALUES
+        for lvl in ("N1", "N2", "N3", "N4")
+    ):
         return "Nenhum"
     return "Único"
 
 
-@classification_bp.route(route="SubmitTaxonomyJob", methods=["POST", "OPTIONS"],
-                          auth_level=func.AuthLevel.ANONYMOUS)
+@classification_bp.route(
+    route="SubmitTaxonomyJob",
+    methods=["POST", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("SubmitTaxonomyJob")
 def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/SubmitTaxonomyJob
@@ -86,6 +102,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     if project_id:
         # New path: load project config, resolve hierarchy
         from src.project_manager import get_project, resolve_hierarchy
+
         project_config = get_project(project_id, models_dir)
         if project_config is None:
             raise NotFoundError("Project", project_id)
@@ -123,11 +140,22 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
             df = pd.read_excel(io.BytesIO(file_bytes))
         except Exception:
             try:
-                df = pd.read_csv(io.BytesIO(file_bytes), sep=";", encoding="utf-8", on_bad_lines="skip")
+                df = pd.read_csv(
+                    io.BytesIO(file_bytes),
+                    sep=";",
+                    encoding="utf-8",
+                    on_bad_lines="skip",
+                )
             except Exception:
-                df = pd.read_csv(io.BytesIO(file_bytes), sep=",", encoding="utf-8", on_bad_lines="skip")
+                df = pd.read_csv(
+                    io.BytesIO(file_bytes),
+                    sep=",",
+                    encoding="utf-8",
+                    on_bad_lines="skip",
+                )
     except Exception as e:
         import shutil
+
         shutil.rmtree(job_dir, ignore_errors=True)
         raise ValidationError(f"Formato de arquivo invalido: {e}")
 
@@ -139,9 +167,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
 
     # Sort by description to group similar items in the same LLM batch
     df = df.sort_values(
-        by=desc_col,
-        key=lambda s: s.str.lower().fillna(""),
-        na_position="last"
+        by=desc_col, key=lambda s: s.str.lower().fillna(""), na_position="last"
     ).reset_index(drop=True)
 
     # --- Chunking ---
@@ -167,10 +193,25 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         "project_id": project_id or None,
         "use_web_search": bool(req_body.get("useWebSearch", False)),
         "extra_columns": [
-            c for c in valid_cols[2:]
-            if c not in {"N1", "N2", "N3", "N4", "Fonte", "Descricao", "Descrição",
-                         "source", "confidence", "description", "description_norm",
-                         "classification_source", "status", "matched_terms"}
+            c
+            for c in valid_cols[2:]
+            if c
+            not in {
+                "N1",
+                "N2",
+                "N3",
+                "N4",
+                "Fonte",
+                "Descricao",
+                "Descrição",
+                "source",
+                "confidence",
+                "description",
+                "description_norm",
+                "classification_source",
+                "status",
+                "matched_terms",
+            }
         ],
     }
 
@@ -184,7 +225,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
 
     # --- Save chunks ---
     for i in range(num_chunks):
-        chunk_df = df.iloc[i * CHUNK_SIZE: (i + 1) * CHUNK_SIZE]
+        chunk_df = df.iloc[i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE]
         chunk_path = os.path.join(job_dir, f"chunk_{i}.json")
         chunk_df.to_json(chunk_path, orient="records")
 
@@ -198,8 +239,11 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@classification_bp.route(route="GetTaxonomyJobStatus", methods=["GET", "OPTIONS"],
-                          auth_level=func.AuthLevel.ANONYMOUS)
+@classification_bp.route(
+    route="GetTaxonomyJobStatus",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("GetTaxonomyJobStatus")
 def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetTaxonomyJobStatus?jobId=xxx
@@ -225,7 +269,11 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     # Calculate progress
     total = status.get("total_chunks", 1)
     processed = status.get("processed_chunks", 0)
-    pct = min(int((processed / total) * 100), 99) if status["status"] != "COMPLETED" else 100
+    pct = (
+        min(int((processed / total) * 100), 99)
+        if status["status"] != "COMPLETED"
+        else 100
+    )
 
     if status["status"] == "PROCESSING":
         total_rows = status.get("total_rows", total * CHUNK_SIZE)
@@ -255,8 +303,9 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(response)
 
 
-@classification_bp.route(route="CancelJob", methods=["POST", "OPTIONS"],
-                          auth_level=func.AuthLevel.ANONYMOUS)
+@classification_bp.route(
+    route="CancelJob", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS
+)
 @handle_errors("CancelJob")
 def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CancelJob?jobId=xxx
@@ -292,8 +341,11 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     return json_response({"jobId": job_id, "status": "CANCELLED"})
 
 
-@classification_bp.route(route="GetJobResults", methods=["GET", "OPTIONS"],
-                          auth_level=func.AuthLevel.ANONYMOUS)
+@classification_bp.route(
+    route="GetJobResults",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("GetJobResults")
 def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetJobResults?jobId=xxx
@@ -322,6 +374,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     job_status = status_data.get("status", "UNKNOWN")
     total_chunks = status_data.get("total_chunks", 0)
     desc_col = status_data.get("desc_column", "Descricao")
+    extra_columns = status_data.get("extra_columns", [])
 
     # Load result.json once — needed for analytics/summary and as authoritative source
     analytics = None
@@ -343,7 +396,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     if job_status in ("CLASSIFIED", "COMPLETED") and result_json:
         raw_items = result_json.get("items", [])
         for idx, row in enumerate(raw_items):
-            items.append({
+            item = {
                 "index": idx,
                 "description": row.get(desc_col, row.get("description", "")),
                 "N1": row.get("N1", "Não Identificado"),
@@ -353,7 +406,10 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                 "confidence": row.get("confidence", 0.0),
                 "source": row.get("source", ""),
                 "status": _derive_status(row),
-            })
+            }
+            for col in extra_columns:
+                item[col] = row.get(col, "")
+            items.append(item)
     else:
         # In-progress jobs (PROCESSING): read individual result_X.json chunks
         global_index = 0
@@ -377,7 +433,8 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
             for j, result in enumerate(chunk_results):
                 item = {
                     "index": global_index,
-                    "description": result.get("description") or original_descriptions.get(j, ""),
+                    "description": result.get("description")
+                    or original_descriptions.get(j, ""),
                     "N1": result.get("N1", "Não Identificado"),
                     "N2": result.get("N2", "Não Identificado"),
                     "N3": result.get("N3", "Não Identificado"),
@@ -389,13 +446,16 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
                 items.append(item)
                 global_index += 1
 
-    logger.info(f"[GetJobResults] Job {job_id}: status={job_status}, items={len(items)}")
+    logger.info(
+        f"[GetJobResults] Job {job_id}: status={job_status}, items={len(items)}"
+    )
 
     response = {
         "jobId": job_id,
         "status": job_status,
         "items": items,
         "total": len(items),
+        "extra_columns": extra_columns,
         "analytics": analytics,
         "summary": summary,
     }
@@ -403,8 +463,11 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(response)
 
 
-@classification_bp.route(route="DownloadJobExcel", methods=["GET", "OPTIONS"],
-                          auth_level=func.AuthLevel.ANONYMOUS)
+@classification_bp.route(
+    route="DownloadJobExcel",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("DownloadJobExcel")
 def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/DownloadJobExcel?jobId=xxx
@@ -474,9 +537,13 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     base_name = os.path.splitext(original_filename)[0]
     output_filename = f"{base_name}_resultado.xlsx"
 
-    logger.info(f"[DownloadJobExcel] Job {job_id}: {len(rows)} rows, file={output_filename}")
+    logger.info(
+        f"[DownloadJobExcel] Job {job_id}: {len(rows)} rows, file={output_filename}"
+    )
 
-    return json_response({
-        "filename": output_filename,
-        "file_content_base64": excel_b64,
-    })
+    return json_response(
+        {
+            "filename": output_filename,
+            "file_content_base64": excel_b64,
+        }
+    )

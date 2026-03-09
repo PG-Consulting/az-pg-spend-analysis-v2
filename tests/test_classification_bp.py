@@ -2,12 +2,12 @@
 
 Uses the same azure.functions mock pattern as test_api_helpers.py.
 """
+
 import json
 import os
 import sys
 import types
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import base64
 
 # ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ _mock_func = types.ModuleType("azure.functions")
 
 class _MockHttpResponse:
     """Minimal mock of azure.functions.HttpResponse."""
+
     def __init__(self, body=None, status_code=200, mimetype=None, headers=None):
         self._body = body.encode("utf-8") if isinstance(body, str) else (body or b"")
         self.status_code = status_code
@@ -37,6 +38,7 @@ class _MockBlueprint:
     def route(self, *a, **kw):
         def decorator(fn):
             return fn
+
         return decorator
 
 
@@ -58,8 +60,12 @@ class TestOrphanDirectoryCleanup:
         os.makedirs(jobs_dir, exist_ok=True)
 
         # Patch where the function is used (in the blueprint module)
-        monkeypatch.setattr("blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir)
-        monkeypatch.setattr("blueprints.classification_bp.get_models_dir", lambda: str(tmp_path))
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir
+        )
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_models_dir", lambda: str(tmp_path)
+        )
 
         from blueprints.classification_bp import SubmitTaxonomyJob
 
@@ -92,8 +98,12 @@ class TestOrphanDirectoryCleanup:
 
         jobs_dir = str(tmp_path / "taxonomy_jobs")
         os.makedirs(jobs_dir, exist_ok=True)
-        monkeypatch.setattr("blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir)
-        monkeypatch.setattr("blueprints.classification_bp.get_models_dir", lambda: str(tmp_path))
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir
+        )
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_models_dir", lambda: str(tmp_path)
+        )
 
         from blueprints.classification_bp import SubmitTaxonomyJob
 
@@ -121,3 +131,115 @@ class TestOrphanDirectoryCleanup:
         # Job directory should exist
         remaining = os.listdir(jobs_dir)
         assert len(remaining) == 1
+
+
+class TestGetJobResults:
+    """Testes para o endpoint GetJobResults."""
+
+    def test_extra_columns_included(self, tmp_path, monkeypatch):
+        """GetJobResults deve retornar extra_columns e dados extras nos items."""
+        from blueprints.classification_bp import GetJobResults
+
+        jobs_dir = tmp_path / "taxonomy_jobs"
+        job_dir = jobs_dir / "job-extra"
+        job_dir.mkdir(parents=True)
+
+        status = {
+            "status": "CLASSIFIED",
+            "total_chunks": 1,
+            "desc_column": "Descricao",
+            "extra_columns": ["Fornecedor", "Centro de Custo"],
+        }
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        result = {
+            "items": [
+                {
+                    "Descricao": "Parafuso M10",
+                    "Fornecedor": "ABC Ltda",
+                    "Centro de Custo": "CC-001",
+                    "N1": "MRO",
+                    "N2": "Fixadores",
+                    "N3": "Parafusos",
+                    "N4": "Parafuso Métrico",
+                    "confidence": 0.85,
+                    "source": "Grok",
+                },
+                {
+                    "Descricao": "Tinta spray",
+                    "Fornecedor": "XYZ SA",
+                    "Centro de Custo": "CC-002",
+                    "N1": "MRO",
+                    "N2": "Tintas",
+                    "N3": "Spray",
+                    "N4": "Tinta Industrial",
+                    "confidence": 0.70,
+                    "source": "Base de Aprendizado",
+                },
+            ],
+            "analytics": {"pareto": []},
+            "summary": {"total_linhas": 2},
+        }
+        (job_dir / "result.json").write_text(json.dumps(result))
+
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: str(jobs_dir)
+        )
+
+        req = MagicMock()
+        req.method = "GET"
+        req.params = {"jobId": "job-extra"}
+
+        resp = GetJobResults(req)
+        data = json.loads(resp.get_body())
+
+        assert data["extra_columns"] == ["Fornecedor", "Centro de Custo"]
+        assert data["items"][0]["Fornecedor"] == "ABC Ltda"
+        assert data["items"][0]["Centro de Custo"] == "CC-001"
+        assert data["items"][1]["Fornecedor"] == "XYZ SA"
+
+    def test_no_extra_columns_backward_compat(self, tmp_path, monkeypatch):
+        """Sem extra_columns no status, resposta deve ter extra_columns=[]."""
+        from blueprints.classification_bp import GetJobResults
+
+        jobs_dir = tmp_path / "taxonomy_jobs"
+        job_dir = jobs_dir / "job-noextra"
+        job_dir.mkdir(parents=True)
+
+        status = {
+            "status": "CLASSIFIED",
+            "total_chunks": 1,
+            "desc_column": "Descricao",
+        }
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        result = {
+            "items": [
+                {
+                    "Descricao": "Item A",
+                    "N1": "X",
+                    "N2": "Y",
+                    "N3": "Z",
+                    "N4": "W",
+                    "confidence": 0.9,
+                    "source": "Grok",
+                },
+            ],
+            "analytics": {"pareto": []},
+            "summary": {"total_linhas": 1},
+        }
+        (job_dir / "result.json").write_text(json.dumps(result))
+
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: str(jobs_dir)
+        )
+
+        req = MagicMock()
+        req.method = "GET"
+        req.params = {"jobId": "job-noextra"}
+
+        resp = GetJobResults(req)
+        data = json.loads(resp.get_body())
+
+        assert data["extra_columns"] == []
+        assert "Fornecedor" not in data["items"][0]
