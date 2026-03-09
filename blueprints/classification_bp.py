@@ -211,6 +211,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
                 "classification_source",
                 "status",
                 "matched_terms",
+                "index",
             }
         ],
     }
