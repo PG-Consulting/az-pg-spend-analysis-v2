@@ -149,6 +149,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                             summary: results.summary,
                             analytics: results.analytics,
                             items: results.items,
+                            extraColumns: results.extra_columns || [],
                             downloadFilename: status.download_filename,
                             fileContentBase64: status.file_content_base64,
                             reviewState: 'pending',

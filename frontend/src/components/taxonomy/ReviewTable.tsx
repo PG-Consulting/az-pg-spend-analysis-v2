@@ -10,6 +10,7 @@ interface ReviewTableProps {
   getItemState: (index: number) => ReviewItemState;
   activeIndex: number | null;
   selectedIndices: Set<number>;
+  extraColumns?: string[];
   onSelectItem: (index: number) => void;
   onToggleSelect: (index: number) => void;
   onApprove: (index: number) => void;
@@ -56,12 +57,19 @@ export function ReviewTable({
   getItemState,
   activeIndex,
   selectedIndices,
+  extraColumns = [],
   onSelectItem,
   onToggleSelect,
   onApprove,
   searchQuery,
   containerHeight = 600,
 }: ReviewTableProps) {
+  const extraColsTemplate = extraColumns.map(() => '140px').join(' ');
+  const gridTemplate = extraColumns.length > 0
+    ? `36px 1fr ${extraColsTemplate} 200px 48px`
+    : '36px 1fr 200px 48px';
+  const gridStyle = { gridTemplateColumns: gridTemplate };
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 
@@ -83,7 +91,7 @@ export function ReviewTable({
   return (
     <div className="border border-gray-100 rounded-xl overflow-hidden bg-white flex-1 min-h-0 flex flex-col">
       {/* Header */}
-      <div className="grid grid-cols-[36px_1fr_200px_48px] gap-0 px-3 py-2.5 bg-gray-50/80 border-b border-gray-100 flex-shrink-0">
+      <div className="grid gap-0 px-3 py-2.5 bg-gray-50/80 border-b border-gray-100 flex-shrink-0" style={gridStyle}>
         <div className="flex items-center justify-center">
           <input
             type="checkbox"
@@ -106,6 +114,11 @@ export function ReviewTable({
         <div className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center pl-2">
           Descrição
         </div>
+        {extraColumns.map(col => (
+          <div key={col} className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center truncate">
+            {col}
+          </div>
+        ))}
         <div className="text-[11px] font-medium text-primary-400 uppercase tracking-wider flex items-center">
           Classificação
         </div>
@@ -138,9 +151,16 @@ export function ReviewTable({
             return (
               <div
                 key={item.index}
-                style={{ position: 'absolute', top: absIdx * ROW_HEIGHT, width: '100%', height: ROW_HEIGHT }}
+                style={{
+                  position: 'absolute',
+                  top: absIdx * ROW_HEIGHT,
+                  width: '100%',
+                  height: ROW_HEIGHT,
+                  ...gridStyle,
+                  display: 'grid',
+                }}
                 className={[
-                  'grid grid-cols-[36px_1fr_200px_48px] gap-0 px-3 items-center cursor-pointer transition-colors duration-100 border-l-[3px] border-b border-b-gray-50',
+                  'gap-0 px-3 items-center cursor-pointer transition-colors duration-100 border-l-[3px] border-b border-b-gray-50',
                   confidenceBorder,
                   isActive
                     ? 'bg-accent-50 border-l-accent-500'
@@ -168,6 +188,13 @@ export function ReviewTable({
                 <div className="text-sm text-[#32373c] truncate font-medium pl-2 pr-3" title={item.description}>
                   <HighlightText text={item.description} query={searchQuery} />
                 </div>
+
+                {/* Extra columns */}
+                {extraColumns.map(col => (
+                  <div key={col} className="text-xs text-primary-500 truncate pr-2" title={String((item as any)[col] || '')}>
+                    {(item as any)[col] || <span className="text-gray-300">--</span>}
+                  </div>
+                ))}
 
                 {/* Classification (N4 only) */}
                 <div className="flex items-center gap-2 min-w-0">

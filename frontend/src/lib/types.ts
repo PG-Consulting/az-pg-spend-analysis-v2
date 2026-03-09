@@ -104,6 +104,7 @@ export interface TaxonomySession {
   reviewSummary?: ReviewSummary;
   approvedFileContentBase64?: string;
   approvedDownloadFilename?: string;
+  extraColumns?: string[];
 }
 
 // ==================== KNOWLEDGE BASE ====================

@@ -468,6 +468,7 @@ const TaxonomyPage: NextPage = () => {
                       hierarchy={projectHierarchy}
                       jobId={typedSession.jobId || ''}
                       projectId={activeProjectId || ''}
+                      extraColumns={typedSession.extraColumns}
                       onFinalizeReview={handleFinalizeReview}
                       onReclassify={handleReclassify}
                       isApproving={isApproving}

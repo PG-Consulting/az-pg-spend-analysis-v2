@@ -14,6 +14,7 @@ interface ReviewTabProps {
   hierarchy: HierarchyEntry[] | null;
   jobId: string;
   projectId: string;
+  extraColumns?: string[];
   onFinalizeReview: (decisions: Array<{
     index: number;
     description: string;
@@ -30,6 +31,7 @@ interface ReviewTabProps {
 
 export function ReviewTab({
   sessionId, items, hierarchy, jobId, projectId,
+  extraColumns = [],
   onFinalizeReview, onReclassify, isApproving = false,
 }: ReviewTabProps) {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -344,6 +346,7 @@ export function ReviewTab({
             getItemState={getItemState}
             activeIndex={activeIndex}
             selectedIndices={selectedIndices}
+            extraColumns={extraColumns}
             onSelectItem={(index) => setActiveIndex(index)}
             onToggleSelect={toggleSelection}
             onApprove={approveItem}

@@ -393,7 +393,7 @@ export const apiClient = {
   /** Retrieves all classified items for a completed job, including analytics and summary. */
   async getJobResults(
     jobId: string
-  ): Promise<{ jobId: string; status: string; items: ClassifiedItem[]; total: number; analytics?: any; summary?: any }> {
+  ): Promise<{ jobId: string; status: string; items: ClassifiedItem[]; total: number; analytics?: any; summary?: any; extra_columns?: string[] }> {
     const response = await axios.get(`${API_BASE_URL}/GetJobResults`, {
       params: { jobId },
       headers: getAuthHeaders(),
