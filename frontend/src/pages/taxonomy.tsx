@@ -233,6 +233,7 @@ const TaxonomyPage: NextPage = () => {
     setUserMessage,
     sendUserMessage,
     generateExecutiveSummary,
+    resetChat,
   } = useCopilot({ activeSession: activeSession ?? null, reviewCompleted })
 
   const chatContainerRef = useRef<HTMLDivElement>(null)
@@ -496,6 +497,7 @@ const TaxonomyPage: NextPage = () => {
                     userMessage={userMessage}
                     onSetUserMessage={setUserMessage}
                     onSendMessage={sendUserMessage}
+                    onResetChat={resetChat}
                     onClose={() => { setActiveSessionId(null); setActiveTab('classify') }}
                     chatContainerRef={chatContainerRef}
                   />

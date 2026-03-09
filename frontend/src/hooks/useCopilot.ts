@@ -158,7 +158,12 @@ export function useCopilot({ activeSession, reviewCompleted = false }: UseCopilo
         setIsCopilotLoading(false)
         setIsSending(false)
         setUserMessage('')
-    }, [])
+        setCopilotMessages([])
+        setChatHistory([])
+        if (sessionId) {
+            localStorage.removeItem(`${STORAGE_PREFIX}${sessionId}`)
+        }
+    }, [sessionId])
 
     // Execute a conversation turn (stateless RAG)
     const executeConversationTurn = async (userMsg: string, contextData: any): Promise<Message[]> => {
