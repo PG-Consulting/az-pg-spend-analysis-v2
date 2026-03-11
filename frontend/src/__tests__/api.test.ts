@@ -269,4 +269,52 @@ describe('apiClient', () => {
       expect(result).toBe('base64xlsxdata==');
     });
   });
+
+  // downloadJobExcel — GET/POST conditional
+  describe('downloadJobExcel', () => {
+    it('sends GET when no decisions provided', async () => {
+      (mockedAxios.get as jest.Mock).mockResolvedValueOnce({
+        data: { filename: 'test_resultado.xlsx', file_content_base64: 'abc123' },
+      });
+
+      const result = await apiClient.downloadJobExcel('job-1');
+
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining('/DownloadJobExcel'),
+        expect.objectContaining({ params: { jobId: 'job-1' } })
+      );
+      expect(result.filename).toBe('test_resultado.xlsx');
+    });
+
+    it('sends POST when decisions provided', async () => {
+      const decisions = [
+        { index: 0, decision: 'approved', N1: 'A', N2: 'B', N3: 'C', N4: 'D' },
+        { index: 2, decision: 'edited', N1: 'X', N2: 'Y', N3: 'Z', N4: 'W' },
+      ];
+
+      (mockedAxios.post as jest.Mock).mockResolvedValueOnce({
+        data: { filename: 'test_resultado.xlsx', file_content_base64: 'xyz789' },
+      });
+
+      const result = await apiClient.downloadJobExcel('job-1', decisions);
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/DownloadJobExcel'),
+        { decisions },
+        expect.objectContaining({ params: { jobId: 'job-1' } })
+      );
+      expect(result.file_content_base64).toBe('xyz789');
+    });
+
+    it('sends GET when decisions is empty array', async () => {
+      (mockedAxios.get as jest.Mock).mockResolvedValueOnce({
+        data: { filename: 'test_resultado.xlsx', file_content_base64: 'abc' },
+      });
+
+      await apiClient.downloadJobExcel('job-1', []);
+
+      expect(mockedAxios.get).toHaveBeenCalled();
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+  });
 });
