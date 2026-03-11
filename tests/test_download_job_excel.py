@@ -1,12 +1,54 @@
 """Tests for DownloadJobExcel logic — Excel generation from result.json."""
 
+import base64
 import json
 import io
 import os
+import sys
+import types
+from unittest.mock import MagicMock
 
 import pandas as pd
 
 from src.utils import friendly_source_label
+
+# ---------------------------------------------------------------------------
+# Mock azure.functions before importing blueprints
+# ---------------------------------------------------------------------------
+_mock_azure = types.ModuleType("azure")
+_mock_func = types.ModuleType("azure.functions")
+
+
+class _MockHttpResponse:
+    def __init__(self, body=None, status_code=200, mimetype=None, headers=None):
+        self._body = body.encode("utf-8") if isinstance(body, str) else (body or b"")
+        self.status_code = status_code
+        self.mimetype = mimetype
+        self.headers = headers or {}
+
+    def get_body(self):
+        return self._body
+
+
+class _MockAuthLevel:
+    ANONYMOUS = "ANONYMOUS"
+
+
+class _MockBlueprint:
+    def route(self, *a, **kw):
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+
+_mock_func.HttpResponse = _MockHttpResponse
+_mock_func.HttpRequest = MagicMock
+_mock_func.AuthLevel = _MockAuthLevel
+_mock_func.Blueprint = _MockBlueprint
+_mock_azure.functions = _mock_func
+sys.modules.setdefault("azure", _mock_azure)
+sys.modules.setdefault("azure.functions", _mock_func)
 
 
 def _make_job_dir(
@@ -408,3 +450,110 @@ class TestDownloadJobExcel:
         assert df.iloc[0]["N4"] == "Parafuso M10"
         assert df.iloc[0]["Fonte"] == "Ajuste Manual"
         assert df.iloc[0]["Status"] == "Editado"
+
+
+class TestDownloadJobExcelEndpoint:
+    """Testes de integração: chamam o endpoint real DownloadJobExcel."""
+
+    def _call_endpoint(self, tmp_path, monkeypatch, method="GET", decisions=None):
+        """Helper: cria job dir, monta req mock, chama endpoint, retorna DataFrame."""
+        items = [
+            {
+                "Descricao": "Parafuso M8",
+                "N1": "Materiais",
+                "N2": "Fixadores",
+                "N3": "Parafusos",
+                "N4": "Parafuso M8",
+                "source": "Grok",
+                "confidence": 0.92,
+            },
+            {
+                "Descricao": "Tinta Azul",
+                "N1": "Materiais",
+                "N2": "Pintura",
+                "N3": "Tintas",
+                "N4": "Tinta Esmalte",
+                "source": "Base de Aprendizado",
+                "confidence": 0.80,
+            },
+        ]
+        job_dir, _ = _make_job_dir(tmp_path, status="CLASSIFIED", items=items)
+
+        jobs_dir = str(tmp_path)
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir
+        )
+        # Bypass auth decorator
+        monkeypatch.setattr(
+            "blueprints.classification_bp.require_auth",
+            lambda fn: fn,
+        )
+
+        from blueprints.classification_bp import DownloadJobExcel
+
+        req = MagicMock()
+        req.method = method
+        req.params = {"jobId": "job_123"}
+        if method == "POST" and decisions is not None:
+            req.get_json.return_value = {"decisions": decisions}
+        elif method == "POST":
+            req.get_json.return_value = {"decisions": []}
+
+        response = DownloadJobExcel(req)
+        body = json.loads(response.get_body())
+
+        excel_bytes = base64.b64decode(body["file_content_base64"])
+        df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Resultados")
+        return df, body
+
+    def test_endpoint_get_returns_excel_without_status(self, tmp_path, monkeypatch):
+        """GET endpoint returns Excel without Status column."""
+        df, body = self._call_endpoint(tmp_path, monkeypatch, method="GET")
+
+        assert "Status" not in df.columns
+        assert len(df) == 2
+        assert body["filename"] == "compras_2024_resultado.xlsx"
+
+    def test_endpoint_post_with_decisions_adds_status(self, tmp_path, monkeypatch):
+        """POST endpoint merges decisions and adds Status column."""
+        decisions = [
+            {
+                "index": 0,
+                "decision": "approved",
+                "N1": "M",
+                "N2": "F",
+                "N3": "P",
+                "N4": "P",
+            },
+            {
+                "index": 1,
+                "decision": "edited",
+                "N1": "X",
+                "N2": "Y",
+                "N3": "Z",
+                "N4": "W",
+            },
+        ]
+        df, _ = self._call_endpoint(
+            tmp_path, monkeypatch, method="POST", decisions=decisions
+        )
+
+        assert "Status" in df.columns
+
+        # Item 0: approved — mantém N1-N4 do pipeline
+        assert df.iloc[0]["N4"] == "Parafuso M8"
+        assert df.iloc[0]["Fonte"] == "Grok"
+        assert df.iloc[0]["Status"] == "Aprovado"
+
+        # Item 1: edited — N1-N4 da decision
+        assert df.iloc[1]["N4"] == "W"
+        assert df.iloc[1]["Fonte"] == "Ajuste Manual"
+        assert df.iloc[1]["Status"] == "Editado"
+
+    def test_endpoint_post_empty_decisions_all_pending(self, tmp_path, monkeypatch):
+        """POST with empty decisions adds Status column with all Pendente."""
+        df, _ = self._call_endpoint(tmp_path, monkeypatch, method="POST", decisions=[])
+
+        assert "Status" in df.columns
+        assert df.iloc[0]["Status"] == "Pendente"
+        assert df.iloc[1]["Status"] == "Pendente"
