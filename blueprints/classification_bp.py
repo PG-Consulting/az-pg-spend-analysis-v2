@@ -466,21 +466,20 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
 
 @classification_bp.route(
     route="DownloadJobExcel",
-    methods=["GET", "OPTIONS"],
+    methods=["GET", "POST", "OPTIONS"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("DownloadJobExcel")
 def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
-    """GET /api/DownloadJobExcel?jobId=xxx
-    Returns the classified results as a base64-encoded Excel file.
+    """GET/POST /api/DownloadJobExcel?jobId=xxx
+    GET: Returns raw classified results as Excel.
+    POST: Merges review decisions into results, adds Status column.
     Only works for CLASSIFIED, APPROVED, or COMPLETED jobs.
-
-    Returns: {filename: "{original}_resultado.xlsx", file_content_base64: "..."}
     """
     import pandas as pd
 
     if req.method == "OPTIONS":
-        return options_response("GET, OPTIONS")
+        return options_response(req, "GET, POST, OPTIONS")
 
     job_id = req.params.get("jobId", "").strip()
     if not job_id:
@@ -514,19 +513,76 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     extra_columns = status_data.get("extra_columns", [])
     raw_items = result_json.get("items", [])
 
+    # Parse decisions from POST body (if present)
+    decisions = None
+    decision_map = {}
+    if req.method == "POST":
+        try:
+            body = req.get_json()
+            decisions = body.get("decisions", [])
+        except (ValueError, AttributeError):
+            decisions = []
+
+        # Validate decisions
+        valid_decisions = ("approved", "edited", "rejected")
+        if len(decisions) > len(raw_items):
+            raise ValidationError(
+                f"Mais decisions ({len(decisions)}) que itens ({len(raw_items)})."
+            )
+        for d in decisions:
+            idx = d.get("index")
+            dec = d.get("decision")
+            if not isinstance(idx, int) or idx < 0 or idx >= len(raw_items):
+                raise ValidationError(
+                    f"Decision index inválido: {idx} (total itens: {len(raw_items)})"
+                )
+            if dec not in valid_decisions:
+                raise ValidationError(
+                    f"Decision inválida: '{dec}'. Esperado: {valid_decisions}"
+                )
+            decision_map[idx] = d  # último ganha em caso de duplicata
+
+    _STATUS_LABELS = {
+        "approved": "Aprovado",
+        "edited": "Editado",
+        "rejected": "Rejeitado",
+    }
+
     rows = []
-    for item in raw_items:
+    for idx, item in enumerate(raw_items):
         row = {}
         if id_col:
             row[id_col] = item.get(id_col, "")
         row["Descricao"] = item.get(desc_col, item.get("description", ""))
         for col in extra_columns:
             row[col] = item.get(col, "")
-        row["N1"] = item.get("N1", "")
-        row["N2"] = item.get("N2", "")
-        row["N3"] = item.get("N3", "")
-        row["N4"] = item.get("N4", "")
-        row["Fonte"] = friendly_source_label(item.get("source", ""))
+
+        d = decision_map.get(idx)
+        if d and d["decision"] == "edited":
+            row["N1"] = d.get("N1", "")
+            row["N2"] = d.get("N2", "")
+            row["N3"] = d.get("N3", "")
+            row["N4"] = d.get("N4", "")
+            row["Fonte"] = "Ajuste Manual"
+        else:
+            row["N1"] = item.get("N1", "")
+            row["N2"] = item.get("N2", "")
+            row["N3"] = item.get("N3", "")
+            row["N4"] = item.get("N4", "")
+            if decisions is not None:
+                # POST: result.json já tem labels amigáveis — usar direto
+                row["Fonte"] = item.get("source", "")
+            else:
+                # GET: backward compat — chama friendly_source_label
+                row["Fonte"] = friendly_source_label(item.get("source", ""))
+
+        # Coluna Status só no POST
+        if decisions is not None:
+            if d:
+                row["Status"] = _STATUS_LABELS.get(d["decision"], "Pendente")
+            else:
+                row["Status"] = "Pendente"
+
         rows.append(row)
 
     df = pd.DataFrame(rows)
