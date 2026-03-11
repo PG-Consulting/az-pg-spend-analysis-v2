@@ -1,10 +1,18 @@
-"""Tests for worker_helpers — parse_custom_hierarchy, cleanup_stale_jobs, find_next_chunks, consolidate_job."""
+"""Tests for worker_helpers — parse_custom_hierarchy, cleanup_stale_jobs, find_next_chunks, consolidate_job, process_single_job."""
+
 import json
 import os
 import pytest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch  # noqa: F401
 
-from src.worker_helpers import parse_custom_hierarchy, cleanup_stale_jobs, find_next_chunks, consolidate_job
+from src.worker_helpers import (
+    parse_custom_hierarchy,
+    cleanup_stale_jobs,
+    find_next_chunks,
+    consolidate_job,
+    process_single_job,  # noqa: F401
+)
 
 
 # ---------------------------------------------------------------------------
@@ -12,8 +20,18 @@ from src.worker_helpers import parse_custom_hierarchy, cleanup_stale_jobs, find_
 # ---------------------------------------------------------------------------
 
 SAMPLE_HIERARCHY_LIST = [
-    {"N1": "Exploração e Produção", "N2": "Engenharia", "N3": "Reservatórios", "N4": "Consultoria"},
-    {"N1": "Exploração e Produção", "N2": "Engenharia", "N3": "Reservatórios", "N4": "Certificação"},
+    {
+        "N1": "Exploração e Produção",
+        "N2": "Engenharia",
+        "N3": "Reservatórios",
+        "N4": "Consultoria",
+    },
+    {
+        "N1": "Exploração e Produção",
+        "N2": "Engenharia",
+        "N3": "Reservatórios",
+        "N4": "Certificação",
+    },
     {"N1": "Operação e Manutenção", "N2": "Materiais", "N3": "OEM", "N4": "Peças ABB"},
 ]
 
@@ -21,6 +39,7 @@ SAMPLE_HIERARCHY_LIST = [
 # ---------------------------------------------------------------------------
 # Cenário 1: Hierarquia do projeto (custom_hierarchy_list)
 # ---------------------------------------------------------------------------
+
 
 class TestParseHierarchyFromProjectConfig:
     """Hierarquia definida no projeto, sem upload per-job."""
@@ -65,6 +84,7 @@ class TestParseHierarchyFromProjectConfig:
 # Cenário 2: Upload per-job (custom_hierarchy_b64) sobrescreve projeto
 # ---------------------------------------------------------------------------
 
+
 class TestParseHierarchyFromB64Upload:
     """Upload de hierarquia na execução — b64 path."""
 
@@ -87,6 +107,7 @@ class TestParseHierarchyFromB64Upload:
     def test_b64_returns_none_for_invalid_data(self):
         """Base64 inválido não deve causar exceção, deve retornar None."""
         import base64
+
         status = {
             "custom_hierarchy_list": None,
             "custom_hierarchy_b64": base64.b64encode(b"not an excel file").decode(),
@@ -98,6 +119,7 @@ class TestParseHierarchyFromB64Upload:
 # ---------------------------------------------------------------------------
 # Cenário 3: UNSPSC no projeto, sem upload — classificação aberta
 # ---------------------------------------------------------------------------
+
 
 class TestParseHierarchyOpenClassification:
     """Projeto UNSPSC/padrão, sem upload — deve retornar None."""
@@ -122,6 +144,7 @@ class TestParseHierarchyOpenClassification:
 # Testamos que a list path não interfere quando é None.
 # ---------------------------------------------------------------------------
 
+
 class TestParseHierarchyPriorityOrder:
     """Prioridade: list (projeto) → b64 (execução) → None."""
 
@@ -129,6 +152,7 @@ class TestParseHierarchyPriorityOrder:
         """Se ambos presentes (cenário não deveria ocorrer no código atual,
         mas parse_custom_hierarchy deve preferir list)."""
         import base64
+
         status = {
             "custom_hierarchy_list": SAMPLE_HIERARCHY_LIST,
             "custom_hierarchy_b64": base64.b64encode(b"some data").decode(),
@@ -150,6 +174,7 @@ class TestParseHierarchyPriorityOrder:
 # ---------------------------------------------------------------------------
 # Cenário 5: cleanup_stale_jobs — timezone aware/naive
 # ---------------------------------------------------------------------------
+
 
 class TestCleanupStaleJobs:
     """cleanup_stale_jobs deve marcar PROCESSING > 1h como ERROR."""
@@ -188,6 +213,7 @@ class TestCleanupStaleJobs:
 # ---------------------------------------------------------------------------
 # find_next_chunks
 # ---------------------------------------------------------------------------
+
 
 class TestFindNextChunks:
     """find_next_chunks retorna índices de chunks sem result correspondente."""
@@ -276,10 +302,13 @@ class TestFindNextChunks:
 # consolidate_job
 # ---------------------------------------------------------------------------
 
+
 class TestConsolidateJob:
     """consolidate_job deve mesclar chunks, preencher NaN e marcar CLASSIFIED."""
 
-    def _make_job(self, tmp_path, job_id, chunk_data_list, result_data_list, status_extra=None):
+    def _make_job(
+        self, tmp_path, job_id, chunk_data_list, result_data_list, status_extra=None
+    ):
         """Helper: cria diretório de job com chunks, results e status.json."""
         job_dir = str(tmp_path / job_id)
         os.makedirs(job_dir)
@@ -317,10 +346,24 @@ class TestConsolidateJob:
         """consolidate_job deve preencher N1-N4 vazios com 'Não Identificado'."""
         chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "Sub1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
-            {"description": "Item B", "N1": "", "N2": "", "N3": "", "N4": "",
-             "source": "None", "confidence": 0.0},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "Sub1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
+            {
+                "description": "Item B",
+                "N1": "",
+                "N2": "",
+                "N3": "",
+                "N4": "",
+                "source": "None",
+                "confidence": 0.0,
+            },
         ]
 
         job_info = self._make_job(tmp_path, "test-fill", [chunk_data], [result_data])
@@ -330,7 +373,9 @@ class TestConsolidateJob:
             final_status = json.load(f)
         assert final_status["status"] == "CLASSIFIED"
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
         items = result["items"]
         assert len(items) == 2
@@ -344,8 +389,15 @@ class TestConsolidateJob:
         """consolidate_job deve definir status como CLASSIFIED (não COMPLETED)."""
         chunk_data = [{"Descricao": "Item A"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "Sub1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "Sub1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
 
         job_info = self._make_job(tmp_path, "test-status", [chunk_data], [result_data])
@@ -359,16 +411,34 @@ class TestConsolidateJob:
         """result.json deve conter analytics com pareto_N1."""
         chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
-            {"description": "Item B", "N1": "Cat1", "N2": "S1", "N3": "B", "N4": "Y",
-             "source": "LLM (Batch)", "confidence": 0.8},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
+            {
+                "description": "Item B",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "B",
+                "N4": "Y",
+                "source": "LLM (Batch)",
+                "confidence": 0.8,
+            },
         ]
 
-        job_info = self._make_job(tmp_path, "test-analytics", [chunk_data], [result_data])
+        job_info = self._make_job(
+            tmp_path, "test-analytics", [chunk_data], [result_data]
+        )
         consolidate_job(job_info)
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
 
         assert "analytics" in result
@@ -379,16 +449,26 @@ class TestConsolidateJob:
     def test_result_json_contains_excel_base64(self, tmp_path):
         """result.json deve conter fileContent com Excel em base64."""
         import base64
+
         chunk_data = [{"Descricao": "Item A"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
 
         job_info = self._make_job(tmp_path, "test-excel", [chunk_data], [result_data])
         consolidate_job(job_info)
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
 
         assert "fileContent" in result
@@ -401,8 +481,15 @@ class TestConsolidateJob:
         """Após consolidação, chunk_*.json e result_*.json intermediários devem ser removidos."""
         chunk_data = [{"Descricao": "Item A"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
 
         job_info = self._make_job(tmp_path, "test-cleanup", [chunk_data], [result_data])
@@ -419,16 +506,34 @@ class TestConsolidateJob:
         """Itens com 'Não Identificado' devem ter confidence zerada."""
         chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
-            {"description": "Item B", "N1": "", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.7},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
+            {
+                "description": "Item B",
+                "N1": "",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.7,
+            },
         ]
 
-        job_info = self._make_job(tmp_path, "test-conf-zero", [chunk_data], [result_data])
+        job_info = self._make_job(
+            tmp_path, "test-conf-zero", [chunk_data], [result_data]
+        )
         consolidate_job(job_info)
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
 
         items = result["items"]
@@ -442,18 +547,36 @@ class TestConsolidateJob:
         chunk0 = [{"Descricao": "Item A"}]
         chunk1 = [{"Descricao": "Item B"}]
         result0 = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
         result1 = [
-            {"description": "Item B", "N1": "Cat2", "N2": "S2", "N3": "B", "N4": "Y",
-             "source": "LLM (Batch)", "confidence": 0.8},
+            {
+                "description": "Item B",
+                "N1": "Cat2",
+                "N2": "S2",
+                "N3": "B",
+                "N4": "Y",
+                "source": "LLM (Batch)",
+                "confidence": 0.8,
+            },
         ]
 
-        job_info = self._make_job(tmp_path, "test-multi", [chunk0, chunk1], [result0, result1])
+        job_info = self._make_job(
+            tmp_path, "test-multi", [chunk0, chunk1], [result0, result1]
+        )
         consolidate_job(job_info)
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
 
         items = result["items"]
@@ -465,16 +588,32 @@ class TestConsolidateJob:
         """Strings 'nan' em N1-N4 devem ser substituídas por 'Não Identificado'."""
         chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
         result_data = [
-            {"description": "Item A", "N1": "nan", "N2": "nan", "N3": "nan", "N4": "nan",
-             "source": "KB (Direct Match)", "confidence": 0.92},
-            {"description": "Item B", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "nan",
+                "N2": "nan",
+                "N3": "nan",
+                "N4": "nan",
+                "source": "KB (Direct Match)",
+                "confidence": 0.92,
+            },
+            {
+                "description": "Item B",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
 
         job_info = self._make_job(tmp_path, "test-nan", [chunk_data], [result_data])
         consolidate_job(job_info)
 
-        with open(os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8") as f:
+        with open(
+            os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
+        ) as f:
             result = json.load(f)
 
         items = result["items"]
@@ -491,11 +630,20 @@ class TestConsolidateJob:
         """result.json não deve conter NaN literal (JSON inválido) — usa safe_json_dumps."""
         chunk_data = [{"Descricao": "Item A", "Valor": None}]
         result_data = [
-            {"description": "Item A", "N1": "Cat1", "N2": "S1", "N3": "A", "N4": "X",
-             "source": "LLM (Batch)", "confidence": 0.9},
+            {
+                "description": "Item A",
+                "N1": "Cat1",
+                "N2": "S1",
+                "N3": "A",
+                "N4": "X",
+                "source": "LLM (Batch)",
+                "confidence": 0.9,
+            },
         ]
 
-        job_info = self._make_job(tmp_path, "test-valid-json", [chunk_data], [result_data])
+        job_info = self._make_job(
+            tmp_path, "test-valid-json", [chunk_data], [result_data]
+        )
         consolidate_job(job_info)
 
         result_path = os.path.join(job_info["job_dir"], "result.json")
@@ -504,5 +652,156 @@ class TestConsolidateJob:
         assert "NaN" not in raw
         # Deve ser JSON válido
         import json as json_mod
+
         parsed = json_mod.loads(raw)
         assert "items" in parsed
+
+
+# ---------------------------------------------------------------------------
+# process_single_job
+# ---------------------------------------------------------------------------
+
+
+class TestProcessSingleJob:
+    """process_single_job processa um job de PENDING até CLASSIFIED."""
+
+    def _create_job(self, tmp_path, job_id, status_override=None, num_chunks=1):
+        """Helper: cria job dir com chunks e status.json."""
+        job_dir = tmp_path / job_id
+        job_dir.mkdir()
+
+        for i in range(num_chunks):
+            chunk_data = [
+                {"Descricao": f"Item {i}A"},
+                {"Descricao": f"Item {i}B"},
+            ]
+            (job_dir / f"chunk_{i}.json").write_text(json.dumps(chunk_data))
+
+        status = {
+            "job_id": job_id,
+            "status": "PENDING",
+            "total_chunks": num_chunks,
+            "processed_chunks": 0,
+            "filename": "test.xlsx",
+            "desc_column": "Descricao",
+            "sector": "Padrao",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "custom_hierarchy_list": None,
+            "custom_hierarchy_b64": None,
+            "project_id": None,
+            "client_context": "",
+            "use_web_search": False,
+            "total_rows": num_chunks * 2,
+        }
+        if status_override:
+            status.update(status_override)
+
+        (job_dir / "status.json").write_text(json.dumps(status, ensure_ascii=False))
+        return str(job_dir)
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_processes_pending_job_to_classified(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        """Fluxo completo PENDING → PROCESSING → CLASSIFIED."""
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-pending-job"
+        self._create_job(tmp_path, job_id, num_chunks=1)
+
+        # Mock process_single_chunk para escrever result_0.json
+        def fake_chunk(job_info, chunk_idx):
+            result_data = [
+                {
+                    "description": "Item 0A",
+                    "N1": "Cat1",
+                    "N2": "S1",
+                    "N3": "A",
+                    "N4": "X",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
+                {
+                    "description": "Item 0B",
+                    "N1": "Cat2",
+                    "N2": "S2",
+                    "N3": "B",
+                    "N4": "Y",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.8,
+                },
+            ]
+            result_path = os.path.join(job_info["job_dir"], f"result_{chunk_idx}.json")
+            with open(result_path, "w") as f:
+                json.dump(result_data, f)
+
+        mock_chunk.side_effect = fake_chunk
+
+        process_single_job(job_id)
+
+        # Verificar status final
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CLASSIFIED"
+
+        # Verificar result.json consolidado
+        assert (tmp_path / job_id / "result.json").exists()
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    def test_skips_cancelled_job(self, mock_jobs_dir, tmp_path):
+        """Job CANCELLED deve ser ignorado sem erro."""
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-cancelled"
+        self._create_job(tmp_path, job_id, status_override={"status": "CANCELLED"})
+
+        process_single_job(job_id)  # não deve levantar exceção
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CANCELLED"
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    def test_skips_already_classified_job(self, mock_jobs_dir, tmp_path):
+        """Job CLASSIFIED deve ser ignorado."""
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-classified"
+        self._create_job(tmp_path, job_id, status_override={"status": "CLASSIFIED"})
+
+        process_single_job(job_id)  # não deve levantar exceção
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CLASSIFIED"
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    def test_nonexistent_job_logs_warning(self, mock_jobs_dir, tmp_path, caplog):
+        """Job inexistente loga warning e retorna."""
+        import logging
+
+        mock_jobs_dir.return_value = str(tmp_path)
+
+        with caplog.at_level(logging.WARNING):
+            process_single_job("nonexistent-job-id")
+
+        assert any("not found" in r.message for r in caplog.records)
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_error_reraised_status_stays_processing(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        """Exceção re-levantada para retry da queue; status NÃO muda para ERROR
+        (cleanup timer marca ERROR depois; aqui fica PROCESSING para permitir retry)."""
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-error"
+        self._create_job(tmp_path, job_id, num_chunks=1)
+
+        mock_chunk.side_effect = RuntimeError("LLM timeout")
+
+        with pytest.raises(RuntimeError, match="LLM timeout"):
+            process_single_job(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        # Status stays PROCESSING so queue retries can re-enter
+        assert status["status"] == "PROCESSING"

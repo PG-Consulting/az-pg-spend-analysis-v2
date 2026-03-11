@@ -18,15 +18,21 @@ import base64
 import logging
 import time
 import glob as glob_mod
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from typing import Dict, List, Optional, Set
 
-from src.types import HierarchyEntryDict, JobInfoDict, KBEntryDict
-from src.utils import get_jobs_dir, get_models_dir, friendly_source_label, safe_json_dumps, INCOMPLETE_VALUES
-from src.project_manager import get_project, resolve_hierarchy
-from src.file_lock import read_status, write_status, update_status, locked_status
+from src.types import HierarchyEntryDict, JobInfoDict
+from src.utils import (
+    get_jobs_dir,
+    get_models_dir,
+    friendly_source_label,
+    safe_json_dumps,
+    INCOMPLETE_VALUES,
+)
+from src.project_manager import get_project
+from src.file_lock import read_status, update_status, locked_status
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +40,15 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-STALE_THRESHOLD_SECONDS = 3600   # 1 hour - jobs PROCESSING beyond this become ERROR
-MAX_PARALLEL_CHUNKS = 5           # Max simultaneous chunks across all active jobs
-MAX_PROCESSING_TIME = 20 * 60    # 20-minute budget per worker cycle
+STALE_THRESHOLD_SECONDS = 3600  # 1 hour - jobs PROCESSING beyond this become ERROR
+MAX_PARALLEL_CHUNKS = 5  # Max simultaneous chunks across all active jobs
+MAX_PROCESSING_TIME = 20 * 60  # 20-minute budget per worker cycle
 
 
 # ---------------------------------------------------------------------------
 # cleanup_stale_jobs
 # ---------------------------------------------------------------------------
+
 
 def cleanup_stale_jobs(jobs_root: str) -> None:
     """Mark PROCESSING jobs older than 1 hour as ERROR (auto-cleanup)."""
@@ -61,12 +68,15 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
             elapsed = (datetime.now(timezone.utc) - created_dt).total_seconds()
             if elapsed > STALE_THRESHOLD_SECONDS:
                 logger.warning(
-                    f"[Worker] Job {job_id} stuck for {elapsed/60:.0f}min. Marking as ERROR."
+                    f"[Worker] Job {job_id} stuck for {elapsed / 60:.0f}min. Marking as ERROR."
                 )
-                update_status(status_path, {
-                    "status": "ERROR",
-                    "error": f"Job expired after {elapsed/60:.0f} minutes without completing",
-                })
+                update_status(
+                    status_path,
+                    {
+                        "status": "ERROR",
+                        "error": f"Job expired after {elapsed / 60:.0f} minutes without completing",
+                    },
+                )
         except Exception as e:
             logger.error(f"[Worker] Error checking stale job {job_id}: {e}")
 
@@ -75,12 +85,79 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
 # get_active_jobs
 # ---------------------------------------------------------------------------
 
+
+def _prepare_job_info(
+    job_id: str,
+    job_dir: str,
+    status_path: str,
+    status: Dict[str, object],
+) -> JobInfoDict:
+    """Build a JobInfoDict with parsed hierarchy, merged KB, and KBRetriever.
+
+    Shared helper used by both get_active_jobs() and process_single_job().
+    """
+    models_dir = get_models_dir()
+
+    # Parse hierarchy once per job (avoids re-decoding base64+Excel per chunk)
+    custom_hierarchy = parse_custom_hierarchy(status)
+    hierarchy_lookup = None
+    if custom_hierarchy:
+        from src.hierarchy_validator import HierarchyLookup
+
+        hierarchy_lookup = HierarchyLookup(custom_hierarchy)
+
+    # Load KB for few-shot retrieval (sector + project merged)
+    from src.knowledge_base import KnowledgeBase, merge_kb_entries
+
+    project_id = status.get("project_id")
+    if project_id:
+        try:
+            project_kb = KnowledgeBase(project_id, models_dir)
+            project_config = get_project(project_id, models_dir)
+            sector_slug = project_config.get("sector", "") if project_config else ""
+            sector_entries = []
+            use_sector_kb = (
+                project_config.get("use_sector_kb", True) if project_config else True
+            )
+            if sector_slug and use_sector_kb:
+                try:
+                    sector_kb = KnowledgeBase(
+                        sector_slug, models_dir, entity_type="sector"
+                    )
+                    sector_entries = sector_kb.entries
+                except Exception:
+                    pass
+            kb_entries = merge_kb_entries(sector_entries, project_kb.entries)
+        except Exception as e:
+            logger.warning(f"Could not load KB for project {project_id}: {e}")
+            kb_entries = []
+    else:
+        kb_entries = []
+
+    # Create KBRetriever indexed once per job (reused across all chunks)
+    from src.kb_retriever import KBRetriever
+
+    kb_retriever = KBRetriever(kb_entries) if kb_entries else None
+
+    return {
+        "job_id": job_id,
+        "job_dir": job_dir,
+        "status_path": status_path,
+        "status": status,
+        "total_chunks": status["total_chunks"],
+        "custom_hierarchy": custom_hierarchy,
+        "hierarchy_lookup": hierarchy_lookup,
+        "kb_entries": kb_entries,
+        "kb_retriever": kb_retriever,
+    }
+
+
+# DEPRECATED: use process_single_job() with queue trigger instead
 def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
     """
     Collect active jobs (PENDING/PROCESSING), transition PENDING -> PROCESSING,
     parse custom_hierarchy ONCE per job, and load the project KB for few-shot retrieval.
     """
-    models_dir = get_models_dir()
     active = []
 
     for job_id in os.listdir(jobs_root):
@@ -91,57 +168,18 @@ def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
         try:
             status = read_status(status_path)
 
-            if status.get("status") in ["COMPLETED", "CLASSIFIED", "ERROR", "CANCELLED"]:
+            if status.get("status") in [
+                "COMPLETED",
+                "CLASSIFIED",
+                "ERROR",
+                "CANCELLED",
+            ]:
                 continue
 
             if status["status"] == "PENDING":
                 status = update_status(status_path, {"status": "PROCESSING"})
 
-            # Parse hierarchy once per job (avoids re-decoding base64+Excel per chunk)
-            custom_hierarchy = parse_custom_hierarchy(status)
-            hierarchy_lookup = None
-            if custom_hierarchy:
-                from src.hierarchy_validator import HierarchyLookup
-                hierarchy_lookup = HierarchyLookup(custom_hierarchy)
-
-            # Load KB for few-shot retrieval (sector + project merged)
-            from src.knowledge_base import KnowledgeBase, merge_kb_entries
-            project_id = status.get("project_id")
-            if project_id:
-                try:
-                    project_kb = KnowledgeBase(project_id, models_dir)
-                    project_config = get_project(project_id, models_dir)
-                    sector_slug = project_config.get("sector", "") if project_config else ""
-                    sector_entries = []
-                    use_sector_kb = project_config.get("use_sector_kb", True) if project_config else True
-                    if sector_slug and use_sector_kb:
-                        try:
-                            sector_kb = KnowledgeBase(sector_slug, models_dir, entity_type="sector")
-                            sector_entries = sector_kb.entries
-                        except Exception:
-                            pass
-                    kb_entries = merge_kb_entries(sector_entries, project_kb.entries)
-                except Exception as e:
-                    logger.warning(f"Could not load KB for project {project_id}: {e}")
-                    kb_entries = []
-            else:
-                kb_entries = []
-
-            # Create KBRetriever indexed once per job (reused across all chunks)
-            from src.kb_retriever import KBRetriever
-            kb_retriever = KBRetriever(kb_entries) if kb_entries else None
-
-            active.append({
-                "job_id": job_id,
-                "job_dir": job_dir,
-                "status_path": status_path,
-                "status": status,
-                "total_chunks": status["total_chunks"],
-                "custom_hierarchy": custom_hierarchy,
-                "hierarchy_lookup": hierarchy_lookup,
-                "kb_entries": kb_entries,
-                "kb_retriever": kb_retriever,
-            })
+            active.append(_prepare_job_info(job_id, job_dir, status_path, status))
         except Exception as e:
             logger.error(f"[Worker] Error reading job {job_id}: {e}")
 
@@ -152,7 +190,10 @@ def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
 # find_next_chunks
 # ---------------------------------------------------------------------------
 
-def find_next_chunks(job_info: JobInfoDict, max_count: int = 1, exclude: Optional[Set[int]] = None) -> List[int]:
+
+def find_next_chunks(
+    job_info: JobInfoDict, max_count: int = 1, exclude: Optional[Set[int]] = None
+) -> List[int]:
     """Return up to max_count unprocessed chunk indices (excluding already-assigned ones)."""
     if exclude is None:
         exclude = set()
@@ -174,7 +215,10 @@ def find_next_chunks(job_info: JobInfoDict, max_count: int = 1, exclude: Optiona
 # parse_custom_hierarchy
 # ---------------------------------------------------------------------------
 
-def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[HierarchyEntryDict]]:
+
+def parse_custom_hierarchy(
+    status: Dict[str, object],
+) -> Optional[List[HierarchyEntryDict]]:
     """
     Resolve the custom hierarchy from job status.
 
@@ -212,7 +256,7 @@ def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[Hierarchy
         header_row = None
         for idx, row in df_raw.iterrows():
             values = [str(v).strip().upper() for v in row.values]
-            if 'N1' in values and 'N4' in values:
+            if "N1" in values and "N4" in values:
                 header_row = idx
                 break
 
@@ -224,21 +268,31 @@ def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[Hierarchy
         df_hier = pd.read_excel(io.BytesIO(cust_bytes), header=header_row)
         df_hier.columns = [str(c).strip().upper() for c in df_hier.columns]
 
-        if 'N4' not in df_hier.columns:
-            logger.error(f"Custom hierarchy: N4 column missing. Columns: {list(df_hier.columns)}")
+        if "N4" not in df_hier.columns:
+            logger.error(
+                f"Custom hierarchy: N4 column missing. Columns: {list(df_hier.columns)}"
+            )
             return None
 
         # 4. Build hierarchy as LIST (preserves duplicate N4s like "Materiais OEM" across brands)
         custom_hierarchy = []
         for _, row in df_hier.iterrows():
-            n4 = str(row.get('N4', '')).strip()
-            if n4 and n4.upper() != 'NAN':
-                custom_hierarchy.append({
-                    'N1': str(row.get('N1', '')).strip() if pd.notna(row.get('N1')) else '',
-                    'N2': str(row.get('N2', '')).strip() if pd.notna(row.get('N2')) else '',
-                    'N3': str(row.get('N3', '')).strip() if pd.notna(row.get('N3')) else '',
-                    'N4': n4,
-                })
+            n4 = str(row.get("N4", "")).strip()
+            if n4 and n4.upper() != "NAN":
+                custom_hierarchy.append(
+                    {
+                        "N1": str(row.get("N1", "")).strip()
+                        if pd.notna(row.get("N1"))
+                        else "",
+                        "N2": str(row.get("N2", "")).strip()
+                        if pd.notna(row.get("N2"))
+                        else "",
+                        "N3": str(row.get("N3", "")).strip()
+                        if pd.notna(row.get("N3"))
+                        else "",
+                        "N4": n4,
+                    }
+                )
 
         logger.info(
             f"Custom hierarchy parsed: {len(custom_hierarchy)} entries "
@@ -253,6 +307,7 @@ def parse_custom_hierarchy(status: Dict[str, object]) -> Optional[List[Hierarchy
 # ---------------------------------------------------------------------------
 # process_single_chunk
 # ---------------------------------------------------------------------------
+
 
 def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
     """
@@ -299,7 +354,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
         client_context=client_context,
         few_shot_examples=kb_entries if kb_entries else None,
         hierarchy_lookup=hierarchy_lookup,
-        use_legacy_ml=(not project_id),   # legacy path only when no project
+        use_legacy_ml=(not project_id),  # legacy path only when no project
         project_id=project_id,
         kb_retriever=kb_retriever,
         use_web_search=use_web_search,
@@ -320,6 +375,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
 # update_job_progress  (internal helper, kept public for clarity)
 # ---------------------------------------------------------------------------
 
+
 def update_job_progress(job_info: JobInfoDict) -> None:
     """Update processed_chunks count in status.json.
 
@@ -329,7 +385,8 @@ def update_job_progress(job_info: JobInfoDict) -> None:
     job_dir = job_info["job_dir"]
     total_chunks = job_info["total_chunks"]
     processed_so_far = sum(
-        1 for j in range(total_chunks)
+        1
+        for j in range(total_chunks)
         if os.path.exists(os.path.join(job_dir, f"result_{j}.json"))
     )
     job_info["status"]["processed_chunks"] = processed_so_far
@@ -339,6 +396,7 @@ def update_job_progress(job_info: JobInfoDict) -> None:
 # ---------------------------------------------------------------------------
 # consolidate_job
 # ---------------------------------------------------------------------------
+
 
 def consolidate_job(job_info: JobInfoDict) -> None:
     """
@@ -378,22 +436,28 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     if original_chunks and len(original_chunks) == len(results_accumulated):
         original_df = pd.DataFrame(original_chunks)
         # Drop internal/temporary columns
-        cols_to_drop = [c for c in original_df.columns if c.startswith('_')]
-        original_df.drop(columns=cols_to_drop, errors='ignore', inplace=True)
+        cols_to_drop = [c for c in original_df.columns if c.startswith("_")]
+        original_df.drop(columns=cols_to_drop, errors="ignore", inplace=True)
         # Remove classification columns from original to avoid duplicate labels
         overlap = [c for c in original_df.columns if c in results_df.columns]
         if overlap:
-            logger.info(f"[Consolidate] Dropping overlapping columns from original: {overlap}")
+            logger.info(
+                f"[Consolidate] Dropping overlapping columns from original: {overlap}"
+            )
             original_df.drop(columns=overlap, inplace=True)
         final_df = pd.concat(
             [original_df.reset_index(drop=True), results_df.reset_index(drop=True)],
-            axis=1
+            axis=1,
         )
     else:
         final_df = results_df
 
     # Fill blank/nan cells with "Não Identificado"
-    _nan_strings = [v for v in INCOMPLETE_VALUES if v not in ("", "Não Identificado", "Nao Identificado")]
+    _nan_strings = [
+        v
+        for v in INCOMPLETE_VALUES
+        if v not in ("", "Não Identificado", "Nao Identificado")
+    ]
     for col in ["N1", "N2", "N3", "N4"]:
         if col in final_df.columns:
             final_df[col] = (
@@ -410,7 +474,9 @@ def consolidate_job(job_info: JobInfoDict) -> None:
         incomplete_mask = False
         for col in ["N1", "N2", "N3", "N4"]:
             if col in final_df.columns:
-                incomplete_mask = incomplete_mask | (final_df[col] == "Não Identificado")
+                incomplete_mask = incomplete_mask | (
+                    final_df[col] == "Não Identificado"
+                )
         final_df.loc[incomplete_mask, "confidence"] = 0.0
 
     # Remove legacy columns not relevant for LLM-direct path (before analytics/Excel)
@@ -428,8 +494,8 @@ def consolidate_job(job_info: JobInfoDict) -> None:
 
     # Generate Excel
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        final_df.to_excel(writer, index=False, sheet_name='Classificação')
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        final_df.to_excel(writer, index=False, sheet_name="Classificação")
     output.seek(0)
     xlsx_b64 = base64.b64encode(output.getvalue()).decode("utf-8")
 
@@ -438,7 +504,7 @@ def consolidate_job(job_info: JobInfoDict) -> None:
         "analytics": analytics,
         "summary": summary,
         "fileContent": xlsx_b64,
-        "filename": f"classified_{status['filename']}"
+        "filename": f"classified_{status['filename']}",
     }
 
     with open(os.path.join(job_dir, "result.json"), "w") as f:
@@ -473,8 +539,93 @@ def consolidate_job(job_info: JobInfoDict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_worker_cycle  (orchestrator — mirrors ProcessTaxonomyWorker from v2)
+# process_single_job  (queue-triggered — processes ONE job to CLASSIFIED)
 # ---------------------------------------------------------------------------
+
+
+def process_single_job(job_id: str) -> None:
+    """Process a single job from PENDING to CLASSIFIED (queue trigger path).
+
+    Unlike run_worker_cycle(), this function:
+    - Receives job_id directly (no directory scan)
+    - Processes 1 job completely (no round-robin)
+    - No time budget — queue visibility timeout (30min Flex Consumption) controls this
+    - Re-raises exceptions so the queue runtime can retry via dequeue count
+    """
+    import traceback
+
+    jobs_root = get_jobs_dir()
+    job_dir = os.path.join(jobs_root, job_id)
+    status_path = os.path.join(job_dir, "status.json")
+
+    if not os.path.isdir(job_dir) or not os.path.exists(status_path):
+        logger.warning(f"[Worker] Job {job_id} not found — skipping")
+        return
+
+    status = read_status(status_path)
+    current = status.get("status", "")
+
+    # Only process PENDING or PROCESSING jobs
+    if current not in ("PENDING", "PROCESSING"):
+        logger.info(f"[Worker] Job {job_id} has status '{current}' — skipping")
+        return
+
+    # Transition PENDING → PROCESSING
+    if current == "PENDING":
+        status = update_status(status_path, {"status": "PROCESSING"})
+
+    logger.info(
+        f"[Worker] Processing job {job_id} ({status.get('total_chunks')} chunks)"
+    )
+
+    try:
+        # Setup: hierarchy, KB, KBRetriever
+        job_info = _prepare_job_info(job_id, job_dir, status_path, status)
+
+        # Process chunks in parallel batches
+        while True:
+            # Check for cancellation between batches
+            current_status = read_status(status_path)
+            if current_status.get("status") == "CANCELLED":
+                logger.info(f"[Worker] Job {job_id} was cancelled — stopping")
+                return
+
+            chunks = find_next_chunks(job_info, max_count=MAX_PARALLEL_CHUNKS)
+            if not chunks:
+                break
+
+            logger.info(
+                f"[Worker] job={job_id} processing {len(chunks)} chunk(s): {chunks}"
+            )
+
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_CHUNKS) as executor:
+                futures = {
+                    executor.submit(process_single_chunk, job_info, idx): idx
+                    for idx in chunks
+                }
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    future.result()  # re-raises on error
+                    update_job_progress(job_info)
+
+        # All chunks done — consolidate
+        consolidate_job(job_info)
+
+    except Exception as e:
+        logger.error(
+            f"[Worker] Error processing job {job_id}: {e}\n{traceback.format_exc()}"
+        )
+        # Don't write ERROR here — the job stays PROCESSING so queue retries
+        # (maxDequeueCount=5) can re-enter and process remaining chunks.
+        # After all retries are exhausted, the message goes to poison queue,
+        # and the hourly cleanup timer marks PROCESSING > 1h as ERROR.
+        raise  # re-raise so queue runtime retries
+
+
+# ---------------------------------------------------------------------------
+# run_worker_cycle  (DEPRECATED — use process_single_job with queue trigger)
+# ---------------------------------------------------------------------------
+
 
 def run_worker_cycle() -> None:
     """
@@ -513,7 +664,11 @@ def run_worker_cycle() -> None:
 
         # Collect up to MAX_PARALLEL_CHUNKS via fair round-robin across jobs
         batch = []
-        pending = [j for j in active_jobs if j["status"].get("status") not in ("ERROR", "CANCELLED")]
+        pending = [
+            j
+            for j in active_jobs
+            if j["status"].get("status") not in ("ERROR", "CANCELLED")
+        ]
         assigned = {j["job_id"]: set() for j in pending}
 
         # Round-robin: 1 chunk per job per round, repeat until batch is full
@@ -552,13 +707,18 @@ def run_worker_cycle() -> None:
                     if job["status"].get("status") != "ERROR":
                         update_job_progress(job)
                 except Exception as e:
-                    logger.error(f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}")
+                    logger.error(
+                        f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}"
+                    )
                     job["status"]["status"] = "ERROR"
                     job["status"]["error"] = str(e)
-                    update_status(job["status_path"], {
-                        "status": "ERROR",
-                        "error": str(e),
-                    })
+                    update_status(
+                        job["status_path"],
+                        {
+                            "status": "ERROR",
+                            "error": str(e),
+                        },
+                    )
 
     # 4. Consolidate jobs that have completed all chunks
     for job_info in active_jobs:
@@ -573,13 +733,17 @@ def run_worker_cycle() -> None:
                 consolidate_job(job_info)
             except Exception as e:
                 import traceback
+
                 logger.error(
                     f"[Worker] Error consolidating Job {job_info['job_id']}: "
                     f"{e}\n{traceback.format_exc()}"
                 )
                 job_info["status"]["status"] = "ERROR"
                 job_info["status"]["error"] = f"Consolidation error: {e}"
-                update_status(job_info["status_path"], {
-                    "status": "ERROR",
-                    "error": f"Consolidation error: {e}",
-                })
+                update_status(
+                    job_info["status_path"],
+                    {
+                        "status": "ERROR",
+                        "error": f"Consolidation error: {e}",
+                    },
+                )

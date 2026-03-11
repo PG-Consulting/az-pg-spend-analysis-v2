@@ -234,6 +234,11 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     with open(os.path.join(job_dir, "status.json"), "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False)
 
+    # Enqueue job for queue-triggered processing
+    from src.queue_helpers import enqueue_job
+
+    enqueue_job(session_id)
+
     return json_response(
         {"jobId": session_id, "status": "PENDING", "total_chunks": num_chunks},
         status_code=202,
