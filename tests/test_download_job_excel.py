@@ -483,11 +483,6 @@ class TestDownloadJobExcelEndpoint:
         monkeypatch.setattr(
             "blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir
         )
-        # Bypass auth decorator
-        monkeypatch.setattr(
-            "blueprints.classification_bp.require_auth",
-            lambda fn: fn,
-        )
 
         from blueprints.classification_bp import DownloadJobExcel
 
