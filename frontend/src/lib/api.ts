@@ -453,8 +453,19 @@ export const apiClient = {
     return response.data;
   },
 
-  /** Downloads raw classification results as Excel (before review). */
-  async downloadJobExcel(jobId: string): Promise<{ filename: string; file_content_base64: string }> {
+  /** Downloads classification results as Excel. POST with decisions includes review progress. */
+  async downloadJobExcel(
+    jobId: string,
+    decisions?: Array<{ index: number; decision: string; N1: string; N2: string; N3: string; N4: string }>
+  ): Promise<{ filename: string; file_content_base64: string }> {
+    if (decisions && decisions.length > 0) {
+      const response = await axios.post(
+        `${API_BASE_URL}/DownloadJobExcel`,
+        { decisions },
+        { params: { jobId }, headers: await getAuthHeaders() }
+      );
+      return response.data;
+    }
     const response = await axios.get(`${API_BASE_URL}/DownloadJobExcel`, {
       params: { jobId },
       headers: getAuthHeaders(),
