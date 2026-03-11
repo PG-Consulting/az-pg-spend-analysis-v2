@@ -32,7 +32,10 @@ def enqueue_job(job_id: str) -> None:
 
     try:
         queue_client = QueueClient.from_connection_string(conn_str, QUEUE_NAME)
-        queue_client.create_queue()  # idempotente
+        try:
+            queue_client.create_queue()
+        except Exception:
+            pass  # queue já existe — ok
         message = json.dumps({"job_id": job_id})
         queue_client.send_message(message)
         logger.info(f"[Queue] Job {job_id} enfileirado com sucesso")
