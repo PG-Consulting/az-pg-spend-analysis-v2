@@ -17,7 +17,7 @@ import threading
 logger = logging.getLogger(__name__)
 
 LLM_MAX_RETRIES = 2  # Backoff exponencial em chamadas à API
-LLM_MAX_CONCURRENT_CALLS = 8  # Max chamadas LLM simultâneas (global, cross-chunk)
+LLM_MAX_CONCURRENT_CALLS = 15  # Max chamadas LLM simultâneas (global, cross-chunk)
 _LLM_SEMAPHORE = threading.Semaphore(LLM_MAX_CONCURRENT_CALLS)
 
 # UNSPSC Segment/Family definitions for prompt context
