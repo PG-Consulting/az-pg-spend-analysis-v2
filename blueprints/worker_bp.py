@@ -82,3 +82,30 @@ def CleanupStaleJobs(timer: func.TimerRequest) -> None:
                 logger.info(f"[Cleanup] Re-enqueued orphan PENDING job {job_id}")
         except Exception as e:
             logger.error(f"[Cleanup] Erro ao verificar job {job_id}: {e}")
+
+
+@worker_bp.queue_trigger(
+    arg_name="msg",
+    queue_name="taxonomy-jobs-poison",
+    connection="AzureWebJobsStorage",
+)
+def HandlePoisonTaxonomyJob(msg: func.QueueMessage) -> None:
+    """Poison queue trigger: marks failed jobs as ERROR immediately.
+
+    When a job message fails maxDequeueCount times, Azure moves it to
+    taxonomy-jobs-poison. This trigger picks it up and writes ERROR status
+    so the frontend shows the failure instantly instead of waiting for
+    the hourly cleanup timer.
+    """
+    try:
+        payload = json.loads(msg.get_body().decode("utf-8"))
+        job_id = payload["job_id"]
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"[PoisonHandler] Mensagem inválida: {e}")
+        return
+
+    logger.warning(f"[PoisonHandler] Job {job_id} na poison queue — marcando ERROR")
+
+    from src.worker_helpers import handle_poison_message
+
+    handle_poison_message(job_id)

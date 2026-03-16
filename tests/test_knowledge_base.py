@@ -9,6 +9,7 @@ from src.knowledge_base import KnowledgeBase, merge_kb_entries
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def make_kb(tmp_path, project_id="test-project", initial_entries=None):
     """Create a KnowledgeBase instance backed by a temp directory."""
     project_dir = tmp_path / "projects" / project_id
@@ -36,6 +37,7 @@ def _entry(description, n4, source="llm_approved", confidence=0.85, **kwargs):
 # ---------------------------------------------------------------------------
 # Tests: initialization
 # ---------------------------------------------------------------------------
+
 
 class TestKBInit:
     def test_init_empty(self, tmp_path):
@@ -68,6 +70,7 @@ class TestKBInit:
 # ---------------------------------------------------------------------------
 # Tests: add_entries
 # ---------------------------------------------------------------------------
+
 
 class TestKBAddEntries:
     def test_add_entries_basic(self, tmp_path):
@@ -126,13 +129,17 @@ class TestKBAddEntries:
         """consultant_correction overwrites llm_approved for the same key."""
         kb = make_kb(tmp_path)
 
-        llm_entry = _entry("Parafuso Sextavado M8", "Parafuso Sextavado", source="llm_approved")
+        llm_entry = _entry(
+            "Parafuso Sextavado M8", "Parafuso Sextavado", source="llm_approved"
+        )
         kb.add_entries([llm_entry])
         assert kb.entries[0]["source"] == "llm_approved"
 
         consultant_entry = _entry(
-            "Parafuso Sextavado M8", "Parafuso Sextavado",
-            source="consultant_correction", confidence=1.0,
+            "Parafuso Sextavado M8",
+            "Parafuso Sextavado",
+            source="consultant_correction",
+            confidence=1.0,
         )
         added = kb.add_entries([consultant_entry])
         assert added == 1
@@ -145,15 +152,19 @@ class TestKBAddEntries:
         kb = make_kb(tmp_path)
 
         consultant_entry = _entry(
-            "Parafuso Sextavado M8", "Parafuso Sextavado",
-            source="consultant_correction", confidence=1.0,
+            "Parafuso Sextavado M8",
+            "Parafuso Sextavado",
+            source="consultant_correction",
+            confidence=1.0,
         )
         kb.add_entries([consultant_entry])
         assert kb.entries[0]["source"] == "consultant_correction"
 
         llm_entry = _entry(
-            "Parafuso Sextavado M8", "Parafuso Sextavado",
-            source="llm_approved", confidence=0.7,
+            "Parafuso Sextavado M8",
+            "Parafuso Sextavado",
+            source="llm_approved",
+            confidence=0.7,
         )
         added = kb.add_entries([llm_entry])
         assert added == 0  # nothing added/overwritten
@@ -215,6 +226,7 @@ class TestKBAddEntries:
 # Tests: import_xlsx with NaN values
 # ---------------------------------------------------------------------------
 
+
 class TestKBImportXlsxNaN:
     """import_xlsx deve tratar NaN do Excel como vazio, não como string 'nan'."""
 
@@ -226,11 +238,31 @@ class TestKBImportXlsxNaN:
         kb = make_kb(tmp_path)
 
         # Create Excel with some empty N1-N4 cells
-        df = pd.DataFrame([
-            {"Descrição": "Item OK", "N1": "Cat1", "N2": "Sub1", "N3": "Area1", "N4": "Det1"},
-            {"Descrição": "Item Vazio", "N1": None, "N2": None, "N3": None, "N4": None},
-            {"Descrição": "Item Parcial", "N1": "Cat2", "N2": None, "N3": "Area2", "N4": "Det2"},
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "Descrição": "Item OK",
+                    "N1": "Cat1",
+                    "N2": "Sub1",
+                    "N3": "Area1",
+                    "N4": "Det1",
+                },
+                {
+                    "Descrição": "Item Vazio",
+                    "N1": None,
+                    "N2": None,
+                    "N3": None,
+                    "N4": None,
+                },
+                {
+                    "Descrição": "Item Parcial",
+                    "N1": "Cat2",
+                    "N2": None,
+                    "N3": "Area2",
+                    "N4": "Det2",
+                },
+            ]
+        )
         buf = io.BytesIO()
         df.to_excel(buf, index=False)
 
@@ -260,6 +292,7 @@ class TestKBImportXlsxNaN:
 # Tests: delete_entry
 # ---------------------------------------------------------------------------
 
+
 class TestKBDelete:
     def test_delete_entry(self, tmp_path):
         """Deleting by ID removes the entry and persists."""
@@ -286,6 +319,7 @@ class TestKBDelete:
 # Tests: update_entry
 # ---------------------------------------------------------------------------
 
+
 class TestKBUpdate:
     def test_update_entry(self, tmp_path):
         """Update N1 of an existing entry."""
@@ -310,15 +344,18 @@ class TestKBUpdate:
 # Tests: search
 # ---------------------------------------------------------------------------
 
+
 class TestKBSearch:
     def test_search(self, tmp_path):
         """search('parafuso') finds matching entries."""
         kb = make_kb(tmp_path)
-        kb.add_entries([
-            _entry("Parafuso Sextavado M8", "Parafuso Sextavado"),
-            _entry("Óleo Lubrificante Motor", "Óleo Motor"),
-            _entry("Parafuso Allen M6", "Parafuso Allen"),
-        ])
+        kb.add_entries(
+            [
+                _entry("Parafuso Sextavado M8", "Parafuso Sextavado"),
+                _entry("Óleo Lubrificante Motor", "Óleo Motor"),
+                _entry("Parafuso Allen M6", "Parafuso Allen"),
+            ]
+        )
         results = kb.search("parafuso")
         assert len(results) == 2
 
@@ -333,6 +370,7 @@ class TestKBSearch:
 # ---------------------------------------------------------------------------
 # Tests: get_all (pagination and filters)
 # ---------------------------------------------------------------------------
+
 
 class TestKBGetAll:
     def test_get_all_pagination(self, tmp_path):
@@ -353,11 +391,13 @@ class TestKBGetAll:
     def test_get_all_filter_source(self, tmp_path):
         """Filtering by source returns only matching entries."""
         kb = make_kb(tmp_path)
-        kb.add_entries([
-            _entry("Item A", "Cat A", source="llm_approved"),
-            _entry("Item B", "Cat B", source="consultant_correction"),
-            _entry("Item C", "Cat C", source="llm_approved"),
-        ])
+        kb.add_entries(
+            [
+                _entry("Item A", "Cat A", source="llm_approved"),
+                _entry("Item B", "Cat B", source="consultant_correction"),
+                _entry("Item C", "Cat C", source="llm_approved"),
+            ]
+        )
         result = kb.get_all(filters={"source": "consultant_correction"})
         assert result["total"] == 1
         assert result["entries"][0]["source"] == "consultant_correction"
@@ -367,19 +407,27 @@ class TestKBGetAll:
 # Tests: get_coverage
 # ---------------------------------------------------------------------------
 
+
 class TestKBCoverage:
     def test_get_coverage(self, tmp_path):
         """With a hierarchy, calculates covered N4s."""
         hierarchy = [
-            {"N1": "MRO", "N2": "Fixação", "N3": "Parafusos", "N4": "Parafuso Sextavado"},
+            {
+                "N1": "MRO",
+                "N2": "Fixação",
+                "N3": "Parafusos",
+                "N4": "Parafuso Sextavado",
+            },
             {"N1": "MRO", "N2": "Lubrificação", "N3": "Óleos", "N4": "Óleo Motor"},
             {"N1": "MRO", "N2": "Filtração", "N3": "Filtros", "N4": "Filtro de Ar"},
         ]
         kb = make_kb(tmp_path)
-        kb.add_entries([
-            _entry("Parafuso M8", "Parafuso Sextavado"),
-            _entry("Óleo Motor", "Óleo Motor"),
-        ])
+        kb.add_entries(
+            [
+                _entry("Parafuso M8", "Parafuso Sextavado"),
+                _entry("Óleo Motor", "Óleo Motor"),
+            ]
+        )
 
         coverage = kb.get_coverage(hierarchy)
         assert coverage["total_n4s"] == 3
@@ -403,32 +451,50 @@ class TestKBCoverage:
         temporarily swapped project_kb.entries with merged entries.
         """
         hierarchy = [
-            {"N1": "MRO", "N2": "Fixação", "N3": "Parafusos", "N4": "Parafuso Sextavado"},
+            {
+                "N1": "MRO",
+                "N2": "Fixação",
+                "N3": "Parafusos",
+                "N4": "Parafuso Sextavado",
+            },
             {"N1": "MRO", "N2": "Lubrificação", "N3": "Óleos", "N4": "Óleo Motor"},
             {"N1": "MRO", "N2": "Filtração", "N3": "Filtros", "N4": "Filtro de Ar"},
         ]
         # Project KB has 1 entry
-        project_kb = make_kb(tmp_path, initial_entries=[
-            {
-                "id": "p1", "description": "Parafuso M8",
-                "description_norm": "parafuso m8",
-                "N1": "MRO", "N2": "Fixação", "N3": "Parafusos",
-                "N4": "Parafuso Sextavado",
-                "source": "llm_approved", "confidence": 0.9,
-                "version": "v1", "date_added": "2026-01-01T00:00:00",
-            },
-        ])
+        project_kb = make_kb(
+            tmp_path,
+            initial_entries=[
+                {
+                    "id": "p1",
+                    "description": "Parafuso M8",
+                    "description_norm": "parafuso m8",
+                    "N1": "MRO",
+                    "N2": "Fixação",
+                    "N3": "Parafusos",
+                    "N4": "Parafuso Sextavado",
+                    "source": "llm_approved",
+                    "confidence": 0.9,
+                    "version": "v1",
+                    "date_added": "2026-01-01T00:00:00",
+                },
+            ],
+        )
         assert len(project_kb.entries) == 1
 
         # Merged entries have 2 entries (simulating sector + project merge)
         merged = project_kb.entries + [
             {
-                "id": "s1", "description": "Óleo Motor",
+                "id": "s1",
+                "description": "Óleo Motor",
                 "description_norm": "oleo motor",
-                "N1": "MRO", "N2": "Lubrificação", "N3": "Óleos",
+                "N1": "MRO",
+                "N2": "Lubrificação",
+                "N3": "Óleos",
                 "N4": "Óleo Motor",
-                "source": "llm_approved", "confidence": 0.85,
-                "version": "v1", "date_added": "2026-01-01T00:00:00",
+                "source": "llm_approved",
+                "confidence": 0.85,
+                "version": "v1",
+                "date_added": "2026-01-01T00:00:00",
             },
         ]
 
@@ -450,6 +516,7 @@ class TestKBCoverage:
 # Tests: versioning
 # ---------------------------------------------------------------------------
 
+
 class TestKBVersioning:
     def test_create_version_snapshot(self, tmp_path):
         """Creating a snapshot produces a version file on disk."""
@@ -461,6 +528,7 @@ class TestKBVersioning:
 
         # Verify snapshot file exists
         import os
+
         snapshot_path = os.path.join(kb.versions_dir, f"{version_id}.json")
         assert os.path.exists(snapshot_path)
 
@@ -479,10 +547,12 @@ class TestKBVersioning:
         version_id = kb.create_version_snapshot()
 
         # Add more entries after snapshot
-        kb.add_entries([
-            _entry("Óleo Motor", "Óleo Motor"),
-            _entry("Filtro Ar", "Filtro de Ar"),
-        ])
+        kb.add_entries(
+            [
+                _entry("Óleo Motor", "Óleo Motor"),
+                _entry("Filtro Ar", "Filtro de Ar"),
+            ]
+        )
         assert len(kb.entries) == 3
 
         # Rollback
@@ -506,6 +576,7 @@ class TestKBVersioning:
 # Helper for sector KB
 # ---------------------------------------------------------------------------
 
+
 def make_sector_kb(tmp_path, sector_name="test-sector", initial_entries=None):
     """Create a KnowledgeBase instance for a sector backed by a temp directory."""
     sector_dir = tmp_path / "sectors" / sector_name
@@ -519,6 +590,7 @@ def make_sector_kb(tmp_path, sector_name="test-sector", initial_entries=None):
 # ---------------------------------------------------------------------------
 # Tests: Sector KB (entity_type="sector")
 # ---------------------------------------------------------------------------
+
 
 class TestSectorKB:
     def test_sector_kb_init_empty(self, tmp_path):
@@ -563,7 +635,10 @@ class TestSectorKB:
         assert "sectors/petroleo" in kb.kb_path
         kb.add_entries([_entry("Valvula Gaveta", "Valvula Gaveta")])
         import os
-        assert os.path.exists(os.path.join(str(tmp_path), "sectors", "petroleo", "knowledge_base.json"))
+
+        assert os.path.exists(
+            os.path.join(str(tmp_path), "sectors", "petroleo", "knowledge_base.json")
+        )
 
     def test_sector_kb_update_entry(self, tmp_path):
         """Sector KB update_entry works correctly."""
@@ -583,10 +658,12 @@ class TestSectorKB:
     def test_sector_kb_delete_entry(self, tmp_path):
         """Sector KB delete_entry removes and persists."""
         kb = make_sector_kb(tmp_path)
-        kb.add_entries([
-            _entry("Parafuso M8", "Parafuso Sextavado"),
-            _entry("Oleo Motor", "Oleo Motor"),
-        ])
+        kb.add_entries(
+            [
+                _entry("Parafuso M8", "Parafuso Sextavado"),
+                _entry("Oleo Motor", "Oleo Motor"),
+            ]
+        )
         assert len(kb.entries) == 2
 
         entry_id = kb.entries[0]["id"]
@@ -620,6 +697,7 @@ class TestSectorKB:
 # ---------------------------------------------------------------------------
 # Tests: merge_kb_entries
 # ---------------------------------------------------------------------------
+
 
 class TestMergeKBEntries:
     def test_merge_empty(self):
@@ -677,15 +755,18 @@ class TestMergeKBEntries:
 # Tests: promote_entries_to
 # ---------------------------------------------------------------------------
 
+
 class TestPromoteEntries:
     def test_promote_entries(self, tmp_path):
         """Promoting entries from project KB to sector KB adds them to the sector."""
         project_kb = make_kb(tmp_path)
-        project_kb.add_entries([
-            _entry("Parafuso M8", "Parafuso Sextavado"),
-            _entry("Óleo Motor", "Óleo Motor"),
-            _entry("Filtro Ar", "Filtro de Ar"),
-        ])
+        project_kb.add_entries(
+            [
+                _entry("Parafuso M8", "Parafuso Sextavado"),
+                _entry("Óleo Motor", "Óleo Motor"),
+                _entry("Filtro Ar", "Filtro de Ar"),
+            ]
+        )
         assert len(project_kb.entries) == 3
 
         sector_kb = make_sector_kb(tmp_path)
@@ -723,3 +804,61 @@ class TestPromoteEntries:
 
         versions = sector_kb.list_versions()
         assert len(versions) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: concurrency (file locking)
+# ---------------------------------------------------------------------------
+
+
+class TestKBConcurrency:
+    def test_concurrent_add_entries_no_data_loss(self, tmp_path):
+        """Two concurrent add_entries calls must not lose entries."""
+        import threading
+
+        # Setup: create empty KB on disk first
+        make_kb(tmp_path, initial_entries=[])
+
+        entries_a = [_entry("Parafuso M8", "Fixadores", N1="MRO")]
+        entries_b = [_entry("Válvula gaveta", "Válvulas", N1="Industrial")]
+
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def add_a():
+            try:
+                barrier.wait(timeout=5)
+                kb_a = KnowledgeBase("test-project", str(tmp_path))
+                kb_a.add_entries(entries_a)
+            except Exception as e:
+                errors.append(e)
+
+        def add_b():
+            try:
+                barrier.wait(timeout=5)
+                kb_b = KnowledgeBase("test-project", str(tmp_path))
+                kb_b.add_entries(entries_b)
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=add_a)
+        t2 = threading.Thread(target=add_b)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors
+        final_kb = KnowledgeBase("test-project", str(tmp_path))
+        assert len(final_kb.entries) == 2, (
+            f"Expected 2 entries, got {len(final_kb.entries)} — concurrent write lost data"
+        )
+
+    def test_save_creates_lock_sidecar(self, tmp_path):
+        """save() must create a .lock sidecar file."""
+        import os
+
+        kb = make_kb(tmp_path, initial_entries=[])
+        kb.add_entries([_entry("Teste lock", "Fixadores")])
+        lock_path = kb.kb_path + ".lock"
+        assert os.path.exists(lock_path), "File lock sidecar not created"

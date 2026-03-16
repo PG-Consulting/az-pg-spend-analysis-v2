@@ -46,6 +46,40 @@ MAX_PROCESSING_TIME = 20 * 60  # 20-minute budget per worker cycle
 
 
 # ---------------------------------------------------------------------------
+# handle_poison_message
+# ---------------------------------------------------------------------------
+
+
+def handle_poison_message(job_id: str) -> None:
+    """Mark a job as ERROR after exhausting queue retries (poison queue)."""
+    jobs_root = get_jobs_dir()
+    job_dir = os.path.join(jobs_root, job_id)
+    status_path = os.path.join(job_dir, "status.json")
+
+    if not os.path.exists(status_path):
+        logger.warning(f"[PoisonHandler] Job {job_id} não encontrado")
+        return
+
+    # Pre-check: avoid acquiring write lock if no mutation needed
+    _TERMINAL = ("CANCELLED", "COMPLETED", "CLASSIFIED", "APPROVED", "ERROR")
+    current = read_status(status_path).get("status", "")
+    if current in _TERMINAL:
+        logger.info(f"[PoisonHandler] Job {job_id} já em '{current}' — ignorando")
+        return
+
+    with locked_status(status_path) as data:
+        # Re-check inside lock (status could have changed)
+        if data.get("status", "") in _TERMINAL:
+            return
+        data["status"] = "ERROR"
+        data["error"] = (
+            "Job falhou após múltiplas tentativas de processamento (poison queue). "
+            "Verifique os logs do worker para detalhes."
+        )
+        data["error_at"] = datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
 # cleanup_stale_jobs
 # ---------------------------------------------------------------------------
 
@@ -492,20 +526,29 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     analytics = generate_analytics(final_df)
     summary = generate_summary(final_df, status.get("desc_column", "Descricao"))
 
-    # Generate Excel
+    # Generate Excel — salvar em arquivo separado (não no result.json)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         final_df.to_excel(writer, index=False, sheet_name="Classificação")
     output.seek(0)
     xlsx_b64 = base64.b64encode(output.getvalue()).decode("utf-8")
+    del output  # liberar BytesIO imediatamente
 
+    # Salvar Excel b64 em arquivo separado (reduz result.json em ~10-15 MB)
+    excel_b64_path = os.path.join(job_dir, "classified_excel_b64.txt")
+    with open(excel_b64_path, "w", encoding="utf-8") as ef:
+        ef.write(xlsx_b64)
+    del xlsx_b64  # liberar string b64
+
+    # Gerar result.json SEM fileContent
     final_result = {
         "items": final_df.to_dict(orient="records"),
         "analytics": analytics,
         "summary": summary,
-        "fileContent": xlsx_b64,
         "filename": f"classified_{status['filename']}",
     }
+
+    del final_df  # liberar DataFrame antes de serializar
 
     with open(os.path.join(job_dir, "result.json"), "w") as f:
         f.write(safe_json_dumps(final_result))

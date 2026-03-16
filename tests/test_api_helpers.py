@@ -1,8 +1,8 @@
 """Tests for src/api_helpers.py — json_response, error_response, handle_errors."""
+
 import json
 import sys
 import types
-import pytest
 
 # Mock azure.functions before importing api_helpers
 _mock_azure = types.ModuleType("azure")
@@ -11,6 +11,7 @@ _mock_func = types.ModuleType("azure.functions")
 
 class _MockHttpResponse:
     """Minimal mock of azure.functions.HttpResponse."""
+
     def __init__(self, body=None, status_code=200, mimetype=None, headers=None):
         self._body = body.encode("utf-8") if isinstance(body, str) else (body or b"")
         self.status_code = status_code
@@ -26,9 +27,13 @@ _mock_azure.functions = _mock_func
 sys.modules.setdefault("azure", _mock_azure)
 sys.modules.setdefault("azure.functions", _mock_func)
 
-from src.api_helpers import json_response, error_response, options_response, handle_errors
+from src.api_helpers import (
+    json_response,
+    error_response,
+    options_response,
+    handle_errors,
+)
 from src.exceptions import (
-    SpendAnalysisError,
     NotFoundError,
     ValidationError,
     ConflictError,
@@ -147,3 +152,17 @@ class TestHandleErrors:
 
         resp = endpoint(None)
         assert resp.status_code == 404
+
+    def test_catches_filelock_timeout_as_503(self):
+        """filelock.Timeout should return 503 with Retry-After header."""
+        import filelock
+
+        @handle_errors("TestEndpoint")
+        def endpoint(req):
+            raise filelock.Timeout("status.json.lock")
+
+        resp = endpoint(None)
+        assert resp.status_code == 503
+        assert resp.headers.get("Retry-After") == "2"
+        body = json.loads(resp.get_body())
+        assert "ocupado" in body["error"].lower()

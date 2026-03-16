@@ -446,8 +446,8 @@ class TestConsolidateJob:
         assert "summary" in result
         assert result["summary"]["total_linhas"] == 2
 
-    def test_result_json_contains_excel_base64(self, tmp_path):
-        """result.json deve conter fileContent com Excel em base64."""
+    def test_excel_base64_in_separate_file(self, tmp_path):
+        """Excel b64 deve estar em classified_excel_b64.txt, NÃO no result.json."""
         import base64
 
         chunk_data = [{"Descricao": "Item A"}]
@@ -466,15 +466,19 @@ class TestConsolidateJob:
         job_info = self._make_job(tmp_path, "test-excel", [chunk_data], [result_data])
         consolidate_job(job_info)
 
+        # result.json NÃO deve conter fileContent
         with open(
             os.path.join(job_info["job_dir"], "result.json"), encoding="utf-8"
         ) as f:
             result = json.load(f)
+        assert "fileContent" not in result, "Excel b64 should NOT be in result.json"
 
-        assert "fileContent" in result
-        assert len(result["fileContent"]) > 0
-        # Deve ser base64 válido
-        decoded = base64.b64decode(result["fileContent"])
+        # Excel b64 deve estar em arquivo separado
+        excel_path = os.path.join(job_info["job_dir"], "classified_excel_b64.txt")
+        assert os.path.exists(excel_path), "classified_excel_b64.txt not found"
+        excel_b64 = open(excel_path, "r").read()
+        assert len(excel_b64) > 100, "Excel b64 file is too small"
+        decoded = base64.b64decode(excel_b64)
         assert len(decoded) > 0
 
     def test_intermediate_files_cleaned_up(self, tmp_path):

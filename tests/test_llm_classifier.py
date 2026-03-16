@@ -1,12 +1,16 @@
 """Tests for src.llm_classifier — fallback chunk size and prompt correctness."""
-import pytest
-from unittest.mock import patch, MagicMock
 
-from src.llm_classifier import classify_items_with_llm, _call_openai_api
+from unittest.mock import patch
+
+from src.llm_classifier import classify_items_with_llm
 import inspect
 
 
-FAKE_CONFIG = {"endpoint": "https://fake.api/v1", "api_key": "fake-key-1234567890", "deployment": "grok-test"}
+FAKE_CONFIG = {
+    "endpoint": "https://fake.api/v1",
+    "api_key": "fake-key-1234567890",
+    "deployment": "grok-test",
+}
 
 
 class TestFallbackChunkSize:
@@ -25,11 +29,22 @@ class TestFallbackChunkSize:
             # First chunk (100 items) succeeds
             if len(items) == 100:
                 results = [
-                    {"N1": "Cat", "N2": "Sub", "N3": "Grp", "N4": "Det",
-                     "confidence": 0.9, "LLM_Explanation": "ok"}
+                    {
+                        "N1": "Cat",
+                        "N2": "Sub",
+                        "N3": "Grp",
+                        "N4": "Det",
+                        "confidence": 0.9,
+                        "LLM_Explanation": "ok",
+                    }
                     for _ in items
                 ]
-                return results, {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0, "total_tokens": 0}
+                return results, {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "total_tokens": 0,
+                }
             # Second chunk (50 items) fails
             raise RuntimeError("API Error on last chunk")
 
@@ -42,7 +57,9 @@ class TestFallbackChunkSize:
             assert results[i]["N1"] == "Cat", f"Item {i} should be classified"
         # Last 50 should be fallback
         for i in range(100, 150):
-            assert results[i]["N1"] == "Não Identificado", f"Item {i} should be fallback"
+            assert results[i]["N1"] == "Não Identificado", (
+                f"Item {i} should be fallback"
+            )
             assert results[i]["confidence"] == 0.0
 
     @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
@@ -65,7 +82,9 @@ class TestPromptNoOldModelReference:
 
     def test_no_grok_4_0709_in_prompt(self):
         """O source code de _call_openai_api nao deve conter referencia ao modelo antigo."""
-        source = inspect.getsource(_call_openai_api)
+        from src.llm_classifier import _call_openai_api_inner
+
+        source = inspect.getsource(_call_openai_api_inner)
         assert "grok-4-0709" not in source, (
             "Prompt ainda referencia modelo antigo 'grok-4-0709'. "
             "Remover referencia hardcoded a modelo especifico."
@@ -73,7 +92,9 @@ class TestPromptNoOldModelReference:
 
     def test_prompt_contains_disambiguation_instruction(self):
         """A instrucao de desambiguacao deve existir sem referencia a modelo."""
-        source = inspect.getsource(_call_openai_api)
+        from src.llm_classifier import _call_openai_api_inner
+
+        source = inspect.getsource(_call_openai_api_inner)
         assert "desambiguar contextos" in source, (
             "Instrucao de desambiguacao deve estar presente no prompt."
         )

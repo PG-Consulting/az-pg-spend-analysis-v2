@@ -1,4 +1,5 @@
 """Blueprint for human review endpoints."""
+
 import os
 import json
 import io
@@ -7,17 +8,24 @@ import logging
 import datetime
 
 import azure.functions as func
-from src.utils import get_models_dir, get_jobs_dir, friendly_source_label, INCOMPLETE_VALUES
+from src.utils import (
+    get_models_dir,
+    get_jobs_dir,
+    friendly_source_label,
+    INCOMPLETE_VALUES,
+)
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
-from src.api_helpers import json_response, error_response, handle_errors
+from src.api_helpers import json_response, handle_errors
 from src.exceptions import NotFoundError, ValidationError
-from src.file_lock import read_status, write_status
+from src.file_lock import read_status
 
 logger = logging.getLogger(__name__)
 review_bp = func.Blueprint()
 
 
-@review_bp.route(route="ReclassifyItems", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@review_bp.route(
+    route="ReclassifyItems", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS
+)
 @handle_errors("ReclassifyItems")
 def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/ReclassifyItems
@@ -44,9 +52,12 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 
     # Load project context
     from src.project_manager import get_project, resolve_hierarchy
+
     project = get_project(project_id, models_dir) if project_id else {}
     client_context = project.get("client_context", "") if project else ""
-    custom_hierarchy, _ = resolve_hierarchy(project_id, models_dir) if project_id else (None, "padrao")
+    custom_hierarchy, _ = (
+        resolve_hierarchy(project_id, models_dir) if project_id else (None, "padrao")
+    )
 
     # Load KB for few-shot examples (sector + project merged, if use_sector_kb)
     kb_entries = []
@@ -58,7 +69,9 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             sector_entries = []
             if sector_slug and use_sector_kb:
                 try:
-                    sector_kb = KnowledgeBase(sector_slug, models_dir, entity_type="sector")
+                    sector_kb = KnowledgeBase(
+                        sector_slug, models_dir, entity_type="sector"
+                    )
                     sector_entries = sector_kb.entries
                 except Exception:
                     pass
@@ -81,9 +94,11 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             batch_matches, max_examples=20
         )
     if not enriched_examples:
-        enriched_examples = KBRetriever.select_representative_examples(
-            kb_entries, max_k=10
-        ) if kb_entries else None
+        enriched_examples = (
+            KBRetriever.select_representative_examples(kb_entries, max_k=10)
+            if kb_entries
+            else None
+        )
 
     llm_results = classify_items_with_llm(
         descriptions,
@@ -98,22 +113,28 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     results = []
     for i, item in enumerate(items):
         r = llm_results[i] if i < len(llm_results) and llm_results[i] else {}
-        results.append({
-            "index": item.get("index", i),
-            "description": item["description"],
-            "N1": r.get("N1", "Não Identificado"),
-            "N2": r.get("N2", "Não Identificado"),
-            "N3": r.get("N3", "Não Identificado"),
-            "N4": r.get("N4", "Não Identificado"),
-            "source": r.get("source", "LLM (Reclassified)"),
-            "confidence": r.get("confidence", 0.0),
-            "status": r.get("status", "Único"),
-        })
+        results.append(
+            {
+                "index": item.get("index", i),
+                "description": item["description"],
+                "N1": r.get("N1", "Não Identificado"),
+                "N2": r.get("N2", "Não Identificado"),
+                "N3": r.get("N3", "Não Identificado"),
+                "N4": r.get("N4", "Não Identificado"),
+                "source": r.get("source", "LLM (Reclassified)"),
+                "confidence": r.get("confidence", 0.0),
+                "status": r.get("status", "Único"),
+            }
+        )
 
     return json_response({"results": results})
 
 
-@review_bp.route(route="ApproveClassifications", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@review_bp.route(
+    route="ApproveClassifications",
+    methods=["POST"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("ApproveClassifications")
 def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/ApproveClassifications
@@ -167,17 +188,25 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
                     for lvl in ("N1", "N2", "N3", "N4")
                 ):
                     continue
-                source = "consultant_correction" if d.get("decision") == "edited" else "llm_approved"
-                kb_entries_to_add.append({
-                    "description": d.get("description", ""),
-                    "N1": d.get("N1", ""),
-                    "N2": d.get("N2", ""),
-                    "N3": d.get("N3", ""),
-                    "N4": d.get("N4", ""),
-                    "source": source,
-                    "confidence": d.get("confidence", 0.85) if source == "llm_approved" else 1.0,
-                    "instruction_used": d.get("instruction_used"),
-                })
+                source = (
+                    "consultant_correction"
+                    if d.get("decision") == "edited"
+                    else "llm_approved"
+                )
+                kb_entries_to_add.append(
+                    {
+                        "description": d.get("description", ""),
+                        "N1": d.get("N1", ""),
+                        "N2": d.get("N2", ""),
+                        "N3": d.get("N3", ""),
+                        "N4": d.get("N4", ""),
+                        "source": source,
+                        "confidence": d.get("confidence", 0.85)
+                        if source == "llm_approved"
+                        else 1.0,
+                        "instruction_used": d.get("instruction_used"),
+                    }
+                )
         if kb_entries_to_add:
             try:
                 kb = KnowledgeBase(project_id, models_dir)
@@ -190,10 +219,16 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
 
     # 2. Generate approved Excel from decisions
     import pandas as pd
+    from src.exceptions import ConflictError
 
-    # Load status.json + result.json to recover the ID column and extra columns per item
+    # Load status with guard — only CLASSIFIED or APPROVED jobs can be approved
     status_path = os.path.join(job_dir, "status.json")
     status_data = read_status(status_path)
+    current_status = status_data.get("status", "")
+    if current_status not in ("CLASSIFIED", "APPROVED"):
+        raise ConflictError(
+            f"Job {job_id} has status '{current_status}' — only CLASSIFIED or APPROVED jobs can be approved"
+        )
     id_col = status_data.get("id_column")
     extra_columns = status_data.get("extra_columns", [])
     id_lookup = {}
@@ -222,7 +257,11 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             row["N2"] = d.get("N2", "")
             row["N3"] = d.get("N3", "")
             row["N4"] = d.get("N4", "")
-            source = "consultant_correction" if d.get("decision") == "edited" else d.get("source", "")
+            source = (
+                "consultant_correction"
+                if d.get("decision") == "edited"
+                else d.get("source", "")
+            )
             row["Fonte"] = friendly_source_label(source)
             rows.append(row)
 
@@ -237,38 +276,49 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     file_bytes = buf.getvalue()
     file_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    # 3. Update job status
+    # 3. Update job status — atomic transition under lock
+    from src.file_lock import locked_status
+
     download_filename = None
-    if status_data:
-        status_data["status"] = "COMPLETED"
-        status_data["review_completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        status_data["review_summary"] = {
+    with locked_status(status_path) as locked_data:
+        # Re-check status inside lock (could have changed between read and lock)
+        if locked_data.get("status") not in ("CLASSIFIED", "APPROVED"):
+            raise ConflictError(
+                f"Job {job_id} status changed to '{locked_data.get('status')}' during approval"
+            )
+        locked_data["status"] = "COMPLETED"
+        locked_data["review_completed_at"] = datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat()
+        locked_data["review_summary"] = {
             "total": len(decisions),
             "approved": approved_count,
             "edited": edited_count,
             "rejected": rejected_count,
             "kb_added": kb_added,
         }
-        # Salvar base64 em arquivo separado (não no status.json — evita bloat de 5-15MB no poll)
-        approved_path = os.path.join(job_dir, "approved_result_b64.txt")
-        with open(approved_path, "w", encoding="utf-8") as af:
-            af.write(file_b64)
-        original_filename = status_data.get("filename", "upload.xlsx")
+        original_filename = locked_data.get("filename", "upload.xlsx")
         base_name = os.path.splitext(original_filename)[0]
         download_filename = f"{base_name}_classificado.xlsx"
-        status_data["approved_download_filename"] = download_filename
-        write_status(status_path, status_data)
+        locked_data["approved_download_filename"] = download_filename
 
-    return json_response({
-        "success": True,
-        "kb_added": kb_added,
-        "summary": {
-            "total": len(decisions),
-            "approved": approved_count,
-            "edited": edited_count,
-            "rejected": rejected_count,
+    # Salvar base64 em arquivo separado (fora do lock — escrita idempotente)
+    approved_path = os.path.join(job_dir, "approved_result_b64.txt")
+    with open(approved_path, "w", encoding="utf-8") as af:
+        af.write(file_b64)
+
+    return json_response(
+        {
+            "success": True,
             "kb_added": kb_added,
-        },
-        "download_filename": download_filename if rows else None,
-        "file_content_base64": file_b64 if rows else None,
-    })
+            "summary": {
+                "total": len(decisions),
+                "approved": approved_count,
+                "edited": edited_count,
+                "rejected": rejected_count,
+                "kb_added": kb_added,
+            },
+            "download_filename": download_filename if rows else None,
+            "file_content_base64": file_b64 if rows else None,
+        }
+    )

@@ -1,9 +1,11 @@
 """Standardized API response helpers and error handling decorator."""
+
 import json
 import logging
 import functools
 
 import azure.functions as func
+import filelock
 
 from src.utils import safe_json_dumps
 from src.exceptions import SpendAnalysisError
@@ -11,7 +13,9 @@ from src.exceptions import SpendAnalysisError
 logger = logging.getLogger(__name__)
 
 
-def json_response(data, status_code: int = 200, headers: dict = None) -> func.HttpResponse:
+def json_response(
+    data, status_code: int = 200, headers: dict = None
+) -> func.HttpResponse:
     """Create a JSON HttpResponse using safe_json_dumps."""
     resp_headers = {"Access-Control-Allow-Origin": "*"}
     if headers:
@@ -56,6 +60,7 @@ def handle_errors(func_or_name=None):
         @handle_errors("MyEndpoint")
         def my_endpoint(req): ...
     """
+
     def decorator(fn):
         endpoint_name = func_or_name if isinstance(func_or_name, str) else fn.__name__
 
@@ -63,6 +68,20 @@ def handle_errors(func_or_name=None):
         def wrapper(*args, **kwargs):
             try:
                 return fn(*args, **kwargs)
+            except filelock.Timeout:
+                logger.warning(f"{endpoint_name}: file lock timeout — recurso ocupado")
+                return func.HttpResponse(
+                    body=json.dumps(
+                        {"error": "Recurso temporariamente ocupado. Tente novamente."},
+                        ensure_ascii=False,
+                    ),
+                    status_code=503,
+                    mimetype="application/json",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Retry-After": "2",
+                    },
+                )
             except SpendAnalysisError as e:
                 logger.warning(f"{endpoint_name}: {e}")
                 return error_response(str(e), e.status_code)
