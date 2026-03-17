@@ -1,4 +1,5 @@
 """CRUD operations for sectors and projects stored as JSON files on disk."""
+
 import os
 import io
 import json
@@ -9,20 +10,30 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from src.utils import get_models_dir, get_sectors_dir, get_projects_dir
 
 logger = logging.getLogger(__name__)
+
+_CONFIG_LOCK_TIMEOUT = 10  # seconds
+
+
+def _config_lock(config_path: str):
+    """Create a FileLock for a config JSON file."""
+    import filelock
+
+    return filelock.FileLock(config_path + ".lock", timeout=_CONFIG_LOCK_TIMEOUT)
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _slugify(text: str) -> str:
     """Convert display_name to a safe lowercase slug for use as folder names."""
     text = text.lower().strip()
     # Replace accented/special characters with ASCII equivalents via encode round-trip
     import unicodedata
+
     text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
     # Replace non-alphanumeric characters with hyphens
@@ -60,6 +71,7 @@ def _write_json(path: str, data: dict) -> None:
 # Sector CRUD
 # ---------------------------------------------------------------------------
 
+
 def list_sectors(models_dir: str) -> list:
     """List all sectors from sectors/ subdirectories."""
     sectors_dir = os.path.join(models_dir, "sectors")
@@ -76,11 +88,15 @@ def list_sectors(models_dir: str) -> list:
 
 def get_sector(name: str, models_dir: str) -> Optional[dict]:
     """Get single sector config or None if not found."""
-    config_path = os.path.join(models_dir, "sectors", name.lower(), "sector_config.json")
+    config_path = os.path.join(
+        models_dir, "sectors", name.lower(), "sector_config.json"
+    )
     return _read_json(config_path)
 
 
-def create_sector(name: str, display_name: str, hierarchy: Optional[list], models_dir: str) -> dict:
+def create_sector(
+    name: str, display_name: str, hierarchy: Optional[list], models_dir: str
+) -> dict:
     """Create a new sector. name is lowercased and used as folder name.
 
     Note: hierarchy parameter is accepted for backwards compatibility but ignored.
@@ -105,16 +121,15 @@ def update_sector(name: str, data: dict, models_dir: str) -> dict:
     """Update existing sector config."""
     name = name.lower().strip()
     config_path = os.path.join(models_dir, "sectors", name, "sector_config.json")
-    existing = _read_json(config_path)
-    if existing is None:
-        raise FileNotFoundError(f"Sector '{name}' not found")
-
-    # Merge: only update fields provided in data
-    for key, value in data.items():
-        if key != "name":  # name/folder is immutable
-            existing[key] = value
-
-    _write_json(config_path, existing)
+    lock = _config_lock(config_path)
+    with lock:
+        existing = _read_json(config_path)
+        if existing is None:
+            raise FileNotFoundError(f"Sector '{name}' not found")
+        for key, value in data.items():
+            if key != "name":
+                existing[key] = value
+        _write_json(config_path, existing)
     logger.info(f"Sector '{name}' updated")
     return existing
 
@@ -122,6 +137,7 @@ def update_sector(name: str, data: dict, models_dir: str) -> dict:
 # ---------------------------------------------------------------------------
 # Project CRUD
 # ---------------------------------------------------------------------------
+
 
 def list_projects(models_dir: str) -> list:
     """List all projects from projects/ subdirectories."""
@@ -139,7 +155,9 @@ def list_projects(models_dir: str) -> list:
 
 def get_project(project_id: str, models_dir: str) -> Optional[dict]:
     """Get single project config or None if not found."""
-    config_path = os.path.join(models_dir, "projects", project_id, "project_config.json")
+    config_path = os.path.join(
+        models_dir, "projects", project_id, "project_config.json"
+    )
     return _read_json(config_path)
 
 
@@ -169,7 +187,9 @@ def create_project(data: dict, models_dir: str) -> dict:
 
     project_id = _slugify(display_name)
     if not project_id:
-        raise ValueError(f"Could not generate a valid project_id from display_name '{display_name}'")
+        raise ValueError(
+            f"Could not generate a valid project_id from display_name '{display_name}'"
+        )
 
     project_dir = os.path.join(models_dir, "projects", project_id)
     os.makedirs(project_dir, exist_ok=True)
@@ -204,20 +224,20 @@ def create_project(data: dict, models_dir: str) -> dict:
 
 def update_project(project_id: str, data: dict, models_dir: str) -> dict:
     """Update existing project config. Updates updated_at timestamp."""
-    config_path = os.path.join(models_dir, "projects", project_id, "project_config.json")
-    existing = _read_json(config_path)
-    if existing is None:
-        raise FileNotFoundError(f"Project '{project_id}' not found")
-
-    # Immutable fields
-    immutable = {"project_id", "created_at"}
-    for key, value in data.items():
-        if key not in immutable:
-            existing[key] = value
-
-    existing["updated_at"] = datetime.now(timezone.utc).isoformat()
-
-    _write_json(config_path, existing)
+    config_path = os.path.join(
+        models_dir, "projects", project_id, "project_config.json"
+    )
+    lock = _config_lock(config_path)
+    with lock:
+        existing = _read_json(config_path)
+        if existing is None:
+            raise FileNotFoundError(f"Project '{project_id}' not found")
+        immutable = {"project_id", "created_at"}
+        for key, value in data.items():
+            if key not in immutable:
+                existing[key] = value
+        existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json(config_path, existing)
     logger.info(f"Project '{project_id}' updated")
     return existing
 
@@ -275,6 +295,7 @@ def delete_sector(name: str, models_dir: str, force: bool = False) -> dict:
 # Hierarchy parsing from base64 Excel
 # ---------------------------------------------------------------------------
 
+
 def parse_hierarchy_from_b64(b64_string: str) -> Optional[List[dict]]:
     """Parse a base64-encoded Excel file into a list of {N1,N2,N3,N4} dicts.
 
@@ -306,19 +327,29 @@ def parse_hierarchy_from_b64(b64_string: str) -> Optional[List[dict]]:
         df_hier.columns = [str(c).strip().upper() for c in df_hier.columns]
 
         if "N4" not in df_hier.columns:
-            logger.error(f"Hierarchy file: N4 column missing. Columns: {list(df_hier.columns)}")
+            logger.error(
+                f"Hierarchy file: N4 column missing. Columns: {list(df_hier.columns)}"
+            )
             return None
 
         hierarchy: List[dict] = []
         for _, row in df_hier.iterrows():
             n4 = str(row.get("N4", "")).strip()
             if n4 and n4.upper() != "NAN":
-                hierarchy.append({
-                    "N1": str(row.get("N1", "")).strip() if pd.notna(row.get("N1")) else "",
-                    "N2": str(row.get("N2", "")).strip() if pd.notna(row.get("N2")) else "",
-                    "N3": str(row.get("N3", "")).strip() if pd.notna(row.get("N3")) else "",
-                    "N4": n4,
-                })
+                hierarchy.append(
+                    {
+                        "N1": str(row.get("N1", "")).strip()
+                        if pd.notna(row.get("N1"))
+                        else "",
+                        "N2": str(row.get("N2", "")).strip()
+                        if pd.notna(row.get("N2"))
+                        else "",
+                        "N3": str(row.get("N3", "")).strip()
+                        if pd.notna(row.get("N3"))
+                        else "",
+                        "N4": n4,
+                    }
+                )
 
         logger.info(f"Hierarchy file parsed: {len(hierarchy)} entries")
         return hierarchy if hierarchy else None
@@ -365,6 +396,7 @@ def resolve_hierarchy_from_body(body: dict) -> None:
 # Hierarchy resolution
 # ---------------------------------------------------------------------------
 
+
 def resolve_hierarchy(project_id: str, models_dir: str) -> tuple:
     """Returns (hierarchy: list|None, source: str) following precedence:
     1. Project's own custom_hierarchy -> source="own"
@@ -381,5 +413,3 @@ def resolve_hierarchy(project_id: str, models_dir: str) -> tuple:
 
     # 2. Fallback: no hierarchy
     return None, "padrao"
-
-

@@ -809,3 +809,119 @@ class TestProcessSingleJob:
         status = json.loads((tmp_path / job_id / "status.json").read_text())
         # Status stays PROCESSING so queue retries can re-enter
         assert status["status"] == "PROCESSING"
+
+
+class TestFallbackDetection:
+    """consolidate_job deve detectar e sinalizar fallback excessivo."""
+
+    def _make_job(self, tmp_path, results, total_items):
+        """Helper: cria job com resultado pré-definido para testar consolidação."""
+        job_dir = tmp_path / "taxonomy_jobs" / "test-fallback-job"
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        chunk_data = [{"Descricao": f"item {i}"} for i in range(total_items)]
+        (job_dir / "chunk_0.json").write_text(json.dumps(chunk_data))
+        (job_dir / "result_0.json").write_text(json.dumps(results))
+
+        status = {
+            "status": "PROCESSING",
+            "total_chunks": 1,
+            "processed_chunks": 1,
+            "filename": "test.xlsx",
+            "desc_column": "Descricao",
+            "project_id": None,
+        }
+        status_path = str(job_dir / "status.json")
+        with open(status_path, "w") as f:
+            json.dump(status, f)
+
+        return {
+            "job_id": "test-fallback-job",
+            "job_dir": str(job_dir),
+            "status_path": status_path,
+            "status": status,
+            "total_chunks": 1,
+            "custom_hierarchy": None,
+            "hierarchy_lookup": None,
+            "kb_entries": [],
+            "kb_retriever": None,
+        }
+
+    def test_high_fallback_adds_warning(self, tmp_path):
+        """Se >50% dos itens têm confidence=0, status deve ter warning."""
+        results = []
+        for i in range(10):
+            if i < 8:
+                results.append(
+                    {
+                        "description": f"item {i}",
+                        "N1": "Não Identificado",
+                        "N2": "Não Identificado",
+                        "N3": "Não Identificado",
+                        "N4": "Não Identificado",
+                        "source": "None",
+                        "confidence": 0.0,
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "description": f"item {i}",
+                        "N1": "MRO",
+                        "N2": "Geral",
+                        "N3": "Geral",
+                        "N4": "Peças",
+                        "source": "LLM (Batch)",
+                        "confidence": 0.85,
+                    }
+                )
+
+        job_info = self._make_job(tmp_path, results, 10)
+        consolidate_job(job_info)
+
+        from src.file_lock import read_status
+
+        status = read_status(job_info["status_path"])
+        assert status["status"] == "CLASSIFIED"
+        assert "fallback_pct" in status
+        assert status["fallback_pct"] == 80.0
+        assert "warning" in status
+
+    def test_low_fallback_no_warning(self, tmp_path):
+        """Se <50% dos itens têm confidence=0, não deve ter warning."""
+        results = []
+        for i in range(10):
+            if i < 2:
+                results.append(
+                    {
+                        "description": f"item {i}",
+                        "N1": "Não Identificado",
+                        "N2": "Não Identificado",
+                        "N3": "Não Identificado",
+                        "N4": "Não Identificado",
+                        "source": "None",
+                        "confidence": 0.0,
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "description": f"item {i}",
+                        "N1": "MRO",
+                        "N2": "Geral",
+                        "N3": "Geral",
+                        "N4": "Peças",
+                        "source": "LLM (Batch)",
+                        "confidence": 0.85,
+                    }
+                )
+
+        job_info = self._make_job(tmp_path, results, 10)
+        consolidate_job(job_info)
+
+        from src.file_lock import read_status
+
+        status = read_status(job_info["status_path"])
+        assert status["status"] == "CLASSIFIED"
+        assert status.get("fallback_pct", 0) == 20.0
+        assert "warning" not in status

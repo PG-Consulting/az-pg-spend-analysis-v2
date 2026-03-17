@@ -6,6 +6,8 @@ Uses Azure OpenAI to classify items when the ML model is uncertain or when "Padr
 import os
 import json
 import logging
+import random
+import time
 import requests
 from typing import List, Dict, Optional, Union
 
@@ -373,7 +375,6 @@ def _call_openai_api_inner(
     if not config["api_key"] or len(config["api_key"]) < 10:
         logging.warning("CRITICAL: Grok API Key missing or too short!")
 
-    import time
 
     max_retries = LLM_MAX_RETRIES
     response = None
@@ -409,13 +410,13 @@ def _call_openai_api_inner(
                 f"Grok API Error {response.status_code} (Attempt {attempt + 1}): {response.text}"
             )
             if attempt < max_retries:
-                time.sleep(2**attempt)
+                time.sleep(2**attempt + random.uniform(0, 1))
         except Exception as e:
             logging.error(
                 f"Exception calling Azure OpenAI (Attempt {attempt + 1}): {e}"
             )
             if attempt < max_retries:
-                time.sleep(2**attempt)
+                time.sleep(2**attempt + random.uniform(0, 1))
             else:
                 return [_create_manual_fallback(item) for item in items], None
 
@@ -559,6 +560,15 @@ def _create_manual_fallback(
     }
 
 
+def _post_with_semaphore(endpoint, headers, payload, timeout=90):
+    """HTTP POST respeitando o semáforo global de rate limiting."""
+    _LLM_SEMAPHORE.acquire()
+    try:
+        return requests.post(endpoint, headers=headers, json=payload, timeout=timeout)
+    finally:
+        _LLM_SEMAPHORE.release()
+
+
 def map_categories_with_llm(
     source_categories: List[str], target_categories: List[str]
 ) -> Dict[str, str]:
@@ -597,6 +607,12 @@ def map_categories_with_llm(
 
     logging.info(f"Starting parallel semantic mapping ({len(chunk_items)} chunks)...")
 
+    endpoint = f"{config['endpoint'].rstrip('/')}/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {config['api_key']}",
+    }
+
     with ThreadPoolExecutor(max_workers=LLM_MAX_CONCURRENT_CALLS) as executor:
         futures = []
         for chunk in chunk_items:
@@ -610,14 +626,10 @@ def map_categories_with_llm(
             }
             futures.append(
                 executor.submit(
-                    requests.post,
-                    f"{config['endpoint'].rstrip('/')}/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {config['api_key']}",
-                    },
-                    json=payload,
-                    timeout=90,
+                    _post_with_semaphore,
+                    endpoint,
+                    headers,
+                    payload,
                 )
             )
 

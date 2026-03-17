@@ -862,3 +862,43 @@ class TestKBConcurrency:
         kb.add_entries([_entry("Teste lock", "Fixadores")])
         lock_path = kb.kb_path + ".lock"
         assert os.path.exists(lock_path), "File lock sidecar not created"
+
+
+class TestRollbackAtomicity:
+    def test_rollback_overwrites_under_lock(self, tmp_path):
+        """rollback_to_version deve escrever dentro do lock, não fora."""
+        # Use add_entries so description_norm is populated correctly on disk
+        kb = make_kb(tmp_path)
+        kb.add_entries([_entry("item original", "N4-A")])
+        assert len(kb.entries) == 1
+        version_id = kb.create_version_snapshot()
+
+        # Adicionar mais entries após o snapshot
+        kb.add_entries([_entry("item novo", "N4-B")])
+        assert len(kb.entries) == 2
+
+        # Rollback deve restaurar para 1 entry
+        result = kb.rollback_to_version(version_id)
+        assert result is True
+        assert len(kb.entries) == 1
+        assert kb.entries[0]["N4"] == "N4-A"
+
+        # Verificar que o arquivo no disco também tem 1 entry
+        import json as json_mod
+
+        with open(kb.kb_path, "r") as f:
+            on_disk = json_mod.load(f)
+        assert len(on_disk) == 1
+
+    def test_rollback_nonexistent_version(self, tmp_path):
+        """rollback com version_id inexistente retorna False sem alterar entries."""
+        kb = make_kb(
+            tmp_path,
+            initial_entries=[
+                _entry("item A", "N4-A"),
+            ],
+        )
+        original_count = len(kb.entries)
+        result = kb.rollback_to_version("v999_inexistente")
+        assert result is False
+        assert len(kb.entries) == original_count

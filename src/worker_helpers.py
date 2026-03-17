@@ -553,6 +553,15 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     with open(os.path.join(job_dir, "result.json"), "w") as f:
         f.write(safe_json_dumps(final_result))
 
+    # Calculate fallback percentage (items with confidence 0.0)
+    total_items = len(results_accumulated)
+    fallback_count = sum(
+        1 for r in results_accumulated if float(r.get("confidence", 0)) == 0.0
+    )
+    fallback_pct = (
+        round(fallback_count / total_items * 100, 1) if total_items > 0 else 0.0
+    )
+
     # Set status to CLASSIFIED (not COMPLETED - review must happen first)
     # Use locked_status to check if job was CANCELLED concurrently
     with locked_status(status_path) as current:
@@ -561,6 +570,15 @@ def consolidate_job(job_info: JobInfoDict) -> None:
             return
         current["status"] = "CLASSIFIED"
         current["download_filename"] = final_result.get("filename", "")
+        current["fallback_pct"] = fallback_pct
+        if fallback_pct > 50.0:
+            current["warning"] = (
+                f"{fallback_pct}% dos itens não foram classificados — "
+                "a API pode estar instável. Considere re-submeter o job."
+            )
+            logger.warning(
+                f"[Worker] job={job_id} — CLASSIFIED com {fallback_pct}% fallback"
+            )
 
     # Clean up intermediate chunk and result files
     for chunk_file in glob_mod.glob(os.path.join(job_dir, "chunk_*.json")):
@@ -605,17 +623,25 @@ def process_single_job(job_id: str) -> None:
         logger.warning(f"[Worker] Job {job_id} not found — skipping")
         return
 
+    # Guard check: skip non-actionable jobs (fast path, no lock needed)
     status = read_status(status_path)
     current = status.get("status", "")
-
-    # Only process PENDING or PROCESSING jobs
     if current not in ("PENDING", "PROCESSING"):
         logger.info(f"[Worker] Job {job_id} has status '{current}' — skipping")
         return
 
-    # Transition PENDING → PROCESSING
-    if current == "PENDING":
-        status = update_status(status_path, {"status": "PROCESSING"})
+    # Atomic check-and-set: re-verify + mutate under lock
+    with locked_status(status_path) as data:
+        current = data.get("status", "")
+        if current not in ("PENDING", "PROCESSING"):
+            logger.info(
+                f"[Worker] Job {job_id} status changed to '{current}' — skipping"
+            )
+            return
+        if current == "PENDING":
+            data["status"] = "PROCESSING"
+    # Re-read after atomic transition
+    status = read_status(status_path)
 
     logger.info(
         f"[Worker] Processing job {job_id} ({status.get('total_chunks')} chunks)"

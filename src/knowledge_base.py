@@ -273,16 +273,18 @@ class KnowledgeBase:
         return version_id
 
     def rollback_to_version(self, version_id: str) -> bool:
-        # NOTE: rollback is NOT fully atomic — self.entries is set before save() acquires
-        # the lock. A concurrent add_entries() between these two lines could be lost.
-        # Acceptable for now: rollback is a low-frequency admin operation.
         snapshot_path = os.path.join(self.versions_dir, f"{version_id}.json")
         if not os.path.exists(snapshot_path):
             return False
         with open(snapshot_path, "r", encoding="utf-8") as f:
             snapshot = json.load(f)
-        self.entries = snapshot.get("entries", [])
-        self.save()
+        entries = snapshot.get("entries", [])
+        # Atomic: write to disk AND update in-memory inside the same lock
+        lock = _kb_lock(self.kb_path)
+        with lock:
+            with open(self.kb_path, "w", encoding="utf-8") as f:
+                json.dump(entries, f, ensure_ascii=False, indent=2)
+            self.entries = entries
         return True
 
     def list_versions(self) -> List[Dict[str, object]]:

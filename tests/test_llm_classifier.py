@@ -98,3 +98,51 @@ class TestPromptNoOldModelReference:
         assert "desambiguar contextos" in source, (
             "Instrucao de desambiguacao deve estar presente no prompt."
         )
+
+
+class TestRetryJitter:
+    """Retry deve incluir jitter para evitar thundering herd."""
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.requests.post")
+    @patch("src.llm_classifier.time.sleep")
+    def test_retry_sleep_has_jitter(self, mock_sleep, mock_post, mock_config):
+        """Sleep entre retries deve ser >= base (2^attempt)."""
+        mock_post.return_value.status_code = 500
+        mock_post.return_value.text = "Internal Server Error"
+
+        results = classify_items_with_llm(["item teste"])
+
+        # Deve ter chamado sleep 2 vezes (attempt 0 e 1, não no último)
+        assert mock_sleep.call_count == 2
+        # Cada sleep deve ser >= base (2^attempt) e <= base+1 (jitter range)
+        for i, call in enumerate(mock_sleep.call_args_list):
+            sleep_value = call[0][0]
+            base = 2**i
+            assert sleep_value >= base, f"Sleep {sleep_value} should be >= base {base}"
+            assert sleep_value <= base + 1, (
+                f"Sleep {sleep_value} should be <= {base + 1}"
+            )
+
+
+class TestMapCategoriesSemaphore:
+    """map_categories_with_llm deve respeitar _LLM_SEMAPHORE."""
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier._LLM_SEMAPHORE")
+    @patch("src.llm_classifier.requests.post")
+    def test_map_categories_acquires_semaphore(self, mock_post, mock_sem, mock_config):
+        """Cada chamada HTTP em map_categories deve adquirir/liberar o semáforo."""
+        mock_response = mock_post.return_value
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"Cat A": "Cat B"}'}}]
+        }
+
+        from src.llm_classifier import map_categories_with_llm
+
+        map_categories_with_llm(["Cat A"], ["Cat B"])
+
+        # Semáforo deve ter sido adquirido e liberado pelo menos 1 vez
+        assert mock_sem.acquire.call_count >= 1
+        assert mock_sem.release.call_count >= 1

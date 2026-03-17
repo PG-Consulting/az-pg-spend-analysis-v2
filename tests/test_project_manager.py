@@ -23,6 +23,7 @@ from src.project_manager import (
 # Helper: create a tmp models dir
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def models_dir(tmp_path):
     """Create a temporary models directory with sectors/ and projects/ subdirectories."""
@@ -35,6 +36,7 @@ def models_dir(tmp_path):
 # ---------------------------------------------------------------------------
 # Tests: _slugify
 # ---------------------------------------------------------------------------
+
 
 class TestSlugify:
     def test_slugify_basic(self):
@@ -59,6 +61,7 @@ class TestSlugify:
 # ---------------------------------------------------------------------------
 # Tests: Sector CRUD
 # ---------------------------------------------------------------------------
+
 
 class TestSectorCRUD:
     def test_create_sector(self, models_dir):
@@ -111,6 +114,7 @@ class TestSectorCRUD:
 # ---------------------------------------------------------------------------
 # Tests: Project CRUD
 # ---------------------------------------------------------------------------
+
 
 class TestProjectCRUD:
     def test_create_project(self, models_dir):
@@ -210,6 +214,7 @@ class TestProjectCRUD:
 # Tests: use_sector_kb toggle
 # ---------------------------------------------------------------------------
 
+
 class TestUseSectorKB:
     def test_default_use_sector_kb_is_true(self, models_dir):
         """By default, use_sector_kb should be True."""
@@ -224,7 +229,11 @@ class TestUseSectorKB:
         """Creating a project with use_sector_kb=False persists the value."""
         create_sector("naval", "Naval", None, models_dir)
         config = create_project(
-            {"display_name": "Naval Isolated", "sector": "naval", "use_sector_kb": False},
+            {
+                "display_name": "Naval Isolated",
+                "sector": "naval",
+                "use_sector_kb": False,
+            },
             models_dir,
         )
         assert config["use_sector_kb"] is False
@@ -242,7 +251,9 @@ class TestUseSectorKB:
         )
         assert config["use_sector_kb"] is True
 
-        updated = update_project(config["project_id"], {"use_sector_kb": False}, models_dir)
+        updated = update_project(
+            config["project_id"], {"use_sector_kb": False}, models_dir
+        )
         assert updated["use_sector_kb"] is False
 
         # Verify persistence
@@ -254,11 +265,17 @@ class TestUseSectorKB:
 # Tests: resolve_hierarchy
 # ---------------------------------------------------------------------------
 
+
 class TestResolveHierarchy:
     def test_resolve_own_hierarchy(self, models_dir):
         """Project with its own hierarchy returns (hierarchy, 'own')."""
         hierarchy = [
-            {"N1": "MRO", "N2": "Fixação", "N3": "Parafusos", "N4": "Parafuso Sextavado"},
+            {
+                "N1": "MRO",
+                "N2": "Fixação",
+                "N3": "Parafusos",
+                "N4": "Parafuso Sextavado",
+            },
         ]
         create_sector("naval", "Naval", None, models_dir)
         created = create_project(
@@ -288,6 +305,7 @@ class TestResolveHierarchy:
 # ---------------------------------------------------------------------------
 # Tests: delete_sector
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteSector:
     def test_delete_sector_empty(self, models_dir):
@@ -323,8 +341,12 @@ class TestDeleteSector:
     def test_delete_sector_with_projects_force(self, models_dir):
         """Deleting a sector with force=True deletes all projects and the sector."""
         create_sector("naval", "Naval", None, models_dir)
-        p1 = create_project({"display_name": "Projeto A", "sector": "naval"}, models_dir)
-        p2 = create_project({"display_name": "Projeto B", "sector": "naval"}, models_dir)
+        p1 = create_project(
+            {"display_name": "Projeto A", "sector": "naval"}, models_dir
+        )
+        p2 = create_project(
+            {"display_name": "Projeto B", "sector": "naval"}, models_dir
+        )
 
         result = delete_sector("naval", models_dir, force=True)
         assert result["deleted_sector"] == "naval"
@@ -358,3 +380,30 @@ class TestDeleteSector:
         assert not os.path.exists(sector_dir)
 
 
+class TestConfigLocking:
+    """update_project e update_sector devem usar file lock."""
+
+    def test_update_project_uses_lock(self, models_dir):
+        """update_project não deve corromper dados em chamadas sequenciais rápidas."""
+        create_project({"display_name": "Lock Test", "sector": "naval"}, models_dir)
+        pid = "lock-test"
+
+        update_project(pid, {"client_context": "ctx1"}, models_dir)
+        update_project(pid, {"few_shot_max_examples": 10}, models_dir)
+
+        result = get_project(pid, models_dir)
+        assert result["client_context"] == "ctx1"
+        assert result["few_shot_max_examples"] == 10
+
+    def test_update_sector_uses_lock(self, models_dir):
+        """update_sector não deve corromper dados em chamadas sequenciais rápidas."""
+        create_sector("locktest", "Lock Test", None, models_dir)
+
+        update_sector("locktest", {"display_name": "Lock Test Updated"}, models_dir)
+        result = get_sector("locktest", models_dir)
+        assert result["display_name"] == "Lock Test Updated"
+
+    def test_update_project_not_found_raises(self, models_dir):
+        """update_project com ID inexistente deve levantar FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            update_project("nao-existe", {"client_context": "x"}, models_dir)
