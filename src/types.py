@@ -42,6 +42,7 @@ JobStatusLiteral = Literal[
 # KBEntryDict -- knowledge_base.json entries
 # ---------------------------------------------------------------------------
 
+
 class _KBEntryRequired(TypedDict):
     id: str
     description: str
@@ -60,6 +61,7 @@ class KBEntryDict(_KBEntryRequired, total=False):
     Required fields are always present after ``add_entries()``; optional fields
     may be absent on older entries or entries created via import.
     """
+
     instruction_used: Optional[str]
     version: str
     date_added: str
@@ -68,6 +70,7 @@ class KBEntryDict(_KBEntryRequired, total=False):
 # ---------------------------------------------------------------------------
 # ClassificationResultDict -- output of the classification pipeline
 # ---------------------------------------------------------------------------
+
 
 class _ClassificationResultRequired(TypedDict):
     description: str
@@ -85,6 +88,7 @@ class ClassificationResultDict(_ClassificationResultRequired, total=False):
     The legacy ML path may also include ``status`` and ``matched_terms``;
     the LLM-direct path omits those fields.
     """
+
     status: str
     matched_terms: List[str]
 
@@ -93,12 +97,14 @@ class ClassificationResultDict(_ClassificationResultRequired, total=False):
 # HierarchyEntryDict -- N1/N2/N3/N4 hierarchy row
 # ---------------------------------------------------------------------------
 
+
 class HierarchyEntryDict(TypedDict):
     """Single row from a custom hierarchy file (parsed from Excel).
 
     Stored as a list -- not a dict -- to preserve duplicate N4 values
     across different N1/N2/N3 branches.
     """
+
     N1: str
     N2: str
     N3: str
@@ -108,6 +114,7 @@ class HierarchyEntryDict(TypedDict):
 # ---------------------------------------------------------------------------
 # JobStatusDict -- status.json for a taxonomy job
 # ---------------------------------------------------------------------------
+
 
 class _JobStatusRequired(TypedDict):
     job_id: str
@@ -127,6 +134,7 @@ class JobStatusDict(_JobStatusRequired, total=False):
     Optional fields depend on the submission path (project vs. legacy)
     and on the job lifecycle stage (e.g. ``error`` is only set on ERROR).
     """
+
     client_context: str
     project_id: Optional[str]
     custom_hierarchy_b64: Optional[str]
@@ -139,6 +147,7 @@ class JobStatusDict(_JobStatusRequired, total=False):
 # KBRetrieveMatchDict -- KB entry augmented with similarity score
 # ---------------------------------------------------------------------------
 
+
 class KBRetrieveMatchDict(KBEntryDict, total=False):
     """KB entry returned by ``KBRetriever.retrieve()`` / ``retrieve_batch()``.
 
@@ -146,6 +155,7 @@ class KBRetrieveMatchDict(KBEntryDict, total=False):
     via TF-IDF cosine similarity. The ``_similarity`` key is stripped by
     ``select_enriched_examples()`` before the entries are sent to the LLM.
     """
+
     _similarity: float
 
 
@@ -153,8 +163,10 @@ class KBRetrieveMatchDict(KBEntryDict, total=False):
 # Auxiliary dicts (KB coverage, pagination)
 # ---------------------------------------------------------------------------
 
+
 class KBCoverageDict(TypedDict):
     """Coverage statistics returned by ``KnowledgeBase.get_coverage()``."""
+
     total_n4s: int
     covered: int
     pct: float
@@ -163,6 +175,7 @@ class KBCoverageDict(TypedDict):
 
 class KBPaginatedDict(TypedDict):
     """Paginated response returned by ``KnowledgeBase.get_all()``."""
+
     entries: List[KBEntryDict]
     total: int
     page: int
@@ -172,6 +185,7 @@ class KBPaginatedDict(TypedDict):
 # ---------------------------------------------------------------------------
 # JobInfoDict -- worker internal dict passed between helper functions
 # ---------------------------------------------------------------------------
+
 
 class _JobInfoRequired(TypedDict):
     job_id: str
@@ -185,9 +199,10 @@ class JobInfoDict(_JobInfoRequired, total=False):
     """Worker-internal dict that bundles job metadata, parsed hierarchy,
     and pre-built KB retriever for reuse across chunks.
 
-    Built by ``get_active_jobs()`` and consumed by ``process_single_chunk()``,
+    Built by ``_prepare_job_info()`` and consumed by ``process_single_chunk()``,
     ``update_job_progress()``, and ``consolidate_job()``.
     """
+
     custom_hierarchy: Optional[List[HierarchyEntryDict]]
     hierarchy_lookup: object
     kb_entries: List[KBEntryDict]

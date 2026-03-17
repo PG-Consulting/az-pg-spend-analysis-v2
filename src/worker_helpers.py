@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 STALE_THRESHOLD_SECONDS = 3600  # 1 hour - jobs PROCESSING beyond this become ERROR
 MAX_PARALLEL_CHUNKS = 5  # Max simultaneous chunks across all active jobs
-MAX_PROCESSING_TIME = 20 * 60  # 20-minute budget per worker cycle
 
 
 # ---------------------------------------------------------------------------
@@ -184,40 +183,6 @@ def _prepare_job_info(
         "kb_entries": kb_entries,
         "kb_retriever": kb_retriever,
     }
-
-
-# DEPRECATED: use process_single_job() with queue trigger instead
-def get_active_jobs(jobs_root: str) -> List[JobInfoDict]:
-    """
-    Collect active jobs (PENDING/PROCESSING), transition PENDING -> PROCESSING,
-    parse custom_hierarchy ONCE per job, and load the project KB for few-shot retrieval.
-    """
-    active = []
-
-    for job_id in os.listdir(jobs_root):
-        job_dir = os.path.join(jobs_root, job_id)
-        status_path = os.path.join(job_dir, "status.json")
-        if not os.path.isdir(job_dir) or not os.path.exists(status_path):
-            continue
-        try:
-            status = read_status(status_path)
-
-            if status.get("status") in [
-                "COMPLETED",
-                "CLASSIFIED",
-                "ERROR",
-                "CANCELLED",
-            ]:
-                continue
-
-            if status["status"] == "PENDING":
-                status = update_status(status_path, {"status": "PROCESSING"})
-
-            active.append(_prepare_job_info(job_id, job_dir, status_path, status))
-        except Exception as e:
-            logger.error(f"[Worker] Error reading job {job_id}: {e}")
-
-    return active
 
 
 # ---------------------------------------------------------------------------
@@ -689,130 +654,3 @@ def process_single_job(job_id: str) -> None:
         # After all retries are exhausted, the message goes to poison queue,
         # and the hourly cleanup timer marks PROCESSING > 1h as ERROR.
         raise  # re-raise so queue runtime retries
-
-
-# ---------------------------------------------------------------------------
-# run_worker_cycle  (DEPRECATED — use process_single_job with queue trigger)
-# ---------------------------------------------------------------------------
-
-
-def run_worker_cycle() -> None:
-    """
-    Main worker loop: round-robin parallel processing of chunks across active jobs.
-    Mirrors the logic of ProcessTaxonomyWorker from v2/function_app.py.
-    Call this from an Azure Timer Trigger or from run_local_worker.py.
-    """
-    jobs_root = get_jobs_dir()
-    if not os.path.exists(jobs_root):
-        logger.info(f"[Worker] No jobs directory at {jobs_root}")
-        return
-
-    # 1. Auto-cleanup stale jobs (PROCESSING > 1h -> ERROR)
-    cleanup_stale_jobs(jobs_root)
-
-    # 2. Collect active jobs (PENDING -> PROCESSING)
-    active_jobs = get_active_jobs(jobs_root)
-    if not active_jobs:
-        return
-
-    logger.info(
-        f"[Worker] {len(active_jobs)} active job(s): {[j['job_id'][:8] for j in active_jobs]}"
-    )
-
-    # 3. Round-robin parallel: up to MAX_PARALLEL_CHUNKS simultaneous chunks across all jobs
-    worker_start_time = time.time()
-
-    while True:
-        elapsed = time.time() - worker_start_time
-        if elapsed > MAX_PROCESSING_TIME:
-            logger.info(
-                f"[Worker] Time budget reached ({elapsed:.0f}s). "
-                "Jobs will continue in the next cycle."
-            )
-            break
-
-        # Collect up to MAX_PARALLEL_CHUNKS via fair round-robin across jobs
-        batch = []
-        pending = [
-            j
-            for j in active_jobs
-            if j["status"].get("status") not in ("ERROR", "CANCELLED")
-        ]
-        assigned = {j["job_id"]: set() for j in pending}
-
-        # Round-robin: 1 chunk per job per round, repeat until batch is full
-        while len(batch) < MAX_PARALLEL_CHUNKS and pending:
-            next_round = []
-            for job in pending:
-                if len(batch) >= MAX_PARALLEL_CHUNKS:
-                    break
-                jid = job["job_id"]
-                available = find_next_chunks(job, max_count=1, exclude=assigned[jid])
-                if available:
-                    batch.append((job, available[0]))
-                    assigned[jid].add(available[0])
-                    next_round.append(job)
-            pending = next_round
-
-        if not batch:
-            break
-
-        logger.info(
-            f"[Worker] Processing {len(batch)} chunk(s) in parallel: "
-            f"{[(j['job_id'][:8], c) for j, c in batch]}"
-        )
-
-        # Process batch in parallel
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_CHUNKS) as executor:
-            futures = {
-                executor.submit(process_single_chunk, job, idx): (job, idx)
-                for job, idx in batch
-            }
-            for future in as_completed(futures):
-                job, idx = futures[future]
-                try:
-                    future.result()
-                    # Update progress immediately after each chunk completes
-                    if job["status"].get("status") != "ERROR":
-                        update_job_progress(job)
-                except Exception as e:
-                    logger.error(
-                        f"[Worker] Error in Job {job['job_id']} chunk {idx}: {e}"
-                    )
-                    job["status"]["status"] = "ERROR"
-                    job["status"]["error"] = str(e)
-                    update_status(
-                        job["status_path"],
-                        {
-                            "status": "ERROR",
-                            "error": str(e),
-                        },
-                    )
-
-    # 4. Consolidate jobs that have completed all chunks
-    for job_info in active_jobs:
-        if job_info["status"].get("status") in ("ERROR", "CANCELLED"):
-            continue
-        all_done = all(
-            os.path.exists(os.path.join(job_info["job_dir"], f"result_{i}.json"))
-            for i in range(job_info["total_chunks"])
-        )
-        if all_done:
-            try:
-                consolidate_job(job_info)
-            except Exception as e:
-                import traceback
-
-                logger.error(
-                    f"[Worker] Error consolidating Job {job_info['job_id']}: "
-                    f"{e}\n{traceback.format_exc()}"
-                )
-                job_info["status"]["status"] = "ERROR"
-                job_info["status"]["error"] = f"Consolidation error: {e}"
-                update_status(
-                    job_info["status_path"],
-                    {
-                        "status": "ERROR",
-                        "error": f"Consolidation error: {e}",
-                    },
-                )
