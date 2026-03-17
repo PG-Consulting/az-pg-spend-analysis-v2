@@ -654,3 +654,40 @@ def process_single_job(job_id: str) -> None:
         # After all retries are exhausted, the message goes to poison queue,
         # and the hourly cleanup timer marks PROCESSING > 1h as ERROR.
         raise  # re-raise so queue runtime retries
+
+
+def cleanup_old_jobs(jobs_root: str, max_age_days: int = 30) -> int:
+    """Delete job directories for COMPLETED/ERROR/CANCELLED jobs older than max_age_days.
+
+    Only deletes terminal-state jobs. Returns count of deleted job directories.
+    """
+    import shutil
+
+    deleted = 0
+    _DELETABLE_STATUSES = ("COMPLETED", "ERROR", "CANCELLED")
+
+    for job_id in os.listdir(jobs_root):
+        job_dir = os.path.join(jobs_root, job_id)
+        status_path = os.path.join(job_dir, "status.json")
+        if not os.path.isdir(job_dir) or not os.path.exists(status_path):
+            continue
+        try:
+            status = read_status(status_path)
+            if status.get("status") not in _DELETABLE_STATUSES:
+                continue
+            created_at = status.get("created_at")
+            if not created_at:
+                continue
+            created_dt = datetime.fromisoformat(created_at)
+            age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
+            if age_days > max_age_days:
+                shutil.rmtree(job_dir, ignore_errors=True)
+                deleted += 1
+                logger.info(
+                    f"[Retention] Deleted job {job_id} "
+                    f"(status={status.get('status')}, age={age_days:.0f} days)"
+                )
+        except Exception as e:
+            logger.error(f"[Retention] Error checking job {job_id}: {e}")
+
+    return deleted

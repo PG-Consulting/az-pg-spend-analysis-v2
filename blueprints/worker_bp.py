@@ -83,6 +83,13 @@ def CleanupStaleJobs(timer: func.TimerRequest) -> None:
         except Exception as e:
             logger.error(f"[Cleanup] Erro ao verificar job {job_id}: {e}")
 
+    # 3. Delete old terminal jobs (COMPLETED/ERROR/CANCELLED > 30 days)
+    from src.worker_helpers import cleanup_old_jobs
+
+    deleted = cleanup_old_jobs(jobs_root, max_age_days=30)
+    if deleted > 0:
+        logger.info(f"[Cleanup] Deleted {deleted} old job(s)")
+
 
 @worker_bp.queue_trigger(
     arg_name="msg",

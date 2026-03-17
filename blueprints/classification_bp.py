@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 classification_bp = func.Blueprint()
 
 CHUNK_SIZE = 500
+MAX_UPLOAD_ROWS = 100_000
 
 
 def _derive_status(row: dict) -> str:
@@ -159,6 +160,15 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise ValidationError(f"Formato de arquivo invalido: {e}")
 
+    if len(df) > MAX_UPLOAD_ROWS:
+        import shutil
+
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise ValidationError(
+            f"Arquivo excede o limite de {MAX_UPLOAD_ROWS:,} linhas "
+            f"({len(df):,} linhas). Divida o arquivo em partes menores."
+        )
+
     # Identify description column (second non-unnamed column heuristic, same as v2)
     valid_cols = [c for c in df.columns if not str(c).startswith("Unnamed")]
     if len(valid_cols) < 2:
@@ -237,12 +247,20 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     # Enqueue job for queue-triggered processing
     from src.queue_helpers import enqueue_job
 
-    enqueue_job(session_id)
+    enqueued = enqueue_job(session_id)
 
-    return json_response(
-        {"jobId": session_id, "status": "PENDING", "total_chunks": num_chunks},
-        status_code=202,
-    )
+    response_data = {
+        "jobId": session_id,
+        "status": "PENDING",
+        "total_chunks": num_chunks,
+    }
+    if not enqueued:
+        response_data["warning"] = (
+            "Job criado mas não enfileirado. "
+            "Será processado pelo cleanup automático (até 1h)."
+        )
+
+    return json_response(response_data, status_code=202)
 
 
 @classification_bp.route(

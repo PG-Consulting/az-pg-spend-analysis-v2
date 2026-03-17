@@ -1,5 +1,8 @@
 """Tests for blueprints/worker_bp.py — poison queue handler."""
 
+import json
+from datetime import datetime, timezone, timedelta
+
 from src.file_lock import write_status, read_status
 from src.worker_helpers import handle_poison_message
 
@@ -68,3 +71,63 @@ class TestHandlePoisonMessage:
         result = read_status(status_path)
         assert "error_at" in result
         assert "T" in result["error_at"]  # ISO format
+
+
+class TestJobRetention:
+    """CleanupStaleJobs deve deletar jobs antigos COMPLETED/ERROR."""
+
+    def test_deletes_completed_job_older_than_30_days(self, tmp_path):
+        """Job COMPLETED com mais de 30 dias deve ser deletado."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "old-completed"
+        job_dir.mkdir()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=35)).isoformat()
+        status = {"status": "COMPLETED", "created_at": old_date}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 1
+        assert not job_dir.exists()
+
+    def test_keeps_completed_job_within_30_days(self, tmp_path):
+        """Job COMPLETED com menos de 30 dias NÃO deve ser deletado."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "recent-completed"
+        job_dir.mkdir()
+        recent_date = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        status = {"status": "COMPLETED", "created_at": recent_date}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 0
+        assert job_dir.exists()
+
+    def test_keeps_processing_job_even_if_old(self, tmp_path):
+        """Job PROCESSING NÃO deve ser deletado pela retenção."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "old-processing"
+        job_dir.mkdir()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+        status = {"status": "PROCESSING", "created_at": old_date}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 0
+        assert job_dir.exists()
+
+    def test_deletes_error_job_older_than_30_days(self, tmp_path):
+        """Job ERROR com mais de 30 dias deve ser deletado."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "old-error"
+        job_dir.mkdir()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+        status = {"status": "ERROR", "created_at": old_date}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 1
+        assert not job_dir.exists()

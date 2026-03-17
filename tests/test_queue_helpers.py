@@ -76,3 +76,43 @@ class TestEnqueueJob:
                 enqueue_job("test-job-789")  # não deve levantar exceção
 
         assert any("Falha ao enfileirar" in r.message for r in caplog.records)
+
+
+class TestEnqueueJobReturnValue:
+    """enqueue_job deve retornar bool indicando sucesso."""
+
+    def test_returns_false_when_no_connection_string(self):
+        """Sem AzureWebJobsStorage, deve retornar False."""
+        with patch.dict(os.environ, {"AzureWebJobsStorage": ""}):
+            enqueue_job = _reload_enqueue()
+            result = enqueue_job("test-job-id")
+        assert result is False
+
+    def test_returns_true_on_success(self):
+        """Com conexão válida e envio ok, deve retornar True."""
+        mock_queue_client = MagicMock()
+        mock_queue_class = MagicMock()
+        mock_queue_class.from_connection_string.return_value = mock_queue_client
+        mock_module = MagicMock()
+        mock_module.QueueClient = mock_queue_class
+
+        with patch.dict(os.environ, {"AzureWebJobsStorage": "DefaultEndpoints..."}):
+            with patch.dict(sys.modules, {"azure.storage.queue": mock_module}):
+                enqueue_job = _reload_enqueue()
+                result = enqueue_job("test-job-id")
+        assert result is True
+
+    def test_returns_false_on_send_error(self):
+        """Se send_message falha, deve retornar False."""
+        mock_queue_client = MagicMock()
+        mock_queue_client.send_message.side_effect = Exception("Connection refused")
+        mock_queue_class = MagicMock()
+        mock_queue_class.from_connection_string.return_value = mock_queue_client
+        mock_module = MagicMock()
+        mock_module.QueueClient = mock_queue_class
+
+        with patch.dict(os.environ, {"AzureWebJobsStorage": "DefaultEndpoints..."}):
+            with patch.dict(sys.modules, {"azure.storage.queue": mock_module}):
+                enqueue_job = _reload_enqueue()
+                result = enqueue_job("test-job-id")
+        assert result is False

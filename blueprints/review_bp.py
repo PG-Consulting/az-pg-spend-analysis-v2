@@ -174,15 +174,13 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     if not os.path.isdir(job_dir):
         raise NotFoundError("Job", job_id)
 
-    # 1. Feed approved/edited items to KB
-    kb_added = 0
+    # 1. Prepare KB entries (compute, don't persist yet)
+    kb_entries_to_add = []
     if project_id:
-        kb_entries_to_add = []
         for d in decisions:
             if d.get("decision") in ("approved", "edited") and (
                 d.get("contribute_to_kb", True) or d.get("decision") == "edited"
             ):
-                # Skip entries with incomplete classification (any N-level is "Não Identificado")
                 if any(
                     str(d.get(lvl, "")).strip() in INCOMPLETE_VALUES
                     for lvl in ("N1", "N2", "N3", "N4")
@@ -207,15 +205,6 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
                         "instruction_used": d.get("instruction_used"),
                     }
                 )
-        if kb_entries_to_add:
-            try:
-                kb = KnowledgeBase(project_id, models_dir)
-                kb_added = kb.add_entries(kb_entries_to_add)
-                # Only create snapshot if entries were actually added/updated
-                if kb_added > 0:
-                    kb.create_version_snapshot()
-            except Exception as e:
-                logger.warning(f"KB update failed: {e}")
 
     # 2. Generate approved Excel from decisions
     import pandas as pd
@@ -276,12 +265,11 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
     file_bytes = buf.getvalue()
     file_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    # 3. Update job status — atomic transition under lock
+    # 3. Atomic status transition — MUST succeed before KB update
     from src.file_lock import locked_status
 
     download_filename = None
     with locked_status(status_path) as locked_data:
-        # Re-check status inside lock (could have changed between read and lock)
         if locked_data.get("status") not in ("CLASSIFIED", "APPROVED"):
             raise ConflictError(
                 f"Job {job_id} status changed to '{locked_data.get('status')}' during approval"
@@ -295,14 +283,45 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             "approved": approved_count,
             "edited": edited_count,
             "rejected": rejected_count,
-            "kb_added": kb_added,
+            "kb_added": 0,
         }
         original_filename = locked_data.get("filename", "upload.xlsx")
         base_name = os.path.splitext(original_filename)[0]
         download_filename = f"{base_name}_classificado.xlsx"
         locked_data["approved_download_filename"] = download_filename
 
-    # Salvar base64 em arquivo separado (fora do lock — escrita idempotente)
+    # 4. Persist KB entries AFTER status is COMPLETED (safe — no orphans)
+    kb_added = 0
+    if project_id and kb_entries_to_add:
+        try:
+            kb = KnowledgeBase(project_id, models_dir)
+            kb_added = kb.add_entries(kb_entries_to_add)
+            if kb_added > 0:
+                kb.create_version_snapshot()
+        except Exception as e:
+            logger.warning(f"KB update failed: {e}")
+
+    # Update kb_added in status (best-effort)
+    if kb_added > 0:
+        try:
+            from src.file_lock import update_status
+
+            update_status(
+                status_path,
+                {
+                    "review_summary": {
+                        "total": len(decisions),
+                        "approved": approved_count,
+                        "edited": edited_count,
+                        "rejected": rejected_count,
+                        "kb_added": kb_added,
+                    }
+                },
+            )
+        except Exception:
+            pass
+
+    # 5. Save Excel b64 to separate file
     approved_path = os.path.join(job_dir, "approved_result_b64.txt")
     with open(approved_path, "w", encoding="utf-8") as af:
         af.write(file_b64)

@@ -2,11 +2,10 @@
 
 Uses the same azure.functions mock pattern as test_api_helpers.py.
 """
+
 import json
-import os
 import sys
 import types
-import pytest
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -18,6 +17,7 @@ _mock_func = types.ModuleType("azure.functions")
 
 class _MockHttpResponse:
     """Minimal mock of azure.functions.HttpResponse."""
+
     def __init__(self, body=None, status_code=200, mimetype=None, headers=None):
         self._body = body.encode("utf-8") if isinstance(body, str) else (body or b"")
         self.status_code = status_code
@@ -30,6 +30,7 @@ class _MockHttpResponse:
 
 class _MockHttpRequest:
     """Minimal mock of azure.functions.HttpRequest."""
+
     pass
 
 
@@ -43,6 +44,7 @@ class _MockBlueprint:
     def route(self, *a, **kw):
         def decorator(fn):
             return fn
+
         return decorator
 
 
@@ -55,12 +57,12 @@ sys.modules["azure"] = _mock_azure
 sys.modules["azure.functions"] = _mock_func
 
 # Now safe to import
-from src.exceptions import ValidationError
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestReclassifyItemsJobIdValidation:
     """ReclassifyItems deve rejeitar jobId vazio."""
@@ -80,7 +82,10 @@ class TestReclassifyItemsJobIdValidation:
         response = reclassify_items_endpoint(req)
         assert response.status_code == 400
         body = json.loads(response.get_body())
-        assert "jobid" in body.get("error", "").lower() or "required" in body.get("error", "").lower()
+        assert (
+            "jobid" in body.get("error", "").lower()
+            or "required" in body.get("error", "").lower()
+        )
 
     def test_missing_jobid_raises_validation_error(self):
         """Quando jobId nao esta no body, default e '' — deve levantar ValidationError."""
@@ -114,7 +119,10 @@ class TestApproveClassificationsJobIdValidation:
         response = approve_classifications_endpoint(req)
         assert response.status_code == 400
         body = json.loads(response.get_body())
-        assert "jobid" in body.get("error", "").lower() or "required" in body.get("error", "").lower()
+        assert (
+            "jobid" in body.get("error", "").lower()
+            or "required" in body.get("error", "").lower()
+        )
 
 
 class TestApproveClassificationsBase64Separation:
@@ -141,8 +149,26 @@ class TestApproveClassificationsBase64Separation:
 
         result_data = {
             "items": [
-                {"SKU": "001", "Descricao": "Parafuso M8", "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf", "source": "LLM (Batch)", "confidence": 0.9},
-                {"SKU": "002", "Descricao": "Porca M10", "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Porcas", "source": "LLM (Batch)", "confidence": 0.85},
+                {
+                    "SKU": "001",
+                    "Descricao": "Parafuso M8",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
+                {
+                    "SKU": "002",
+                    "Descricao": "Porca M10",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Porcas",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.85,
+                },
             ]
         }
         with open(job_dir / "result.json", "w", encoding="utf-8") as f:
@@ -156,8 +182,12 @@ class TestApproveClassificationsBase64Separation:
         job_id = "test-b64-sep"
         job_dir = self._setup_job_dir(tmp_path, job_id)
 
-        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
-        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_models_dir", lambda: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs")
+        )
 
         from blueprints.review_bp import approve_classifications_endpoint
 
@@ -166,9 +196,17 @@ class TestApproveClassificationsBase64Separation:
             "jobId": job_id,
             "projectId": "",
             "decisions": [
-                {"index": 0, "description": "Parafuso M8", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "confidence": 0.9, "source": "LLM (Batch)"},
+                {
+                    "index": 0,
+                    "description": "Parafuso M8",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "confidence": 0.9,
+                    "source": "LLM (Batch)",
+                },
             ],
         }
 
@@ -186,8 +224,12 @@ class TestApproveClassificationsBase64Separation:
         job_id = "test-b64-file"
         job_dir = self._setup_job_dir(tmp_path, job_id)
 
-        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
-        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_models_dir", lambda: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs")
+        )
 
         from blueprints.review_bp import approve_classifications_endpoint
 
@@ -196,9 +238,17 @@ class TestApproveClassificationsBase64Separation:
             "jobId": job_id,
             "projectId": "",
             "decisions": [
-                {"index": 0, "description": "Parafuso M8", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "confidence": 0.9, "source": "LLM (Batch)"},
+                {
+                    "index": 0,
+                    "description": "Parafuso M8",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "confidence": 0.9,
+                    "source": "LLM (Batch)",
+                },
             ],
         }
 
@@ -211,6 +261,7 @@ class TestApproveClassificationsBase64Separation:
 
         # Verificar que o conteúdo é base64 válido (decodifica sem erro)
         import base64
+
         content = b64_path.read_text(encoding="utf-8")
         assert len(content) > 0
         base64.b64decode(content)  # Não deve levantar exceção
@@ -221,8 +272,12 @@ class TestApproveClassificationsBase64Separation:
         job_id = "test-b64-resp"
         job_dir = self._setup_job_dir(tmp_path, job_id)
 
-        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
-        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_models_dir", lambda: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs")
+        )
 
         from blueprints.review_bp import approve_classifications_endpoint
 
@@ -231,9 +286,17 @@ class TestApproveClassificationsBase64Separation:
             "jobId": job_id,
             "projectId": "",
             "decisions": [
-                {"index": 0, "description": "Parafuso M8", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "confidence": 0.9, "source": "LLM (Batch)"},
+                {
+                    "index": 0,
+                    "description": "Parafuso M8",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "confidence": 0.9,
+                    "source": "LLM (Batch)",
+                },
             ],
         }
 
@@ -268,12 +331,28 @@ class TestApproveClassificationsExtraColumns:
 
         result_data = {
             "items": [
-                {"SKU": "001", "Descricao": "Parafuso M8", "Fornecedor": "ABC Ltda",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "source": "LLM (Batch)", "confidence": 0.9},
-                {"SKU": "002", "Descricao": "Porca M10", "Fornecedor": "XYZ SA",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Porcas",
-                 "source": "LLM (Batch)", "confidence": 0.85},
+                {
+                    "SKU": "001",
+                    "Descricao": "Parafuso M8",
+                    "Fornecedor": "ABC Ltda",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
+                {
+                    "SKU": "002",
+                    "Descricao": "Porca M10",
+                    "Fornecedor": "XYZ SA",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Porcas",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.85,
+                },
             ]
         }
         with open(job_dir / "result.json", "w", encoding="utf-8") as f:
@@ -282,15 +361,21 @@ class TestApproveClassificationsExtraColumns:
         return job_dir
 
     @patch("blueprints.review_bp.KnowledgeBase")
-    def test_extra_columns_in_approved_excel(self, mock_kb_class, tmp_path, monkeypatch):
+    def test_extra_columns_in_approved_excel(
+        self, mock_kb_class, tmp_path, monkeypatch
+    ):
         """Excel de saída deve conter coluna Fornecedor entre Descrição e N1."""
         import base64
 
         job_id = "test-extra-cols"
         self._setup_job_dir(tmp_path, job_id)
 
-        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
-        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_models_dir", lambda: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs")
+        )
 
         from blueprints.review_bp import approve_classifications_endpoint
 
@@ -299,12 +384,28 @@ class TestApproveClassificationsExtraColumns:
             "jobId": job_id,
             "projectId": "",
             "decisions": [
-                {"index": 0, "description": "Parafuso M8", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "confidence": 0.9, "source": "LLM (Batch)"},
-                {"index": 1, "description": "Porca M10", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Porcas",
-                 "confidence": 0.85, "source": "LLM (Batch)"},
+                {
+                    "index": 0,
+                    "description": "Parafuso M8",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "confidence": 0.9,
+                    "source": "LLM (Batch)",
+                },
+                {
+                    "index": 1,
+                    "description": "Porca M10",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Porcas",
+                    "confidence": 0.85,
+                    "source": "LLM (Batch)",
+                },
             ],
         }
 
@@ -316,10 +417,20 @@ class TestApproveClassificationsExtraColumns:
 
         import pandas as pd
         import io
+
         df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Classificados")
 
         assert "Fornecedor" in df.columns
-        assert list(df.columns) == ["SKU", "Descrição", "Fornecedor", "N1", "N2", "N3", "N4", "Fonte"]
+        assert list(df.columns) == [
+            "SKU",
+            "Descrição",
+            "Fornecedor",
+            "N1",
+            "N2",
+            "N3",
+            "N4",
+            "Fonte",
+        ]
         assert df.iloc[0]["Fornecedor"] == "ABC Ltda"
         assert df.iloc[1]["Fornecedor"] == "XYZ SA"
 
@@ -331,43 +442,75 @@ class TestApproveClassificationsExtraColumns:
         job_dir.mkdir(parents=True)
 
         status_data = {
-            "job_id": job_id, "status": "CLASSIFIED", "sector": "teste",
-            "filename": "base.xlsx", "id_column": "SKU", "desc_column": "Descricao",
-            "total_rows": 1, "total_chunks": 1, "processed_chunks": 1,
+            "job_id": job_id,
+            "status": "CLASSIFIED",
+            "sector": "teste",
+            "filename": "base.xlsx",
+            "id_column": "SKU",
+            "desc_column": "Descricao",
+            "total_rows": 1,
+            "total_chunks": 1,
+            "processed_chunks": 1,
         }
         with open(job_dir / "status.json", "w", encoding="utf-8") as f:
             json.dump(status_data, f)
 
         result_data = {
             "items": [
-                {"SKU": "001", "Descricao": "Parafuso M8",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "source": "LLM (Batch)", "confidence": 0.9},
+                {
+                    "SKU": "001",
+                    "Descricao": "Parafuso M8",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
             ]
         }
         with open(job_dir / "result.json", "w", encoding="utf-8") as f:
             json.dump(result_data, f)
 
-        monkeypatch.setattr("blueprints.review_bp.get_models_dir", lambda: str(tmp_path))
-        monkeypatch.setattr("blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs"))
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_models_dir", lambda: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            "blueprints.review_bp.get_jobs_dir", lambda: str(tmp_path / "taxonomy_jobs")
+        )
 
         from blueprints.review_bp import approve_classifications_endpoint
 
         req = MagicMock()
         req.get_json.return_value = {
-            "jobId": job_id, "projectId": "",
+            "jobId": job_id,
+            "projectId": "",
             "decisions": [
-                {"index": 0, "description": "Parafuso M8", "decision": "approved",
-                 "N1": "Mat", "N2": "Comp", "N3": "Fix", "N4": "Paraf",
-                 "confidence": 0.9, "source": "LLM (Batch)"},
+                {
+                    "index": 0,
+                    "description": "Parafuso M8",
+                    "decision": "approved",
+                    "N1": "Mat",
+                    "N2": "Comp",
+                    "N3": "Fix",
+                    "N4": "Paraf",
+                    "confidence": 0.9,
+                    "source": "LLM (Batch)",
+                },
             ],
         }
 
         response = approve_classifications_endpoint(req)
         body = json.loads(response.get_body())
 
-        import base64, pandas as pd, io
-        df = pd.read_excel(io.BytesIO(base64.b64decode(body["file_content_base64"])), sheet_name="Classificados")
+        import base64
+        import pandas as pd
+        import io
+
+        df = pd.read_excel(
+            io.BytesIO(base64.b64decode(body["file_content_base64"])),
+            sheet_name="Classificados",
+        )
         assert "Fornecedor" not in df.columns
         assert list(df.columns) == ["SKU", "Descrição", "N1", "N2", "N3", "N4", "Fonte"]
 
@@ -375,6 +518,7 @@ class TestApproveClassificationsExtraColumns:
 # ---------------------------------------------------------------------------
 # Lógica de filtragem de itens incompletos para KB (ApproveClassifications)
 # ---------------------------------------------------------------------------
+
 
 class TestApproveLogic:
     """Testa a lógica de filtragem de itens incompletos antes de alimentar a KB."""
@@ -437,3 +581,55 @@ class TestApproveLogic:
         ]
         for d in decisions:
             assert self._should_skip(d) is False, f"Should not skip: {d}"
+
+
+class TestApproveKBOrdering:
+    """KB só deve ser atualizada APÓS verificação de status."""
+
+    def test_kb_not_updated_when_status_is_cancelled(self, tmp_path):
+        """Se job está CANCELLED, KB não deve receber entries."""
+        job_dir = tmp_path / "jobs" / "test-cancelled"
+        job_dir.mkdir(parents=True)
+        status = {"status": "CANCELLED", "filename": "test.xlsx"}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        project_dir = tmp_path / "projects" / "test-proj"
+        project_dir.mkdir(parents=True)
+        (project_dir / "knowledge_base.json").write_text("[]")
+        (project_dir / "project_config.json").write_text(
+            json.dumps({"project_id": "test-proj", "sector": "test"})
+        )
+
+        from blueprints.review_bp import approve_classifications_endpoint
+
+        req = MagicMock()
+        req.get_json.return_value = {
+            "jobId": "test-cancelled",
+            "projectId": "test-proj",
+            "decisions": [
+                {
+                    "index": 0,
+                    "description": "Item teste",
+                    "decision": "edited",
+                    "N1": "MRO",
+                    "N2": "Geral",
+                    "N3": "Geral",
+                    "N4": "Peças",
+                    "confidence": 1.0,
+                    "source": "consultant_correction",
+                    "contribute_to_kb": True,
+                }
+            ],
+        }
+
+        with (
+            patch("blueprints.review_bp.get_models_dir", return_value=str(tmp_path)),
+            patch(
+                "blueprints.review_bp.get_jobs_dir", return_value=str(tmp_path / "jobs")
+            ),
+        ):
+            response = approve_classifications_endpoint(req)
+
+        assert response.status_code == 409
+        kb_data = json.loads((project_dir / "knowledge_base.json").read_text())
+        assert len(kb_data) == 0

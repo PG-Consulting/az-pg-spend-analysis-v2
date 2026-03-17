@@ -243,3 +243,103 @@ class TestGetJobResults:
 
         assert data["extra_columns"] == []
         assert "Fornecedor" not in data["items"][0]
+
+
+class TestUploadRowLimit:
+    """SubmitTaxonomyJob deve rejeitar uploads com mais de 100.000 linhas."""
+
+    def test_rejects_upload_exceeding_row_limit(self):
+        """Upload com >100k linhas deve retornar 400."""
+        import pandas as pd
+        import base64
+        from unittest.mock import patch
+
+        from blueprints.classification_bp import MAX_UPLOAD_ROWS
+
+        # Create a mock DataFrame exceeding the limit
+        mock_df = pd.DataFrame(
+            {
+                "ID": range(MAX_UPLOAD_ROWS + 1),
+                "Descricao": [f"Item {i}" for i in range(MAX_UPLOAD_ROWS + 1)],
+            }
+        )
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {
+            "fileContent": base64.b64encode(b"fake").decode(),
+            "projectId": "test-proj",
+        }
+
+        from blueprints.classification_bp import SubmitTaxonomyJob
+
+        with (
+            patch(
+                "blueprints.classification_bp.get_models_dir",
+                return_value="/tmp/models",
+            ),
+            patch(
+                "blueprints.classification_bp.get_jobs_dir",
+                return_value="/tmp/test-jobs-limit",
+            ),
+            patch("pandas.read_excel", return_value=mock_df),
+            patch(
+                "src.project_manager.get_project",
+                return_value={"sector": "test", "client_context": ""},
+            ),
+            patch(
+                "src.project_manager.resolve_hierarchy",
+                return_value=(None, "padrao"),
+            ),
+        ):
+            response = SubmitTaxonomyJob(req)
+
+        assert response.status_code == 400
+        body = json.loads(response.get_body())
+        assert "100" in body.get("error", "")
+
+    def test_accepts_upload_within_row_limit(self):
+        """Upload com <=100k linhas deve ser aceito (202)."""
+        import pandas as pd
+        import base64
+        from unittest.mock import patch
+
+        mock_df = pd.DataFrame(
+            {
+                "ID": range(100),
+                "Descricao": [f"Item {i}" for i in range(100)],
+            }
+        )
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {
+            "fileContent": base64.b64encode(b"fake").decode(),
+            "projectId": "test-proj",
+        }
+
+        from blueprints.classification_bp import SubmitTaxonomyJob
+
+        with (
+            patch(
+                "blueprints.classification_bp.get_models_dir",
+                return_value="/tmp/models",
+            ),
+            patch(
+                "blueprints.classification_bp.get_jobs_dir",
+                return_value="/tmp/test-jobs-ok",
+            ),
+            patch("pandas.read_excel", return_value=mock_df),
+            patch(
+                "src.project_manager.get_project",
+                return_value={"sector": "test", "client_context": ""},
+            ),
+            patch(
+                "src.project_manager.resolve_hierarchy",
+                return_value=(None, "padrao"),
+            ),
+            patch("src.queue_helpers.enqueue_job", return_value=True),
+        ):
+            response = SubmitTaxonomyJob(req)
+
+        assert response.status_code == 202
