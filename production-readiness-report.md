@@ -4,10 +4,13 @@
 **Data:** 2026-03-17
 **Escopo:** Sistema completo (backend + frontend + integrações)
 **Fases executadas:** 1-5 (Feature Discovery, Arquitetura, Concorrência, Caos, Segurança)
+**Última atualização:** 2026-03-17 (pós-correções Phase 1 + Phase 2)
 
 ---
 
 ## Veredito Geral
+
+### Avaliação Inicial (pré-correções)
 
 | Dimensão | Nota (1-10) | Status |
 |----------|------------|--------|
@@ -17,7 +20,17 @@
 | Segurança | 2 | 🔴 |
 | **Prontidão Geral** | **4.3** | **🔴** |
 
-**Recomendação:** **NÃO PRONTO** para produção aberta. Pronto para uso interno controlado (< 10 usuários, single-instance) **com ressalvas**. Precisa de autenticação, CORS restrito, e correções de concorrência antes de expor publicamente.
+### Avaliação Atual (pós-correções 2026-03-17)
+
+| Dimensão | Antes | Agora | Status | O que mudou |
+|----------|-------|-------|--------|-------------|
+| Arquitetura | 6 | **7** | 🟡 | Dead code removido, retenção de jobs, limite de upload |
+| Concorrência | 4 | **7** | 🟡 | Rollback atômico, lock em configs, check-and-set, ApproveClassifications reordenado, single-instance forçado |
+| Resiliência | 5 | **7** | 🟡 | Jitter, semáforo, fallback detection, enqueue_job feedback, health probe Grok |
+| Segurança | 2 | **4** | 🔴 | CORS restrito. Auth Azure AD em andamento (previsão: 2026-03-18) |
+| **Prontidão Geral** | **4.3** | **6.3** | **🟡** | |
+
+**Recomendação:** **PRONTO COM RESSALVAS** para uso interno controlado (< 50 usuários). Aguardando autenticação Azure AD para produção aberta (estimativa: nota **~7.0 🟢** com auth).
 
 ---
 
@@ -25,58 +38,88 @@
 
 O Spend Analysis v3 é uma plataforma funcional e bem desenhada para seu domínio: classificação de gastos corporativos com loop de aprendizado humano. O pipeline Two-Phase (KB direct match + LLM), o design de chunks resumíveis, e o sistema de poison queue + cleanup timer demonstram maturidade técnica no happy path.
 
-No entanto, a avaliação identificou **lacunas estruturais** que impedem uso em produção aberta:
+A avaliação inicial (2026-03-17) identificou lacunas estruturais. Na mesma data, **17 correções defensivas** foram implementadas em duas fases, elevando a nota geral de 4.3 para 6.3:
 
-1. **Zero autenticação**: 47 endpoints acessíveis por qualquer pessoa com a URL. Tokens LLM ($0.05+/job) podem ser consumidos sem restrição. Dados corporativos (gastos, fornecedores) ficam expostos.
+### Correções Implementadas (2026-03-17)
 
-2. **Concorrência frágil**: O mecanismo de file locking (`filelock.FileLock`) protege contra concorrência intra-processo, mas **não funciona entre instâncias** do Azure Functions. Se o sistema escalar (comportamento padrão do Consumption Plan), dados da Knowledge Base podem ser corrompidos silenciosamente.
+**Phase 1 — Hardening Básico (commit `8795faa`, 7 correções):**
+1. ✅ CORS restrito ao domínio do frontend (`host.json`)
+2. ✅ Rollback KB atômico — escrita dentro do lock (`knowledge_base.py`)
+3. ✅ FileLock em `update_project`/`update_sector` (`project_manager.py`)
+4. ✅ Jitter no retry LLM — evita thundering herd (`llm_classifier.py`)
+5. ✅ Semáforo em `map_categories_with_llm` — respeita rate limit global (`llm_classifier.py`)
+6. ✅ Fallback detection — `fallback_pct` + warning no status.json (`worker_helpers.py`)
+7. ✅ Check-and-set atômico PENDING→PROCESSING (`worker_helpers.py`)
 
-3. **Degradação silenciosa**: Quando a API Grok/xAI falha, o sistema marca o job como CLASSIFIED (não ERROR), preenchendo 100% dos itens com "Não Identificado". Consultores recebem resultados inúteis sem aviso claro.
+**Dead Code (commit `b7969cc`):**
+8. ✅ Removido `taxonomy_mapper.py` (177 linhas)
+9. ✅ Removido `run_worker_cycle()` + `get_active_jobs()` (~130 linhas DEPRECATED)
 
-4. **Operações não-atômicas**: 5 de 9 operações críticas não são idempotentes. `ApproveClassifications` modifica a KB antes de verificar o status atomicamente, criando risco de entries órfãs. `rollback_to_version()` tem janela de perda de dados documentada.
+**Configuração Azure:**
+10. ✅ `WEBSITE_MAX_DYNAMIC_APPLICATION_SCALE_OUT=1` — single-instance forçado
 
-Para uso interno com 5-10 consultores, o sistema funciona adequadamente desde que limitado a uma única instância (`WEBSITE_MAX_DYNAMIC_APPLICATION_SCALE_OUT=1`) e com CORS restrito ao domínio do frontend.
+**Phase 2 — Correções Estruturais (commit `91dae66`, 5 correções):**
+11. ✅ ApproveClassifications reordenado — KB update após status check atômico (`review_bp.py`)
+12. ✅ `enqueue_job()` retorna bool — warning no response se falhar (`queue_helpers.py`, `classification_bp.py`)
+13. ✅ Health check com probe Grok — chamada mínima com cache 5min (`health_bp.py`)
+14. ✅ Política de retenção — deletar jobs terminais > 30 dias (`worker_helpers.py`, `worker_bp.py`)
+15. ✅ Limite de upload — rejeitar > 100.000 linhas (`classification_bp.py`)
+
+**Testes:** 297 → 326 (+29 novos, 0 quebrados)
+
+### Pendente
+
+O único bloqueio para produção aberta é **autenticação** (Azure AD B2C), em andamento com app registration previsto para 2026-03-18. Com auth implementado, a dimensão Segurança sobe de 4 para ~7, e a nota geral atinge **~7.0 🟢 PRONTO**.
+
+### Backlog (Hardening para Escala)
+
+Itens para quando o sistema precisar escalar além de 50 usuários:
+- Observabilidade (Application Insights + métricas)
+- Circuit breaker para Grok
+- Rate limiting por usuário
+- Abstração de provider LLM com fallback
+- Migração de storage para Cosmos DB (elimina FileLock)
 
 ---
 
 ## Findings Críticos (ação imediata)
 
-| # | Categoria | Problema | Impacto | Correção | Esforço |
-|---|----------|---------|---------|---------|---------|
-| 1 | Segurança | 47 endpoints `AuthLevel.ANONYMOUS` | Qualquer pessoa acessa/modifica dados e consome tokens LLM | `AuthLevel.FUNCTION` + function keys | Baixo |
-| 2 | Segurança | CORS `"*"` em `host.json:24-27` | CSRF, requests de qualquer origem | Restringir ao domínio do frontend | Mínimo |
-| 3 | Concorrência | FileLock não funciona cross-instance | KB data loss silenciosa em multi-instância | Forçar `maxInstances=1` no Azure (curto prazo) | Mínimo |
-| 4 | Resiliência | Fallback LLM silencioso — job CLASSIFIED com 0% classificação útil | Consultores recebem resultados inúteis sem aviso | Adicionar `fallback_pct` ao status.json; alertar se > 50% | Baixo |
-| 5 | Concorrência | `rollback_to_version()` não-atômico — `self.entries =` fora do lock | Perda silenciosa de KB entries em rollback concorrente | Mover operação para dentro do `_kb_lock` | Baixo |
-| 6 | Concorrência | `project_config.json` e `sector_config.json` sem file lock | Updates concorrentes perdem dados | Adicionar FileLock (mesmo padrão de `_kb_lock`) | Baixo |
+| # | Categoria | Problema | Status | Correção |
+|---|----------|---------|--------|---------|
+| 1 | Segurança | 47 endpoints `AuthLevel.ANONYMOUS` | ⏳ Em andamento (Azure AD) | Auth Azure AD B2C |
+| 2 | Segurança | CORS `"*"` | ✅ Corrigido `8795faa` | Restrito a domínios conhecidos |
+| 3 | Concorrência | FileLock cross-instance | ✅ Mitigado (Azure) | `WEBSITE_MAX_DYNAMIC_APPLICATION_SCALE_OUT=1` |
+| 4 | Resiliência | Fallback LLM silencioso | ✅ Corrigido `8795faa` | `fallback_pct` + warning no status.json |
+| 5 | Concorrência | `rollback_to_version()` não-atômico | ✅ Corrigido `8795faa` | Escrita dentro do `_kb_lock` |
+| 6 | Concorrência | Configs sem file lock | ✅ Corrigido `8795faa` | FileLock em `update_project`/`update_sector` |
 
 ## Findings Importantes (próximo sprint)
 
-| # | Categoria | Problema | Impacto | Correção | Esforço |
-|---|----------|---------|---------|---------|---------|
-| 7 | Concorrência | `ApproveClassifications` modifica KB antes de status check atômico | KB entries órfãs se status mudou | Reordenar: status check → KB update | Médio |
-| 8 | Concorrência | `ProcessTaxonomyJob` PENDING→PROCESSING sem check-and-set atômico | Processamento duplicado do mesmo job | Usar `locked_status()` com check | Baixo |
-| 9 | Resiliência | Retry LLM sem jitter — thundering herd com 15 threads | Rate limiting (429) sustentado | Adicionar `random.uniform(0, 1)` ao backoff | Mínimo |
-| 10 | Resiliência | `map_categories_with_llm()` sem `_LLM_SEMAPHORE` | Excede rate limit quando paralelo com classificação | Usar `_LLM_SEMAPHORE` | Baixo |
-| 11 | Resiliência | `enqueue_job()` falha silenciosa sem feedback | Job PENDING nunca processado, usuário não sabe | Retornar bool + warning no response 202 | Baixo |
-| 12 | Resiliência | Health check não testa API Grok | Indisponibilidade não detectada proativamente | Adicionar probe LLM mínima com cache 5min | Baixo |
-| 13 | Arquitetura | Sem observabilidade estruturada | Sem métricas P95, taxa de erros, consumo de tokens | Azure Application Insights + custom metrics | Médio |
-| 14 | Arquitetura | Sem política de retenção de jobs | `taxonomy_jobs/` cresce indefinidamente (10-50MB/job) | Timer para deletar jobs > 30 dias COMPLETED/ERROR | Médio |
-| 15 | Segurança | Sem rate limiting nos endpoints | Abuso de tokens LLM, DoS | Rate limit por IP (max 5 jobs/hora) | Médio |
+| # | Categoria | Problema | Status | Correção |
+|---|----------|---------|--------|---------|
+| 7 | Concorrência | `ApproveClassifications` KB antes de status check | ✅ Corrigido `91dae66` | KB update após `locked_status` |
+| 8 | Concorrência | PENDING→PROCESSING sem check-and-set | ✅ Corrigido `8795faa` | `locked_status` com re-verificação |
+| 9 | Resiliência | Retry LLM sem jitter | ✅ Corrigido `8795faa` | `random.uniform(0, 1)` no backoff |
+| 10 | Resiliência | `map_categories_with_llm` sem semáforo | ✅ Corrigido `8795faa` | `_post_with_semaphore` |
+| 11 | Resiliência | `enqueue_job()` falha silenciosa | ✅ Corrigido `91dae66` | Retorna bool + warning |
+| 12 | Resiliência | Health check não testa Grok | ✅ Corrigido `91dae66` | Probe com cache 5min |
+| 13 | Arquitetura | Sem observabilidade estruturada | 📋 Backlog | Application Insights + métricas |
+| 14 | Arquitetura | Sem política de retenção | ✅ Corrigido `91dae66` | Deletar jobs > 30 dias |
+| 15 | Segurança | Sem rate limiting | 📋 Backlog (requer auth) | Rate limit por usuário |
 
 ## Findings Menores (backlog)
 
-| # | Categoria | Problema | Impacto | Correção | Esforço |
-|---|----------|---------|---------|---------|---------|
-| 16 | Arquitetura | Dead code: `taxonomy_mapper.py` (177 linhas) | Complexidade cognitiva | Remover arquivo | Mínimo |
-| 17 | Arquitetura | `run_worker_cycle()` + `get_active_jobs()` DEPRECATED (130+ linhas) | Confusão em manutenção | Remover funções | Mínimo |
-| 18 | Resiliência | Consolidação sem indicação de progresso | UX — "processando" por minutos sem feedback | Adicionar status intermediário "CONSOLIDATING" | Baixo |
-| 19 | Resiliência | Sem limite de tamanho de upload | OOM em jobs > 20k linhas | Rejeitar uploads > 50MB ou > 20k linhas | Baixo |
-| 20 | Resiliência | Direct Line API sem retry | Copilot falha em timeout | 1 retry com timeout 5s | Baixo |
-| 21 | Arquitetura | Python local 3.12 vs Azure 3.13 | Incompatibilidades sutis | Alinhar versões | Baixo |
-| 22 | Concorrência | `update_job_progress` pode pular valores de progresso | Progresso visual irregular no frontend | Cosmético — valor final correto | Mínimo |
-| 23 | Arquitetura | `MemoryEngine` path fixo sem file lock | Race condition em Copilot memory | Usar `get_models_dir()` + filelock | Baixo |
-| 24 | Concorrência | `SubmitTaxonomyJob` sem idempotency key | Submissão duplicada cria jobs duplicados | Hash de conteúdo como chave de dedup | Médio |
+| # | Categoria | Problema | Status | Correção |
+|---|----------|---------|--------|---------|
+| 16 | Arquitetura | Dead code: `taxonomy_mapper.py` | ✅ Removido `b7969cc` | |
+| 17 | Arquitetura | Funções DEPRECATED no worker | ✅ Removido `b7969cc` | |
+| 18 | Resiliência | Consolidação sem indicação de progresso | 📋 Backlog | Status "CONSOLIDATING" |
+| 19 | Resiliência | Sem limite de upload | ✅ Corrigido `91dae66` | Limite 100k linhas |
+| 20 | Resiliência | Direct Line API sem retry | 📋 Backlog | 1 retry com timeout 5s |
+| 21 | Arquitetura | Python local 3.12 vs Azure 3.13 | 📋 Backlog | Alinhar versões |
+| 22 | Concorrência | Progresso pode pular valores | 📋 Backlog | Cosmético |
+| 23 | Arquitetura | `MemoryEngine` path fixo | 📋 Backlog | `get_models_dir()` + filelock |
+| 24 | Concorrência | Sem idempotency key | 📋 Backlog | Hash conteúdo + projectId |
 
 ---
 
@@ -121,29 +164,29 @@ Para uso interno com 5-10 consultores, o sistema funciona adequadamente desde qu
 
 ## Plano de Ação
 
-### Semana 1 (Quick Wins — ~2 dias)
-- [ ] CORS: restringir `"*"` para domínio real do frontend (`host.json:25`)
-- [ ] Auth: migrar para `AuthLevel.FUNCTION` com function keys (`function_app.py:14`)
-- [ ] Scale: configurar `WEBSITE_MAX_DYNAMIC_APPLICATION_SCALE_OUT=1` no Azure
-- [ ] Rollback atômico: mover `self.entries = snapshot` para dentro do `_kb_lock` (`knowledge_base.py:275-286`)
-- [ ] FileLock em configs: adicionar lock em `update_project()` e `update_sector()` (`project_manager.py`)
-- [ ] Jitter no retry LLM: `time.sleep(2**attempt + random.uniform(0, 1))` (`llm_classifier.py:418`)
-- [ ] Semáforo em `map_categories_with_llm()` (`llm_classifier.py:600-637`)
+### Concluído (2026-03-17)
+- [x] CORS: restringir `"*"` para domínio real do frontend — `8795faa`
+- [x] Scale: configurar `WEBSITE_MAX_DYNAMIC_APPLICATION_SCALE_OUT=1` no Azure
+- [x] Rollback atômico KB — `8795faa`
+- [x] FileLock em configs (`update_project`/`update_sector`) — `8795faa`
+- [x] Jitter no retry LLM — `8795faa`
+- [x] Semáforo em `map_categories_with_llm()` — `8795faa`
+- [x] Fallback detection (`fallback_pct` + warning) — `8795faa`
+- [x] Check-and-set atômico PENDING→PROCESSING — `8795faa`
+- [x] Remover dead code (`taxonomy_mapper.py`, funções DEPRECATED) — `b7969cc`
+- [x] Reordenar ApproveClassifications (KB após status check) — `91dae66`
+- [x] `enqueue_job()` retornar bool + warning — `91dae66`
+- [x] Health check com probe Grok (cache 5min) — `91dae66`
+- [x] Política de retenção (jobs > 30 dias) — `91dae66`
+- [x] Limite de upload (> 100k linhas) — `91dae66`
 
-### Semana 2-4 (Correções Estruturais — ~5 dias)
-- [ ] Fallback detection: contar itens com `confidence == 0.0` após classificação; adicionar `fallback_pct` ao status.json (`worker_helpers.py:654`)
-- [ ] Check-and-set atômico: PENDING→PROCESSING via `locked_status()` (`worker_helpers.py:608-618`)
-- [ ] Reordenar ApproveClassifications: status check antes de KB update (`review_bp.py:177-283`)
-- [ ] `enqueue_job()` retornar bool + warning no response (`queue_helpers.py`, `classification_bp.py`)
-- [ ] Health check com probe Grok (1 item, timeout 5s, cache 5min) (`health_bp.py`)
-- [ ] Política de retenção: timer para deletar jobs > 30 dias (`worker_bp.py`)
-- [ ] Remover dead code: `taxonomy_mapper.py`, `run_worker_cycle()`, `get_active_jobs()`
-- [ ] Limite de upload: rejeitar > 50MB ou > 20.000 linhas (`classification_bp.py`)
+### Em andamento
+- [ ] Auth: Azure AD B2C (app registration em andamento, previsão 2026-03-18)
 
-### Mês 2+ (Hardening para Escala)
+### Backlog (Hardening para Escala)
 - [ ] Observabilidade: Azure Application Insights + custom metrics (llm_latency, kb_hit_rate, tokens_consumed)
-- [ ] Rate limiting: max 5 jobs/hora por usuário/IP
-- [ ] Circuit breaker para API Grok (after N consecutive failures, skip LLM for 30s)
+- [ ] Rate limiting: max 5 jobs/hora por usuário (requer auth)
+- [ ] Circuit breaker para API Grok (após N falhas consecutivas, skip LLM por 30s)
 - [ ] Idempotency key para SubmitTaxonomyJob (hash conteúdo + projectId)
 - [ ] Abstração de provider LLM: interface `LLMProvider` com fallback para provider secundário
 - [ ] Migrar storage para Azure Cosmos DB ou Blob Storage com ETags (elimina FileLock)
