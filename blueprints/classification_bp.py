@@ -502,7 +502,7 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     import pandas as pd
 
     if req.method == "OPTIONS":
-        return options_response(req, "GET, POST, OPTIONS")
+        return options_response("GET, POST, OPTIONS")
 
     job_id = req.params.get("jobId", "").strip()
     if not job_id:

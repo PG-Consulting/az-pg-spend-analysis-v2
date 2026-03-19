@@ -100,16 +100,17 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
             created_dt = datetime.fromisoformat(created_at)
             elapsed = (datetime.now(timezone.utc) - created_dt).total_seconds()
             if elapsed > STALE_THRESHOLD_SECONDS:
-                logger.warning(
-                    f"[Worker] Job {job_id} stuck for {elapsed / 60:.0f}min. Marking as ERROR."
-                )
-                update_status(
-                    status_path,
-                    {
-                        "status": "ERROR",
-                        "error": f"Job expired after {elapsed / 60:.0f} minutes without completing",
-                    },
-                )
+                # Atomic check-and-set: only mark ERROR if still PROCESSING
+                with locked_status(status_path) as data:
+                    if data.get("status") != "PROCESSING":
+                        continue
+                    logger.warning(
+                        f"[Worker] Job {job_id} stuck for {elapsed / 60:.0f}min. Marking as ERROR."
+                    )
+                    data["status"] = "ERROR"
+                    data["error"] = (
+                        f"Job expired after {elapsed / 60:.0f} minutes without completing"
+                    )
         except Exception as e:
             logger.error(f"[Worker] Error checking stale job {job_id}: {e}")
 
@@ -530,8 +531,10 @@ def consolidate_job(job_info: JobInfoDict) -> None:
     # Set status to CLASSIFIED (not COMPLETED - review must happen first)
     # Use locked_status to check if job was CANCELLED concurrently
     with locked_status(status_path) as current:
-        if current.get("status") == "CANCELLED":
-            logger.info(f"[Worker] job={job_id} was cancelled, skipping consolidation")
+        if current.get("status") in ("CANCELLED", "ERROR", "CLASSIFIED", "COMPLETED"):
+            logger.info(
+                f"[Worker] job={job_id} has status '{current.get('status')}', skipping consolidation"
+            )
             return
         current["status"] = "CLASSIFIED"
         current["download_filename"] = final_result.get("filename", "")
@@ -596,6 +599,10 @@ def process_single_job(job_id: str) -> None:
         return
 
     # Atomic check-and-set: re-verify + mutate under lock
+    # Uses processing_worker_id as a simple lease to prevent duplicate processing
+    import uuid as uuid_mod
+
+    worker_id = str(uuid_mod.uuid4())
     with locked_status(status_path) as data:
         current = data.get("status", "")
         if current not in ("PENDING", "PROCESSING"):
@@ -603,8 +610,14 @@ def process_single_job(job_id: str) -> None:
                 f"[Worker] Job {job_id} status changed to '{current}' — skipping"
             )
             return
-        if current == "PENDING":
-            data["status"] = "PROCESSING"
+        if current == "PROCESSING" and data.get("processing_worker_id"):
+            logger.info(
+                f"[Worker] Job {job_id} already being processed by "
+                f"{data.get('processing_worker_id')} — skipping"
+            )
+            return
+        data["status"] = "PROCESSING"
+        data["processing_worker_id"] = worker_id
     # Re-read after atomic transition
     status = read_status(status_path)
 
@@ -618,10 +631,17 @@ def process_single_job(job_id: str) -> None:
 
         # Process chunks in parallel batches
         while True:
-            # Check for cancellation between batches
+            # Check for cancellation/completion between batches
             current_status = read_status(status_path)
-            if current_status.get("status") == "CANCELLED":
-                logger.info(f"[Worker] Job {job_id} was cancelled — stopping")
+            if current_status.get("status") in (
+                "CANCELLED",
+                "CLASSIFIED",
+                "COMPLETED",
+                "ERROR",
+            ):
+                logger.info(
+                    f"[Worker] Job {job_id} status='{current_status.get('status')}' — stopping"
+                )
                 return
 
             chunks = find_next_chunks(job_info, max_count=MAX_PARALLEL_CHUNKS)

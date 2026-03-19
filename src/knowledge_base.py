@@ -338,6 +338,19 @@ class KnowledgeBase:
             return default
         return str(value).strip()
 
+    @staticmethod
+    def _safe_confidence(value, default: float = 1.0) -> float:
+        """Convert a value to float confidence, treating NaN/None/text as default."""
+        if value is None:
+            return default
+        try:
+            result = float(value)
+            if pd.isna(result):
+                return default
+            return result
+        except (ValueError, TypeError):
+            return default
+
     def import_xlsx(self, file_bytes: bytes) -> Dict[str, int]:
         df = pd.read_excel(io.BytesIO(file_bytes))
         entries = []
@@ -358,7 +371,7 @@ class KnowledgeBase:
                         row.get("Fonte", row.get("source", "consultant_correction")),
                         "consultant_correction",
                     ),
-                    "confidence": float(
+                    "confidence": self._safe_confidence(
                         row.get(
                             "Confiança",
                             row.get("Confianca", row.get("confidence", 1.0)),

@@ -26,6 +26,9 @@ import type {
 /** Base URL for the Azure Functions API (configurable via environment) */
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7071/api';
 
+/** Global timeout for all axios requests (30s) — prevents hanging requests */
+axios.defaults.timeout = 30_000;
+
 /** Function key for Azure Functions authentication (optional, for production) */
 const FUNCTION_KEY = process.env.NEXT_PUBLIC_FUNCTION_KEY || '';
 
