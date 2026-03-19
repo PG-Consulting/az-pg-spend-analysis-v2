@@ -565,4 +565,75 @@ describe('useReview', () => {
     expect(result.current.filteredItems).toHaveLength(3);
     expect(result.current.filterCounts.corrected).toBe(3);
   });
+
+  it('should preserve original N3/N4 when bulkEdit leaves them empty', async () => {
+    const { result } = renderUseReview();
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 10));
+    });
+
+    // Edit items 1 and 4 with only N1/N2 — leave N3/N4 empty
+    act(() => {
+      result.current.bulkEdit([1, 4], {
+        N1: 'Servicos',
+        N2: 'Terceirizados',
+        N3: '',
+        N4: '',
+        contributeToKB: true,
+      });
+    });
+
+    // Item 1: original N3='Oleos', N4='Oleo Motor' — should be preserved
+    const state1 = result.current.getItemState(1);
+    expect(state1.decision).toBe('edited');
+    expect(state1.editedN1).toBe('Servicos');
+    expect(state1.editedN2).toBe('Terceirizados');
+    expect(state1.editedN3).toBe('Oleos');
+    expect(state1.editedN4).toBe('Oleo Motor');
+
+    // Item 4: original N3='Tintas', N4='Tinta Azul' — should be preserved
+    const state4 = result.current.getItemState(4);
+    expect(state4.editedN1).toBe('Servicos');
+    expect(state4.editedN2).toBe('Terceirizados');
+    expect(state4.editedN3).toBe('Tintas');
+    expect(state4.editedN4).toBe('Tinta Azul');
+  });
+
+  it('should preserve previous edits when bulkEdit is applied sequentially', async () => {
+    const { result } = renderUseReview();
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 10));
+    });
+
+    // First edit: set N1 only
+    act(() => {
+      result.current.bulkEdit([2], {
+        N1: 'Servicos',
+        N2: '',
+        N3: '',
+        N4: '',
+        contributeToKB: true,
+      });
+    });
+
+    // Second edit: set N3 only — should keep N1='Servicos' from first edit
+    act(() => {
+      result.current.bulkEdit([2], {
+        N1: '',
+        N2: '',
+        N3: 'Preventiva',
+        N4: '',
+        contributeToKB: true,
+      });
+    });
+
+    const state = result.current.getItemState(2);
+    expect(state.decision).toBe('edited');
+    expect(state.editedN1).toBe('Servicos');       // from first edit
+    expect(state.editedN2).toBe('Ferramentas');     // from original
+    expect(state.editedN3).toBe('Preventiva');      // from second edit
+    expect(state.editedN4).toBe('Chave Fenda');     // from original
+  });
 });

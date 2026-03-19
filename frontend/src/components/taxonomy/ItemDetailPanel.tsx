@@ -45,8 +45,12 @@ function BulkEditPanel({
   const n3Options = getN3Options(n1, n2);
   const n4Options = getN4Options(n1, n2, n3);
 
-  const canApply = n1 || n2 || n3 || n4;
-  const isPartial = canApply && !(n1 && n2 && n3 && n4);
+  // Com hierarquia: exige todos os campos (N4 precisa ser válido no caminho)
+  // Sem hierarquia (UNSPSC/aberto): permite edição parcial — campos vazios preservam original
+  const canApply = hasHierarchy
+    ? !!(n1 && n2 && n3 && n4)
+    : !!(n1 || n2 || n3 || n4);
+  const isPartial = !hasHierarchy && canApply && !(n1 && n2 && n3 && n4);
 
   const handleApply = () => {
     onBulkEdit({ N1: n1, N2: n2, N3: n3, N4: n4, contributeToKB });
