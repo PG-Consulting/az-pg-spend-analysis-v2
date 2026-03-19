@@ -182,19 +182,21 @@ export function useReview({ sessionId, items, onComplete }: UseReviewOptions) {
     setReviewStates(prev => {
       const next = new Map(prev);
       for (const idx of indices) {
+        const original = items.find(i => i.index === idx);
+        const prevState = prev.get(idx);
         next.set(idx, {
           decision: 'edited',
-          editedN1: edits.N1,
-          editedN2: edits.N2,
-          editedN3: edits.N3,
-          editedN4: edits.N4,
+          editedN1: edits.N1 || prevState?.editedN1 || original?.N1 || '',
+          editedN2: edits.N2 || prevState?.editedN2 || original?.N2 || '',
+          editedN3: edits.N3 || prevState?.editedN3 || original?.N3 || '',
+          editedN4: edits.N4 || prevState?.editedN4 || original?.N4 || '',
           contributeToKB: edits.contributeToKB,
         });
       }
       return next;
     });
     setSelectedIndices(new Set());
-  }, []);
+  }, [items]);
 
   const bulkApprove = useCallback((indices: number[]) => {
     setReviewStates(prev => {

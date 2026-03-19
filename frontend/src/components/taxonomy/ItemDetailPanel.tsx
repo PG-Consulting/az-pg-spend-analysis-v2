@@ -45,7 +45,8 @@ function BulkEditPanel({
   const n3Options = getN3Options(n1, n2);
   const n4Options = getN4Options(n1, n2, n3);
 
-  const canApply = n1 && n2 && n3 && n4;
+  const canApply = n1 || n2 || n3 || n4;
+  const isPartial = canApply && !(n1 && n2 && n3 && n4);
 
   const handleApply = () => {
     onBulkEdit({ N1: n1, N2: n2, N3: n3, N4: n4, contributeToKB });
@@ -138,6 +139,13 @@ function BulkEditPanel({
             Contribuir para Base de Conhecimento
           </span>
         </label>
+
+        {/* Hint for partial edit */}
+        {isPartial && (
+          <p className="text-[11px] text-primary-400 italic">
+            Campos vazios mantêm o valor original de cada item.
+          </p>
+        )}
 
         {/* Divider */}
         <div className="border-t border-gray-100" />
