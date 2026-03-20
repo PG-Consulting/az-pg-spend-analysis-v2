@@ -53,7 +53,7 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     instruction = body.get("instruction", "")
 
     if not items:
-        return json_response({"results": []})
+        return json_response({"results": []}, request=req)
 
     models_dir = get_models_dir()
 
@@ -134,7 +134,7 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             }
         )
 
-    return json_response({"results": results})
+    return json_response({"results": results}, request=req)
 
 
 @review_bp.route(
@@ -350,5 +350,6 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
             },
             "download_filename": download_filename if rows else None,
             "file_content_base64": file_b64 if rows else None,
-        }
+        },
+        request=req,
     )

@@ -4,26 +4,44 @@ import { useEffect, useState } from 'react';
 import { PublicClientApplication, EventType } from '@azure/msal-browser';
 import { MsalProvider } from '@azure/msal-react';
 import { msalConfig } from '@/lib/msal-config';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, DevAuthProvider } from '@/contexts/AuthContext';
 
-const msalInstance = new PublicClientApplication(msalConfig);
+const isAuthConfigured = !!msalConfig.auth.clientId;
+
+// Only create MSAL instance when auth is configured
+const msalInstance = isAuthConfigured ? new PublicClientApplication(msalConfig) : null;
 
 export default function App({ Component, pageProps }: AppProps) {
+  // --- Dev mode: skip MSAL entirely ---
+  if (!isAuthConfigured) {
+    return (
+      <DevAuthProvider>
+        <Component {...pageProps} />
+      </DevAuthProvider>
+    );
+  }
+
+  // --- Production mode: full MSAL flow ---
+  return <MsalApp Component={Component} pageProps={pageProps} />;
+}
+
+/** Separated component so hooks only run when MSAL is active. */
+function MsalApp({ Component, pageProps }: { Component: AppProps['Component']; pageProps: any }) {
   const [isReady, setIsReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
-    msalInstance.initialize().then(() => {
+    msalInstance!.initialize().then(() => {
       // Set active account if not already set
-      if (!msalInstance.getActiveAccount() && msalInstance.getAllAccounts().length > 0) {
-        msalInstance.setActiveAccount(msalInstance.getAllAccounts()[0]);
+      if (!msalInstance!.getActiveAccount() && msalInstance!.getAllAccounts().length > 0) {
+        msalInstance!.setActiveAccount(msalInstance!.getAllAccounts()[0]);
       }
 
       // Listen for sign-in events to set active account
-      msalInstance.addEventCallback((event) => {
+      msalInstance!.addEventCallback((event) => {
         if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
           const payload = event.payload as { account: any };
-          msalInstance.setActiveAccount(payload.account);
+          msalInstance!.setActiveAccount(payload.account);
         }
       });
 
@@ -63,7 +81,7 @@ export default function App({ Component, pageProps }: AppProps) {
   }
 
   return (
-    <MsalProvider instance={msalInstance}>
+    <MsalProvider instance={msalInstance!}>
       <AuthProvider>
         <Component {...pageProps} />
       </AuthProvider>

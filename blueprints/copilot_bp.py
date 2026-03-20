@@ -60,7 +60,7 @@ def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
         logger.info(
             f"Direct Line conversation created: {conversation_data.get('conversationId')}"
         )
-        return json_response(conversation_data)
+        return json_response(conversation_data, request=req)
     else:
         logger.error(f"Direct Line API error: {response.status_code} - {response.text}")
         raise ExternalServiceError("Direct Line", "Failed to create conversation")
@@ -90,7 +90,7 @@ def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
     engine = MemoryEngine()
     results = engine.search(query)
 
-    return json_response(results)
+    return json_response(results, request=req)
 
 
 @copilot_bp.route(
@@ -129,6 +129,6 @@ def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
     success = engine.delete_rule(rule_id)
 
     if success:
-        return json_response({"success": True})
+        return json_response({"success": True}, request=req)
     else:
         raise NotFoundError("Rule", rule_id)

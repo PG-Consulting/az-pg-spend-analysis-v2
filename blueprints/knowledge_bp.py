@@ -62,7 +62,7 @@ def get_knowledge_base_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         page=page, page_size=page_size, filters=filters if filters else None
     )
 
-    return json_response(result)
+    return json_response(result, request=req)
 
 
 @knowledge_bp.route(
@@ -106,6 +106,7 @@ def add_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(
         {"success": True, "added": added, "entry_count": len(kb.entries)},
         status_code=201,
+        request=req,
     )
 
 
@@ -156,7 +157,7 @@ def update_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Entry", entry_id)
 
-    return json_response({"success": True})
+    return json_response({"success": True}, request=req)
 
 
 @knowledge_bp.route(
@@ -186,7 +187,7 @@ def delete_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Entry", entry_id)
 
-    return json_response({"success": True})
+    return json_response({"success": True}, request=req)
 
 
 @knowledge_bp.route(
@@ -248,7 +249,7 @@ def get_kb_coverage_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     coverage["sector_entries"] = sector_entry_count
     coverage["merged_entries"] = len(merged)
 
-    return json_response(coverage)
+    return json_response(coverage, request=req)
 
 
 @knowledge_bp.route(
@@ -274,7 +275,7 @@ def get_kb_versions_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     kb = KnowledgeBase(project_id, models_dir)
     versions = kb.list_versions()
 
-    return json_response(versions)
+    return json_response(versions, request=req)
 
 
 @knowledge_bp.route(
@@ -304,7 +305,7 @@ def rollback_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Version", version_id)
 
-    return json_response({"success": True, "entry_count": len(kb.entries)})
+    return json_response({"success": True, "entry_count": len(kb.entries)}, request=req)
 
 
 @knowledge_bp.route(
@@ -335,7 +336,8 @@ def export_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             "entry_count": len(kb.entries),
             "filename": f"knowledge_base_{project_id}.xlsx",
             "file_content_base64": file_b64,
-        }
+        },
+        request=req,
     )
 
 
@@ -371,7 +373,8 @@ def import_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     result = kb.import_xlsx(file_bytes)
 
     return json_response(
-        {"success": True, "added": result["added"], "total": result["total"]}
+        {"success": True, "added": result["added"], "total": result["total"]},
+        request=req,
     )
 
 
@@ -416,7 +419,7 @@ def get_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         page=page, page_size=page_size, filters=filters if filters else None
     )
 
-    return json_response(result)
+    return json_response(result, request=req)
 
 
 @knowledge_bp.route(
@@ -447,7 +450,7 @@ def get_sector_kb_coverage_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
     coverage = kb.get_coverage(hierarchy)
 
-    return json_response(coverage)
+    return json_response(coverage, request=req)
 
 
 @knowledge_bp.route(
@@ -472,7 +475,7 @@ def get_sector_kb_versions_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
     versions = kb.list_versions()
 
-    return json_response(versions)
+    return json_response(versions, request=req)
 
 
 @knowledge_bp.route(
@@ -504,7 +507,8 @@ def export_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             "entry_count": len(kb.entries),
             "filename": f"knowledge_base_sector_{sector_name}.xlsx",
             "file_content_base64": file_b64,
-        }
+        },
+        request=req,
     )
 
 
@@ -540,7 +544,8 @@ def import_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     result = kb.import_xlsx(file_bytes)
 
     return json_response(
-        {"success": True, "added": result["added"], "total": result["total"]}
+        {"success": True, "added": result["added"], "total": result["total"]},
+        request=req,
     )
 
 
@@ -590,7 +595,7 @@ def update_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Entry", entry_id)
 
-    return json_response({"success": True})
+    return json_response({"success": True}, request=req)
 
 
 @knowledge_bp.route(
@@ -620,7 +625,7 @@ def delete_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Entry", entry_id)
 
-    return json_response({"success": True})
+    return json_response({"success": True}, request=req)
 
 
 @knowledge_bp.route(
@@ -652,7 +657,7 @@ def rollback_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if not success:
         raise NotFoundError("Version", version_id)
 
-    return json_response({"success": True, "entry_count": len(kb.entries)})
+    return json_response({"success": True, "entry_count": len(kb.entries)}, request=req)
 
 
 @knowledge_bp.route(
@@ -698,6 +703,7 @@ def add_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(
         {"success": True, "added": added, "entry_count": len(kb.entries)},
         status_code=201,
+        request=req,
     )
 
 
@@ -735,4 +741,4 @@ def promote_to_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 
     promoted = project_kb.promote_entries_to(sector_kb, entry_ids)
 
-    return json_response({"success": True, "promoted_count": promoted})
+    return json_response({"success": True, "promoted_count": promoted}, request=req)

@@ -262,7 +262,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
             "Será processado pelo cleanup automático (até 1h)."
         )
 
-    return json_response(response_data, status_code=202)
+    return json_response(response_data, status_code=202, request=req)
 
 
 @classification_bp.route(
@@ -327,7 +327,7 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
             response["status"] = "ERROR"
             response["message"] = "Result file missing."
 
-    return json_response(response)
+    return json_response(response, request=req)
 
 
 @classification_bp.route(
@@ -366,7 +366,7 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
 
     logger.info(f"[CancelJob] Job {job_id} cancelled (was {current_status})")
 
-    return json_response({"jobId": job_id, "status": "CANCELLED"})
+    return json_response({"jobId": job_id, "status": "CANCELLED"}, request=req)
 
 
 @classification_bp.route(
@@ -489,7 +489,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
         "summary": summary,
     }
 
-    return json_response(response)
+    return json_response(response, request=req)
 
 
 @classification_bp.route(
@@ -631,5 +631,6 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
         {
             "filename": output_filename,
             "file_content_base64": excel_b64,
-        }
+        },
+        request=req,
     )

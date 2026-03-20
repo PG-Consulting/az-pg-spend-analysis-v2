@@ -34,7 +34,7 @@ def list_sectors_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
     models_dir = get_models_dir()
     sectors = list_sectors(models_dir)
-    return json_response(sectors)
+    return json_response(sectors, request=req)
 
 
 @projects_bp.route(
@@ -58,7 +58,7 @@ def create_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         raise ValidationError("name and display_name are required")
     models_dir = get_models_dir()
     sector = create_sector(name, display_name, hierarchy, models_dir)
-    return json_response(sector, 201)
+    return json_response(sector, 201, request=req)
 
 
 @projects_bp.route(
@@ -80,7 +80,7 @@ def update_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         raise ValidationError("name is required")
     models_dir = get_models_dir()
     sector = update_sector(name, body, models_dir)
-    return json_response(sector)
+    return json_response(sector, request=req)
 
 
 @projects_bp.route(
@@ -105,7 +105,7 @@ def delete_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         raise ConflictError(str(e))
     if not result:
         raise NotFoundError("Sector", sector_name)
-    return json_response({"success": True, **result})
+    return json_response({"success": True, **result}, request=req)
 
 
 @projects_bp.route(
@@ -121,7 +121,7 @@ def list_projects_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
     models_dir = get_models_dir()
     projects = list_projects(models_dir)
-    return json_response(projects)
+    return json_response(projects, request=req)
 
 
 @projects_bp.route(
@@ -142,7 +142,7 @@ def create_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
     project = create_project(body, models_dir)
-    return json_response(project, 201)
+    return json_response(project, 201, request=req)
 
 
 @projects_bp.route(
@@ -165,7 +165,7 @@ def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
     project = update_project(project_id, body, models_dir)
-    return json_response(project)
+    return json_response(project, request=req)
 
 
 @projects_bp.route(
@@ -186,7 +186,7 @@ def delete_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     success = delete_project(project_id, models_dir)
     if not success:
         raise NotFoundError("Project", project_id)
-    return json_response({"success": True})
+    return json_response({"success": True}, request=req)
 
 
 @projects_bp.route(
@@ -211,5 +211,6 @@ def get_project_hierarchy_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             "hierarchy": hierarchy,
             "source": source,
             "has_hierarchy": hierarchy is not None,
-        }
+        },
+        request=req,
     )

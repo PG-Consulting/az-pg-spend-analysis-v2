@@ -163,7 +163,8 @@ def TrainModel(req: func.HttpRequest) -> func.HttpResponse:
                     "f1_score": 1.0,
                     "confusion_matrix": "N/A - Regras Aprendidas",
                     "classification_report": "Memoria Atualizada",
-                }
+                },
+                request=req,
             )
         else:
             raise RuntimeError(f"Erro na ingestao de memoria: {result['message']}")
@@ -306,7 +307,8 @@ def TrainModel(req: func.HttpRequest) -> func.HttpResponse:
             "version": next_version,
             "total_samples": len(df_combined),
             "report": report,
-        }
+        },
+        request=req,
     )
 
 
@@ -334,11 +336,11 @@ def GetModelHistory(req: func.HttpRequest) -> func.HttpResponse:
     history_file = os.path.join(models_dir, sector, "model_history.json")
 
     if not os.path.exists(history_file):
-        return json_response([])
+        return json_response([], request=req)
 
     with open(history_file, "r", encoding="utf-8") as f:
         history = json.load(f)
-    return json_response(history)
+    return json_response(history, request=req)
 
 
 @models_bp.route(
@@ -399,7 +401,9 @@ def SetActiveModel(req: func.HttpRequest) -> func.HttpResponse:
         except Exception as e:
             logger.error(f"Error updating model history status: {e}")
 
-    return json_response({"message": f"Successfully rolled back to {version_id}"})
+    return json_response(
+        {"message": f"Successfully rolled back to {version_id}"}, request=req
+    )
 
 
 @models_bp.route(
@@ -563,7 +567,7 @@ def GetModelInfo(req: func.HttpRequest) -> func.HttpResponse:
         "comparison": comparison,
     }
 
-    return json_response(response)
+    return json_response(response, request=req)
 
 
 @models_bp.route(
@@ -606,7 +610,8 @@ def GetTrainingData(req: func.HttpRequest) -> func.HttpResponse:
 
     if not os.path.exists(master_file):
         return json_response(
-            {"data": [], "total": 0, "page": page, "page_size": page_size}
+            {"data": [], "total": 0, "page": page, "page_size": page_size},
+            request=req,
         )
 
     df = pd.read_csv(master_file)
@@ -656,7 +661,7 @@ def GetTrainingData(req: func.HttpRequest) -> func.HttpResponse:
         "versions": versions,
     }
 
-    return json_response(response)
+    return json_response(response, request=req)
 
 
 @models_bp.route(
@@ -766,5 +771,6 @@ def DeleteTrainingData(req: func.HttpRequest) -> func.HttpResponse:
     df.to_csv(master_file, index=False)
 
     return json_response(
-        {"message": f"Deleted {deleted_count} rows", "remaining": len(df)}
+        {"message": f"Deleted {deleted_count} rows", "remaining": len(df)},
+        request=req,
     )

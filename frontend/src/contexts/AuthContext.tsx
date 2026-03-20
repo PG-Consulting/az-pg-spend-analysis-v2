@@ -180,6 +180,27 @@ function LoginPage() {
 // AuthProvider
 // ---------------------------------------------------------------------------
 
+/**
+ * DevAuthProvider — used when AZURE_AD_CLIENT_ID is not configured.
+ * Mirrors backend SKIP_AUTH=true behavior: injects mock admin user.
+ */
+export function DevAuthProvider({ children }: { children: React.ReactNode }) {
+  const mockUser: UserProfile = { email: 'dev@local', name: 'Dev User', role: 'admin' };
+  return (
+    <AuthContext.Provider
+      value={{
+        user: mockUser,
+        isAdmin: true,
+        isLoading: false,
+        getAccessToken: async () => null,
+        logout: () => window.location.reload(),
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { instance, accounts, inProgress } = useMsal();
   const isAuthenticated = useIsAuthenticated();
