@@ -1,5 +1,5 @@
 /**
- * @fileoverview IndexedDB persistence layer for Spend Analysis v3.
+ * @fileoverview IndexedDB persistence layer for Spend.AI v3.
  *
  * Stores:
  *   - sessions: taxonomy classification sessions (keyed by sessionId)

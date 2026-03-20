@@ -7,7 +7,7 @@ export default function Home() {
   useEffect(() => { router.replace('/taxonomy') }, [router])
   return (
     <Head>
-      <title>Spend Analysis | PG Consultoria</title>
+      <title>Spend.AI | PG Consultoria</title>
     </Head>
   )
 }

@@ -15,7 +15,8 @@ from src.utils import (
     INCOMPLETE_VALUES,
 )
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
-from src.api_helpers import json_response, handle_errors
+from src.api_helpers import json_response, options_response, handle_errors
+from src.auth import require_auth
 from src.exceptions import NotFoundError, ValidationError
 from src.file_lock import read_status
 
@@ -24,9 +25,12 @@ review_bp = func.Blueprint()
 
 
 @review_bp.route(
-    route="ReclassifyItems", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS
+    route="ReclassifyItems",
+    methods=["POST", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("ReclassifyItems")
+@require_auth
 def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/ReclassifyItems
     Body: {
@@ -37,6 +41,9 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     }
     Returns: {results: [{index, N1, N2, N3, N4, source, confidence}]}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "POST, OPTIONS")
+
     body = req.get_json()
     job_id = body.get("jobId", "")
     if not job_id:
@@ -132,10 +139,11 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 
 @review_bp.route(
     route="ApproveClassifications",
-    methods=["POST"],
+    methods=["POST", "OPTIONS"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("ApproveClassifications")
+@require_auth
 def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/ApproveClassifications
     Body: {
@@ -160,6 +168,9 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
 
     Returns: {success, kb_added, summary, download_filename, file_content_base64}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "POST, OPTIONS")
+
     body = req.get_json()
     job_id = body.get("jobId", "")
     if not job_id:

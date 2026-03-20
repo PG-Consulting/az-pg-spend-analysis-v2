@@ -1,3 +1,3 @@
 """
-ML-enhanced classification modules for Spend Analysis.
+ML-enhanced classification modules for Spend.AI.
 """

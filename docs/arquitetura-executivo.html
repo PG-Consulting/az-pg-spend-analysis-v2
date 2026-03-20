@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spend Analysis AI — Arquitetura</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy-900: #0f0a2e;
+      --navy-800: #1c0957;
+      --navy-700: #2a1070;
+      --purple-500: #9b51e0;
+      --cyan-500: #0693e3;
+      --cyan-300: #5ec1f5;
+      --mint-500: #2db17f;
+      --orange-500: #f59e0b;
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-800);
+      line-height: 1.6;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      background: linear-gradient(135deg, var(--navy-900) 0%, var(--navy-800) 50%, var(--purple-500) 100%);
+      color: white;
+      padding: 56px 60px 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(6,147,227,0.12) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .hero-content { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(6,147,227,0.2);
+      border: 1px solid rgba(6,147,227,0.4);
+      color: var(--cyan-300);
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: 40px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #fff 60%, var(--cyan-300));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 17px;
+      font-weight: 300;
+      color: rgba(255,255,255,0.7);
+      max-width: 680px;
+    }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 60px; }
+    section { padding: 56px 0; }
+    section + section { border-top: 1px solid var(--gray-200); }
+    .section-label {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--purple-500);
+      margin-bottom: 8px;
+    }
+    .section-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 6px;
+    }
+    .section-subtitle {
+      font-size: 15px;
+      color: var(--gray-500);
+      margin-bottom: 32px;
+      max-width: 650px;
+    }
+
+    /* ── DIAGRAM ── */
+    .diagram-card {
+      background: white;
+      border-radius: 14px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 6px 20px rgba(0,0,0,0.03);
+      border: 1px solid var(--gray-200);
+      overflow-x: auto;
+    }
+    .diagram-card .mermaid { display: flex; justify-content: center; }
+
+    /* ── PHASES ── */
+    .phases {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+    .phase {
+      border-radius: 12px;
+      padding: 24px;
+      border: 2px solid;
+    }
+    .phase.phase-kb {
+      background: linear-gradient(135deg, rgba(45,177,127,0.04), rgba(45,177,127,0.08));
+      border-color: rgba(45,177,127,0.3);
+    }
+    .phase.phase-llm {
+      background: linear-gradient(135deg, rgba(155,81,224,0.04), rgba(155,81,224,0.08));
+      border-color: rgba(155,81,224,0.3);
+    }
+    .phase-tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .phase-kb .phase-tag { background: rgba(45,177,127,0.15); color: #1a8a5e; }
+    .phase-llm .phase-tag { background: rgba(155,81,224,0.15); color: #7b3ab5; }
+    .phase h3 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .phase-kb h3 { color: #1a8a5e; }
+    .phase-llm h3 { color: #7b3ab5; }
+    .phase p { font-size: 13px; color: var(--gray-600); }
+
+    /* ── LOOP HIGHLIGHT ── */
+    .loop-highlight {
+      background: linear-gradient(135deg, var(--navy-900), var(--navy-800));
+      border-radius: 14px;
+      padding: 32px;
+      color: white;
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+    .loop-item {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .loop-item-icon { font-size: 24px; margin-bottom: 8px; }
+    .loop-item h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .loop-item p { font-size: 12px; color: rgba(255,255,255,0.5); }
+
+    /* ── STACK ── */
+    .stack-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+    }
+    .tech-badge {
+      display: inline-block;
+      background: white;
+      border: 1px solid var(--gray-200);
+      color: var(--gray-700);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .tech-badge.highlight {
+      background: rgba(155,81,224,0.08);
+      border-color: rgba(155,81,224,0.25);
+      color: var(--purple-500);
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      background: var(--gray-100);
+      border-top: 1px solid var(--gray-200);
+      padding: 24px 60px;
+      text-align: center;
+      color: var(--gray-500);
+      font-size: 12px;
+    }
+    .footer strong { color: var(--gray-700); }
+
+    @media (max-width: 900px) {
+      .hero { padding: 36px 24px; }
+      .hero h1 { font-size: 28px; }
+      .container { padding: 0 24px; }
+      .phases { grid-template-columns: 1fr; }
+      .loop-highlight { grid-template-columns: 1fr; }
+      .diagram-card { padding: 16px; }
+    }
+    @media print {
+      .hero { padding: 32px; }
+      section { padding: 32px 0; }
+      .diagram-card { box-shadow: none; }
+    }
+    .mermaid svg { max-width: 100%; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════ HERO ══════════ -->
+<header class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">PG Consultoria &mdash; AI Team</div>
+    <h1>Spend Analysis AI</h1>
+    <p>Classificação automatizada de gastos corporativos com IA generativa e aprendizado contínuo a partir da revisão humana.</p>
+  </div>
+</header>
+
+<!-- ══════════ ARQUITETURA ══════════ -->
+<section>
+  <div class="container">
+    <span class="section-label">Arquitetura</span>
+    <h2 class="section-title">Visão Geral da Plataforma</h2>
+    <p class="section-subtitle">Frontend web na Azure, backend serverless em Python, IA via Grok (xAI) e base de conhecimento com aprendizado por projeto e setor.</p>
+
+    <div class="diagram-card">
+      <div class="mermaid">
+graph TB
+  BROWSER["👤 Consultor<br/>Navegador Web"]
+
+  subgraph AZURE["☁️ Microsoft Azure"]
+    direction TB
+    FRONT["🖥️ Frontend<br/>Next.js · React · TypeScript"]
+    API["⚡ Backend Serverless<br/>Azure Functions · Python"]
+    WORKER["⏱️ Worker Assíncrono<br/>Processamento em lote"]
+    STORE[("💾 Armazenamento<br/>Azure File Share")]
+  end
+
+  subgraph INTELIGENCIA["🧠 Motor de Classificação"]
+    KB["📚 Base de Conhecimento<br/>KB Projeto + KB Setor<br/>TF-IDF · Cosine Similarity"]
+    GROK["🤖 Grok · xAI<br/>IA Generativa com<br/>raciocínio avançado"]
+  end
+
+  BROWSER -->|HTTPS| FRONT
+  FRONT -->|API REST| API
+  API --> WORKER
+  WORKER --> KB
+  WORKER --> GROK
+  API --> STORE
+  WORKER --> STORE
+  KB --> STORE
+
+  style AZURE fill:#f0f4ff,stroke:#0693e3,color:#1e293b
+  style INTELIGENCIA fill:#faf5ff,stroke:#9b51e0,color:#1e293b
+      </div>
+    </div>
+
+    <div class="stack-row">
+      <span class="tech-badge">Next.js 14</span>
+      <span class="tech-badge">React 18</span>
+      <span class="tech-badge">TypeScript</span>
+      <span class="tech-badge">Azure Functions</span>
+      <span class="tech-badge">Python</span>
+      <span class="tech-badge highlight">Grok / xAI</span>
+      <span class="tech-badge highlight">TF-IDF + RAG</span>
+      <span class="tech-badge">Azure File Share</span>
+      <span class="tech-badge">GitHub Actions</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ CLASSIFICAÇÃO ══════════ -->
+<section>
+  <div class="container">
+    <span class="section-label">Classificação</span>
+    <h2 class="section-title">Como Funciona</h2>
+    <p class="section-subtitle">Classificação em duas fases: primeiro busca na base de conhecimento acumulado; se não encontrar, aciona a IA. Revisões humanas retroalimentam a base.</p>
+
+    <div class="phases">
+      <div class="phase phase-kb">
+        <span class="phase-tag">Fase 1 &mdash; Base de Conhecimento</span>
+        <h3>Match direto (sem custo de IA)</h3>
+        <p>Busca itens similares já classificados. Se a similaridade for ≥ 90%, aplica a classificação instantaneamente. Quanto mais o sistema é usado, mais itens caem nesta fase.</p>
+      </div>
+      <div class="phase phase-llm">
+        <span class="phase-tag">Fase 2 &mdash; IA Generativa (Grok)</span>
+        <h3>Classificação inteligente</h3>
+        <p>Itens novos vão para o Grok com exemplos relevantes da base como contexto (Few-Shot RAG). A IA classifica em 4 níveis (N1→N4) e o resultado é validado contra a hierarquia do cliente.</p>
+      </div>
+    </div>
+
+    <div class="diagram-card">
+      <div class="mermaid">
+flowchart LR
+  A["📁 Upload<br/>Excel de gastos"] --> B["📦 Divisão<br/>em lotes"]
+  B --> C{"🔍 Fase 1<br/>Busca na KB"}
+  C -->|"≥ 90% similar<br/>Match direto"| D["✅ Classificado<br/>Custo zero"]
+  C -->|"Sem match"| E["🤖 Fase 2<br/>IA Grok +<br/>exemplos da KB"]
+  E --> F["📐 Validação<br/>hierárquica"]
+  F --> G
+  D --> G["📊 Resultado<br/>N1 · N2 · N3 · N4"]
+  G --> H["👁️ Revisão<br/>Humana"]
+  H -->|"Aprova / Corrige"| I["💾 Atualiza<br/>Base de Conhecimento"]
+  I -->|"Retroalimenta"| C
+  H --> J["📥 Excel<br/>Final"]
+
+  style C fill:#ecfdf5,stroke:#2db17f,color:#1e293b
+  style D fill:#ecfdf5,stroke:#2db17f,color:#1e293b
+  style E fill:#f3e8ff,stroke:#9b51e0,color:#1e293b
+  style H fill:#fef3c7,stroke:#f59e0b,color:#1e293b
+  style I fill:#dbeafe,stroke:#3b82f6,color:#1e293b
+      </div>
+    </div>
+
+    <div class="loop-highlight">
+      <div class="loop-item">
+        <div class="loop-item-icon">💰</div>
+        <h4>Custo decrescente</h4>
+        <p>Mais matches na KB = menos chamadas à IA paga</p>
+      </div>
+      <div class="loop-item">
+        <div class="loop-item-icon">🎯</div>
+        <h4>Precisão crescente</h4>
+        <p>Correções humanas viram exemplos prioritários</p>
+      </div>
+      <div class="loop-item">
+        <div class="loop-item-icon">🏢</div>
+        <h4>Conhecimento setorial</h4>
+        <p>KB do setor é compartilhada entre projetos do mesmo ramo</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <strong>Spend Analysis AI</strong> &mdash; PG Consultoria &bull; AI Team
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#f3e8ff',
+      primaryBorderColor: '#9b51e0',
+      primaryTextColor: '#1e293b',
+      secondaryColor: '#e8f4fd',
+      secondaryBorderColor: '#0693e3',
+      tertiaryColor: '#ecfdf5',
+      tertiaryBorderColor: '#2db17f',
+      lineColor: '#94a3b8',
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '14px',
+      nodeBorder: '2px',
+      clusterBkg: '#f8fafc',
+      clusterBorder: '#e2e8f0',
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 16,
+      nodeSpacing: 40,
+      rankSpacing: 50,
+    }
+  });
+</script>
+
+</body>
+</html>

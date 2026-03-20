@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Configuração Azure — Spend Analysis v3</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #222; max-width: 700px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 20pt; margin-bottom: 4px; }
+  h2 { font-size: 13pt; color: #555; margin: 30px 0 8px 0; border-bottom: 2px solid #0693e3; padding-bottom: 4px; }
+  p, li { margin: 4px 0; }
+  ol { margin-left: 20px; }
+  code { font-family: Consolas, monospace; background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 10pt; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 10pt; }
+  th { background: #f8f8f8; }
+  .alert { background: #fff3cd; border-left: 4px solid #f59e0b; padding: 8px 12px; margin: 12px 0; border-radius: 4px; font-size: 10pt; }
+  .danger { background: #fee; border-left: 4px solid #e44; padding: 8px 12px; margin: 12px 0; border-radius: 4px; font-size: 10pt; }
+  .subtitle { color: #666; font-size: 12pt; margin-bottom: 20px; }
+  .meta { color: #999; font-size: 9pt; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 6px; }
+  .fill { display: inline-block; width: 280px; border-bottom: 1px solid #999; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+
+<h1>Configuração do Azure Entra ID</h1>
+<p class="subtitle">Spend Analysis v3 — Liberação de acesso via grupo de segurança</p>
+
+<p><strong>Para:</strong> Diretor(a) / Administrador Azure &nbsp;|&nbsp; <strong>Tempo:</strong> ~20 min</p>
+
+<!-- 1 -->
+<h2>1. Registrar o aplicativo</h2>
+<ol>
+  <li>Acesse <strong>entra.microsoft.com</strong></li>
+  <li><strong>Aplicativos</strong> → <strong>Registros de aplicativo</strong> → <strong>+ Novo registro</strong></li>
+  <li>Preencha:
+    <table>
+      <tr><td>Nome</td><td><code>Spend Analysis v3</code></td></tr>
+      <tr><td>Tipos de conta</td><td><strong>Contas somente neste diretório organizacional</strong></td></tr>
+      <tr><td>Plataforma</td><td><strong>SPA (Aplicativo de Página Única)</strong></td></tr>
+      <tr><td>URI de redirecionamento</td><td><code>https://salmon-beach-05662180f.6.azurestaticapps.net</code></td></tr>
+    </table>
+  </li>
+  <li>Clique <strong>Registrar</strong></li>
+  <li>Vá em <strong>Permissões de API</strong> → confirme que <code>User.Read</code> está listada → clique <strong>Conceder consentimento de administrador</strong></li>
+</ol>
+
+<div class="alert">
+  <strong>Anote</strong> na página "Visão geral" do app: <strong>ID do aplicativo (cliente)</strong> e <strong>ID do diretório (locatário)</strong>.
+</div>
+
+<!-- 2 -->
+<h2>2. Criar o grupo de segurança</h2>
+<ol>
+  <li><strong>Grupos</strong> → <strong>+ Novo grupo</strong></li>
+  <li>Preencha:
+    <table>
+      <tr><td>Tipo</td><td><strong>Segurança</strong></td></tr>
+      <tr><td>Nome</td><td><code>SpendAnalysis-Usuarios</code></td></tr>
+      <tr><td>Associação</td><td><strong>Atribuído</strong></td></tr>
+    </table>
+  </li>
+  <li>Em <strong>Membros</strong>, adicione todos os consultores e admins que devem ter acesso</li>
+  <li>Clique <strong>Criar</strong></li>
+</ol>
+
+<div class="alert">
+  <strong>Anote</strong> o <strong>ID do objeto</strong> do grupo (na página "Visão geral" do grupo).
+</div>
+
+<!-- 3 -->
+<h2>3. Restringir acesso ao grupo</h2>
+
+<div class="danger">
+  <strong>Passo mais importante.</strong> Sem ele, qualquer pessoa do tenant consegue logar.
+</div>
+
+<ol>
+  <li><strong>Aplicativos</strong> → <strong>Aplicativos empresariais</strong> → abra <strong>Spend Analysis v3</strong></li>
+  <li>Em <strong>Propriedades</strong>: mude <strong>"Atribuição de usuário obrigatória?"</strong> para <strong>Sim</strong> → <strong>Salvar</strong></li>
+  <li>Em <strong>Usuários e grupos</strong> → <strong>+ Adicionar</strong> → selecione <code>SpendAnalysis-Usuarios</code> → <strong>Atribuir</strong></li>
+</ol>
+
+<!-- 4 -->
+<h2>4. Incluir grupos no token</h2>
+<ol>
+  <li>Volte em <strong>Registros de aplicativo</strong> → <strong>Spend Analysis v3</strong> → <strong>Manifesto</strong></li>
+  <li>Localize <code>"groupMembershipClaims"</code> e altere de <code>null</code> para <code>"SecurityGroup"</code></li>
+  <li><strong>Salvar</strong></li>
+</ol>
+
+<!-- 5 -->
+<h2>5. Enviar para a equipe técnica</h2>
+
+<table>
+  <tr><th>Nome</th><th>Valor</th></tr>
+  <tr><td><code>TENANT_ID</code> (ID do diretório)</td><td class="fill">&nbsp;</td></tr>
+  <tr><td><code>CLIENT_ID</code> (ID do aplicativo)</td><td class="fill">&nbsp;</td></tr>
+  <tr><td><code>GROUP_ID</code> (ID do objeto do grupo)</td><td class="fill">&nbsp;</td></tr>
+</table>
+
+<!-- GESTÃO -->
+<h2>Gestão futura de acesso</h2>
+<p><strong>Adicionar usuário:</strong> Grupos → SpendAnalysis-Usuarios → Membros → + Adicionar</p>
+<p><strong>Remover usuário:</strong> Grupos → SpendAnalysis-Usuarios → Membros → selecione → Remover</p>
+
+<p class="meta">PG Consultoria — AI Team | Spend Analysis v3 | 20/03/2026 | Confidencial</p>
+
+</body>
+</html>

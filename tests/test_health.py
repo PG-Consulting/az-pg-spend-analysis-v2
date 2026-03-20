@@ -123,7 +123,7 @@ class TestHealthCheck:
         with patch("blueprints.health_bp.get_models_dir", return_value=models_dir):
             resp = HealthCheck(_MockHttpRequest())
 
-        assert resp.headers.get("Access-Control-Allow-Origin") == "*"
+        assert "Access-Control-Allow-Origin" in resp.headers
 
 
 class TestGrokProbe:

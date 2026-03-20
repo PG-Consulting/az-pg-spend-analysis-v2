@@ -1,11 +1,11 @@
 /**
- * @fileoverview HTTP API client for Spend Analysis v3.
+ * @fileoverview HTTP API client for Spend.AI v3.
  *
  * Extends v2 with project-aware classification, review workflow,
  * knowledge base management, and sector/project CRUD endpoints.
  *
- * Backward-compatible: v2 methods (trainModel, getModelHistory, etc.)
- * are preserved unchanged.
+ * Authentication: Bearer JWT token injected via axios interceptor.
+ * The token provider is set by AuthContext on initialization.
  */
 
 import axios from 'axios';
@@ -29,19 +29,26 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 /** Global timeout for all axios requests (30s) — prevents hanging requests */
 axios.defaults.timeout = 30_000;
 
-/** Function key for Azure Functions authentication (optional, for production) */
-const FUNCTION_KEY = process.env.NEXT_PUBLIC_FUNCTION_KEY || '';
+// --- Token provider ---
 
-/**
- * Generates authentication headers for Azure Functions requests.
- * Only includes the x-functions-key header when a key is configured.
- */
-const getAuthHeaders = (): Record<string, string> => {
-  if (FUNCTION_KEY) {
-    return { 'x-functions-key': FUNCTION_KEY };
+let _getToken: (() => Promise<string | null>) | null = null;
+
+/** Called by AuthContext to register the token acquisition function. */
+export function setTokenProvider(fn: () => Promise<string | null>) {
+  _getToken = fn;
+}
+
+// --- Axios interceptor: inject Bearer token automatically ---
+
+axios.interceptors.request.use(async (config) => {
+  if (_getToken) {
+    const token = await _getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
-  return {};
-};
+  return config;
+});
 
 /**
  * Converts a File object to a base64-encoded string.
@@ -82,13 +89,22 @@ export interface DirectLineToken {
  */
 export const apiClient = {
 
+  // ==================== AUTH ====================
+
+  /** Fetches the authenticated user's profile from the backend.
+   * Accepts an optional token for use before the interceptor is configured. */
+  async getUserProfile(token?: string): Promise<{ email: string; name: string; role: string }> {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await axios.get(`${API_BASE_URL}/GetUserProfile`, { headers });
+    return response.data;
+  },
+
   // ==================== V2 METHODS (UNCHANGED) ====================
 
   /** Gets a temporary Direct Line token for Copilot chat communication. */
   async getDirectLineToken(): Promise<DirectLineToken> {
-    const response = await axios.get(`${API_BASE_URL}/get-token`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.get(`${API_BASE_URL}/get-token`);
     return response.data;
   },
 
@@ -150,7 +166,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/TrainModel`,
       { fileContent, sector, filename },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -160,7 +175,6 @@ export const apiClient = {
     try {
       const response = await axios.get(`${API_BASE_URL}/GetModelHistory`, {
         params: { sector, t: Date.now() },
-        headers: getAuthHeaders(),
       });
       console.log(`[API] Model history received: ${response.data?.length} entries`);
       return response.data;
@@ -174,7 +188,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/SetActiveModel`,
       { sector, version_id: versionId },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -182,7 +195,6 @@ export const apiClient = {
   async getModelInfo(sector: string, versionId?: string): Promise<unknown> {
     const response = await axios.get(`${API_BASE_URL}/GetModelInfo`, {
       params: { sector, version_id: versionId, t: Date.now() },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -195,7 +207,6 @@ export const apiClient = {
   ): Promise<unknown> {
     const response = await axios.get(`${API_BASE_URL}/GetTrainingData`, {
       params: { sector, page, page_size: pageSize, ...filters },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -211,7 +222,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/DeleteTrainingData`,
       { sector, ...options },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -220,9 +230,7 @@ export const apiClient = {
 
   /** Lists all available sectors. */
   async getSectors(): Promise<Sector[]> {
-    const response = await axios.get(`${API_BASE_URL}/ListSectors`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.get(`${API_BASE_URL}/ListSectors`);
     return response.data;
   },
 
@@ -231,9 +239,7 @@ export const apiClient = {
     name: string;
     display_name: string;
   }): Promise<Sector> {
-    const response = await axios.post(`${API_BASE_URL}/CreateSector`, data, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/CreateSector`, data);
     return response.data;
   },
 
@@ -241,9 +247,7 @@ export const apiClient = {
 
   /** Lists all projects. */
   async getProjects(): Promise<Project[]> {
-    const response = await axios.get(`${API_BASE_URL}/ListProjects`, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.get(`${API_BASE_URL}/ListProjects`);
     return response.data;
   },
 
@@ -251,9 +255,7 @@ export const apiClient = {
   async createProject(
     data: Partial<Project> & { display_name: string; sector: string }
   ): Promise<Project> {
-    const response = await axios.post(`${API_BASE_URL}/CreateProject`, data, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/CreateProject`, data);
     return response.data;
   },
 
@@ -262,7 +264,6 @@ export const apiClient = {
     const response = await axios.put(
       `${API_BASE_URL}/UpdateProject`,
       { project_id: projectId, ...data },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -271,7 +272,6 @@ export const apiClient = {
   async deleteProject(projectId: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/DeleteProject`, {
       params: { projectId },
-      headers: getAuthHeaders(),
     });
   },
 
@@ -282,7 +282,6 @@ export const apiClient = {
   ): Promise<{ success: boolean; deleted_sector: string; deleted_projects: string[] }> {
     const { data } = await axios.delete(`${API_BASE_URL}/DeleteSector`, {
       params: { sectorName, force: force.toString() },
-      headers: getAuthHeaders(),
     });
     return data;
   },
@@ -293,7 +292,6 @@ export const apiClient = {
   ): Promise<{ hierarchy: HierarchyEntry[] | null; source: string }> {
     const response = await axios.get(`${API_BASE_URL}/GetProjectHierarchy`, {
       params: { projectId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -329,9 +327,7 @@ export const apiClient = {
 
     console.log('[API] Submitting classification job (v3)...');
 
-    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody);
 
     const jobId: string = response.data.jobId;
     console.log(`[API] Job submitted. ID: ${jobId}`);
@@ -367,9 +363,7 @@ export const apiClient = {
 
     console.log('[API] Submitting classification job (raw base64, v3)...');
 
-    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/SubmitTaxonomyJob`, requestBody);
 
     const jobId: string = response.data.jobId;
     console.log(`[API] Job submitted. ID: ${jobId}`);
@@ -380,7 +374,6 @@ export const apiClient = {
   async getJobStatus(jobId: string): Promise<JobStatusResponse> {
     const response = await axios.get(`${API_BASE_URL}/GetTaxonomyJobStatus`, {
       params: { jobId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -389,7 +382,6 @@ export const apiClient = {
   async cancelJob(jobId: string): Promise<void> {
     await axios.post(`${API_BASE_URL}/CancelJob`, null, {
       params: { jobId },
-      headers: getAuthHeaders(),
     });
   },
 
@@ -399,7 +391,6 @@ export const apiClient = {
   ): Promise<{ jobId: string; status: string; items: ClassifiedItem[]; total: number; analytics?: any; summary?: any; extra_columns?: string[] }> {
     const response = await axios.get(`${API_BASE_URL}/GetJobResults`, {
       params: { jobId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -416,9 +407,7 @@ export const apiClient = {
     items: Array<{ index: number; description: string }>;
     instruction: string;
   }): Promise<{ results: ClassifiedItem[] }> {
-    const response = await axios.post(`${API_BASE_URL}/ReclassifyItems`, params, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/ReclassifyItems`, params);
     return response.data;
   },
 
@@ -450,9 +439,7 @@ export const apiClient = {
     download_filename?: string;
     file_content_base64?: string;
   }> {
-    const response = await axios.post(`${API_BASE_URL}/ApproveClassifications`, params, {
-      headers: getAuthHeaders(),
-    });
+    const response = await axios.post(`${API_BASE_URL}/ApproveClassifications`, params);
     return response.data;
   },
 
@@ -465,13 +452,12 @@ export const apiClient = {
       const response = await axios.post(
         `${API_BASE_URL}/DownloadJobExcel`,
         { decisions },
-        { params: { jobId }, headers: await getAuthHeaders() }
+        { params: { jobId } }
       );
       return response.data;
     }
     const response = await axios.get(`${API_BASE_URL}/DownloadJobExcel`, {
       params: { jobId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -498,7 +484,6 @@ export const apiClient = {
         n4: params?.n4,
         search: params?.search,
       },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -508,7 +493,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/AddKBEntry`,
       { projectId, ...entry },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -522,7 +506,6 @@ export const apiClient = {
     const response = await axios.put(
       `${API_BASE_URL}/UpdateKBEntry`,
       { projectId, entryId, ...data },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -531,7 +514,6 @@ export const apiClient = {
   async deleteKBEntry(projectId: string, entryId: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/DeleteKBEntry`, {
       params: { projectId, entryId },
-      headers: getAuthHeaders(),
     });
   },
 
@@ -539,7 +521,6 @@ export const apiClient = {
   async getKBCoverage(projectId: string): Promise<KBCoverage> {
     const response = await axios.get(`${API_BASE_URL}/GetKBCoverage`, {
       params: { projectId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -548,7 +529,6 @@ export const apiClient = {
   async getKBVersions(projectId: string): Promise<KBVersion[]> {
     const response = await axios.get(`${API_BASE_URL}/GetKBVersions`, {
       params: { projectId },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -558,7 +538,6 @@ export const apiClient = {
     await axios.post(
       `${API_BASE_URL}/RollbackKB`,
       { projectId, versionId },
-      { headers: getAuthHeaders() }
     );
   },
 
@@ -569,7 +548,6 @@ export const apiClient = {
   async exportKB(projectId: string): Promise<string> {
     const response = await axios.get(`${API_BASE_URL}/ExportKB`, {
       params: { projectId },
-      headers: getAuthHeaders(),
     });
     return response.data.file_content_base64 as string;
   },
@@ -585,7 +563,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/ImportKB`,
       { projectId, fileContentBase64 },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -604,7 +581,6 @@ export const apiClient = {
         pageSize: params?.pageSize ?? 50,
         search: params?.search,
       },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -613,7 +589,6 @@ export const apiClient = {
   async getSectorKBCoverage(sectorName: string): Promise<KBCoverage> {
     const response = await axios.get(`${API_BASE_URL}/GetSectorKBCoverage`, {
       params: { sectorName },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -622,7 +597,6 @@ export const apiClient = {
   async getSectorKBVersions(sectorName: string): Promise<KBVersion[]> {
     const response = await axios.get(`${API_BASE_URL}/GetSectorKBVersions`, {
       params: { sectorName },
-      headers: getAuthHeaders(),
     });
     return response.data;
   },
@@ -631,7 +605,6 @@ export const apiClient = {
   async exportSectorKB(sectorName: string): Promise<string> {
     const response = await axios.get(`${API_BASE_URL}/ExportSectorKB`, {
       params: { sectorName },
-      headers: getAuthHeaders(),
     });
     return response.data.file_content_base64 as string;
   },
@@ -644,7 +617,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/ImportSectorKB`,
       { sectorName, fileContentBase64 },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -658,7 +630,6 @@ export const apiClient = {
     const response = await axios.put(
       `${API_BASE_URL}/UpdateSectorKBEntry`,
       { sectorName, entryId, ...data },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -667,7 +638,6 @@ export const apiClient = {
   async deleteSectorKBEntry(sectorName: string, entryId: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/DeleteSectorKBEntry`, {
       params: { sectorName, entryId },
-      headers: getAuthHeaders(),
     });
   },
 
@@ -676,7 +646,6 @@ export const apiClient = {
     await axios.post(
       `${API_BASE_URL}/RollbackSectorKB`,
       { sectorName, versionId },
-      { headers: getAuthHeaders() }
     );
   },
 
@@ -685,7 +654,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/AddSectorKBEntry`,
       { sectorName, ...entry },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },
@@ -699,7 +667,6 @@ export const apiClient = {
     const response = await axios.post(
       `${API_BASE_URL}/PromoteToSectorKB`,
       { projectId, sectorName, entryIds },
-      { headers: getAuthHeaders() }
     );
     return response.data;
   },

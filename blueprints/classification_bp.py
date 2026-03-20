@@ -23,6 +23,7 @@ from src.api_helpers import (
 )
 from src.exceptions import NotFoundError, ValidationError, ConflictError
 from src.file_lock import read_status, locked_status
+from src.auth import require_auth
 
 logger = logging.getLogger(__name__)
 classification_bp = func.Blueprint()
@@ -55,6 +56,7 @@ def _derive_status(row: dict) -> str:
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("SubmitTaxonomyJob")
+@require_auth
 def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/SubmitTaxonomyJob
     Accepts a file upload, splits it into chunks, and queues it for async processing.
@@ -78,7 +80,7 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
 
     # Handle CORS preflight
     if req.method == "OPTIONS":
-        return options_response("POST, OPTIONS")
+        return options_response(req, "POST, OPTIONS")
 
     logger.info("SubmitTaxonomyJob HTTP trigger processed a request.")
 
@@ -269,13 +271,14 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("GetTaxonomyJobStatus")
+@require_auth
 def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetTaxonomyJobStatus?jobId=xxx
     Polls the status of a specific job.
     Returns: status (PENDING/PROCESSING/COMPLETED/ERROR), progress %, and result if done.
     """
     if req.method == "OPTIONS":
-        return options_response("GET, OPTIONS")
+        return options_response(req, "GET, OPTIONS")
 
     job_id = req.params.get("jobId")
     if not job_id:
@@ -331,13 +334,14 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     route="CancelJob", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS
 )
 @handle_errors("CancelJob")
+@require_auth
 def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CancelJob?jobId=xxx
     Cancels a PENDING or PROCESSING job by writing CANCELLED to status.json.
     Returns 200 with {jobId, status: "CANCELLED"}.
     """
     if req.method == "OPTIONS":
-        return options_response("POST, OPTIONS")
+        return options_response(req, "POST, OPTIONS")
 
     job_id = req.params.get("jobId")
     if not job_id:
@@ -371,6 +375,7 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("GetJobResults")
+@require_auth
 def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetJobResults?jobId=xxx
     Returns classified items as a flat JSON array for human review.
@@ -380,7 +385,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
               confidence, source, status}], total}
     """
     if req.method == "OPTIONS":
-        return options_response("GET, OPTIONS")
+        return options_response(req, "GET, OPTIONS")
 
     job_id = req.params.get("jobId", "").strip()
     if not job_id:
@@ -493,6 +498,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("DownloadJobExcel")
+@require_auth
 def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     """GET/POST /api/DownloadJobExcel?jobId=xxx
     GET: Returns raw classified results as Excel.
@@ -502,7 +508,7 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     import pandas as pd
 
     if req.method == "OPTIONS":
-        return options_response("GET, POST, OPTIONS")
+        return options_response(req, "GET, POST, OPTIONS")
 
     job_id = req.params.get("jobId", "").strip()
     if not job_id:

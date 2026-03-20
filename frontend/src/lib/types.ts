@@ -1,4 +1,4 @@
-// Central type definitions for Spend Analysis v3
+// Central type definitions for Spend.AI v3
 
 // ==================== PROJECTS ====================
 

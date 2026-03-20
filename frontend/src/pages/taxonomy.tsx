@@ -6,6 +6,7 @@ import type { NextPage } from 'next'
 import { useTaxonomySession } from '@/hooks/useTaxonomySession'
 import { useCopilot } from '@/hooks/useCopilot'
 import { useProjects } from '@/hooks/useProjects'
+import { useAuth } from '@/contexts/AuthContext'
 
 // Layout components
 import CollapsibleSidebar from '@/components/layout/CollapsibleSidebar'
@@ -104,7 +105,7 @@ function NoProjectGate({
                 d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-[#32373c]">Spend Analysis com IA</h2>
+          <h2 className="text-xl font-bold text-[#32373c]">Spend.AI</h2>
           <p className="text-sm text-primary-500 mt-2 max-w-sm mx-auto leading-relaxed">
             {hasProjects
               ? 'Selecione um projeto no menu lateral para iniciar a classificação dos seus gastos.'
@@ -161,6 +162,9 @@ function NoProjectGate({
 // ============================================================
 
 const TaxonomyPage: NextPage = () => {
+
+  // ---- Auth ----
+  const { isAdmin } = useAuth()
 
   // ---- Project state ----
   const [showCreateProject, setShowCreateProject] = useState(false)
@@ -371,7 +375,7 @@ const TaxonomyPage: NextPage = () => {
   return (
     <>
       <Head>
-        <title>Spend Analysis | PG Consultoria</title>
+        <title>Spend.AI | PG Consultoria</title>
         <meta name="description" content="Plataforma de classificação de gastos" />
       </Head>
 
@@ -404,7 +408,7 @@ const TaxonomyPage: NextPage = () => {
               onCreateProject={() => setShowCreateProject(true)}
               onEditProject={p => setEditingProject(p)}
               onDeleteProject={p => setDeletingProject(p)}
-              onDeleteSector={s => setDeletingSector(s)}
+              onDeleteSector={isAdmin ? s => setDeletingSector(s) : undefined}
               loading={projectsLoading}
               variant="dark"
             />

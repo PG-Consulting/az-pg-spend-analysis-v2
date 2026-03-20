@@ -1,4 +1,4 @@
-"""Domain exceptions for Spend Analysis."""
+"""Domain exceptions for Spend.AI."""
 
 
 class SpendAnalysisError(Exception):
@@ -39,3 +39,17 @@ class ExternalServiceError(SpendAnalysisError):
     def __init__(self, service: str, message: str):
         super().__init__(f"{service}: {message}", status_code=502)
         self.service = service
+
+
+class AuthenticationError(SpendAnalysisError):
+    """Authentication required (401)."""
+
+    def __init__(self, message: str = "Authentication required"):
+        super().__init__(message, status_code=401)
+
+
+class ForbiddenError(SpendAnalysisError):
+    """Insufficient permissions (403)."""
+
+    def __init__(self, message: str = "Insufficient permissions"):
+        super().__init__(message, status_code=403)

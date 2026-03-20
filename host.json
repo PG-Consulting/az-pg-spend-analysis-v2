@@ -20,13 +20,6 @@
       "messageEncoding": "none"
     }
   },
-  "cors": {
-    "allowedOrigins": [
-      "https://white-desert-0dc38e70f.4.azurestaticapps.net",
-      "http://localhost:3000"
-    ],
-    "supportCredentials": false
-  },
   "logging": {
     "logLevel": {
       "default": "Information",

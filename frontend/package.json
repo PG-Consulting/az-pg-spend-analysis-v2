@@ -12,6 +12,8 @@
         "test:coverage": "jest --coverage"
     },
     "dependencies": {
+        "@azure/msal-browser": "^3.30.0",
+        "@azure/msal-react": "^2.2.0",
         "axios": "^1.6.2",
         "botframework-webchat": "^4.16.0",
         "idb": "^8.0.3",

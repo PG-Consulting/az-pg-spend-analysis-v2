@@ -1,7 +1,8 @@
 """
-Azure Functions entry point for Spend Analysis v3.
+Azure Functions entry point for Spend.AI v3.
 Registers all blueprints. Keep this file minimal — all logic lives in blueprints/ and src/.
 """
+
 import logging
 
 import azure.functions as func
@@ -22,6 +23,7 @@ from blueprints.models_bp import models_bp
 from blueprints.copilot_bp import copilot_bp
 from blueprints.worker_bp import worker_bp
 from blueprints.health_bp import health_bp
+from blueprints.auth_bp import auth_bp  # noqa: E402
 
 app.register_blueprint(projects_bp)
 app.register_blueprint(classification_bp)
@@ -31,5 +33,6 @@ app.register_blueprint(models_bp)
 app.register_blueprint(copilot_bp)
 app.register_blueprint(worker_bp)
 app.register_blueprint(health_bp)
+app.register_blueprint(auth_bp)
 
-logger.info("Spend Analysis v3 - All blueprints registered")
+logger.info("Spend.AI v3 - All blueprints registered")

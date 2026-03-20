@@ -1,18 +1,27 @@
 """Blueprint for Copilot / Direct Line and Memory endpoints."""
+
 import logging
 import os
 
 import requests
 import azure.functions as func
-from src.api_helpers import json_response, error_response, options_response, handle_errors
+from src.api_helpers import (
+    json_response,
+    options_response,
+    handle_errors,
+)
 from src.exceptions import ValidationError, ExternalServiceError, NotFoundError
+from src.auth import require_auth
 
 logger = logging.getLogger(__name__)
 copilot_bp = func.Blueprint()
 
 
-@copilot_bp.route(route="get-token", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@copilot_bp.route(
+    route="get-token", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS
+)
 @handle_errors("GetDirectLineToken")
+@require_auth
 def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/get-token
     Generate a temporary Direct Line token for the frontend to use.
@@ -24,7 +33,7 @@ def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
     Returns: {token, conversationId, ...} from the Direct Line API.
     """
     if req.method == "OPTIONS":
-        return options_response("GET, OPTIONS")
+        return options_response(req, "GET, OPTIONS")
 
     logger.info("GetDirectLineToken HTTP trigger processed a request.")
 
@@ -48,15 +57,22 @@ def GetDirectLineToken(req: func.HttpRequest) -> func.HttpResponse:
 
     if response.status_code in (200, 201):
         conversation_data = response.json()
-        logger.info(f"Direct Line conversation created: {conversation_data.get('conversationId')}")
+        logger.info(
+            f"Direct Line conversation created: {conversation_data.get('conversationId')}"
+        )
         return json_response(conversation_data)
     else:
         logger.error(f"Direct Line API error: {response.status_code} - {response.text}")
         raise ExternalServiceError("Direct Line", "Failed to create conversation")
 
 
-@copilot_bp.route(route="SearchMemory", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@copilot_bp.route(
+    route="SearchMemory",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("SearchMemory")
+@require_auth
 def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/SearchMemory?query=xxx
     Search the memory engine (RAG rules) by query string.
@@ -65,20 +81,25 @@ def SearchMemory(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("SearchMemory HTTP trigger processed a request.")
 
     if req.method == "OPTIONS":
-        return options_response("GET, OPTIONS")
+        return options_response(req, "GET, OPTIONS")
 
     query = req.params.get("query", "")
 
     from src.memory_engine import MemoryEngine
+
     engine = MemoryEngine()
     results = engine.search(query)
 
     return json_response(results)
 
 
-@copilot_bp.route(route="DeleteMemoryRule", methods=["DELETE", "OPTIONS"],
-                   auth_level=func.AuthLevel.ANONYMOUS)
+@copilot_bp.route(
+    route="DeleteMemoryRule",
+    methods=["DELETE", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("DeleteMemoryRule")
+@require_auth
 def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteMemoryRule?id=xxx
     Delete a memory rule by ID.
@@ -89,7 +110,7 @@ def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("DeleteMemoryRule HTTP trigger processed a request.")
 
     if req.method == "OPTIONS":
-        return options_response("DELETE, OPTIONS")
+        return options_response(req, "DELETE, OPTIONS")
 
     rule_id = req.params.get("id")
     if not rule_id:
@@ -103,6 +124,7 @@ def DeleteMemoryRule(req: func.HttpRequest) -> func.HttpResponse:
         raise ValidationError("Missing rule ID")
 
     from src.memory_engine import MemoryEngine
+
     engine = MemoryEngine()
     success = engine.delete_rule(rule_id)
 

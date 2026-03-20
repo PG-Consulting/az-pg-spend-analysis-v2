@@ -10,9 +10,12 @@
     "POWER_AUTOMATE_URL": "",
     "POWER_AUTOMATE_API_KEY": "",
     "USE_ML_CLASSIFIER": "true",
-    "MODELS_DIR_PATH": ""
-  },
-  "Host": {
-    "CORS": "*"
+    "MODELS_DIR_PATH": "",
+    "AZURE_AD_TENANT_ID": "",
+    "AZURE_AD_CLIENT_ID": "",
+    "ADMIN_EMAILS": "",
+    "ALLOWED_GROUP_ID": "",
+    "SKIP_AUTH": "true",
+    "ALLOWED_ORIGINS": "http://localhost:3000"
   }
 }

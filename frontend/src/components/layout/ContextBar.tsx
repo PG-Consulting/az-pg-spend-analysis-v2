@@ -1,4 +1,5 @@
 import React from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -299,6 +300,40 @@ function ReviewProgressBar({
 // Main Component
 // ---------------------------------------------------------------------------
 
+/** User name + role badge + logout button */
+function UserIndicator() {
+  const { user, isAdmin, logout } = useAuth()
+  if (!user) return null
+  const initials = user.name
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+  return (
+    <div className="flex items-center gap-2 pl-3 border-l border-gray-200">
+      <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-[10px] font-semibold">
+        {initials}
+      </div>
+      <div className="hidden sm:flex flex-col leading-tight">
+        <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">{user.name}</span>
+        <span className={`text-[10px] font-medium ${isAdmin ? 'text-ai-500' : 'text-accent-500'}`}>
+          {isAdmin ? 'Admin' : 'Consultor'}
+        </span>
+      </div>
+      <button
+        onClick={logout}
+        className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+        title="Sair"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
 export default function ContextBar({
   projectName,
   sessionFilename,
@@ -351,9 +386,10 @@ export default function ContextBar({
           ))}
         </nav>
 
-        {/* Right: KB button */}
-        <div className="flex-1 flex justify-end min-w-0">
+        {/* Right: KB button + User indicator */}
+        <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
           <KBButton onClick={onOpenKB} disabled={kbDisabled} />
+          <UserIndicator />
         </div>
       </div>
 

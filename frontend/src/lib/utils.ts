@@ -1,5 +1,5 @@
 /**
- * @fileoverview Shared utility functions for the Spend Analysis frontend.
+ * @fileoverview Shared utility functions for the Spend.AI frontend.
  */
 
 /**

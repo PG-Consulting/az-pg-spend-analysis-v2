@@ -8,9 +8,10 @@ const getApi = () => import('../../lib/api').then(m => m.apiClient);
 
 interface SectorKnowledgeTabProps {
   sectorName: string | null;
+  isAdmin?: boolean;
 }
 
-export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
+export function SectorKnowledgeTab({ sectorName, isAdmin = false }: SectorKnowledgeTabProps) {
   const [kbPage, setKbPage] = useState<KBPage | null>(null);
   const [coverage, setCoverage] = useState<KBCoverage | null>(null);
   const [versions, setVersions] = useState<KBVersion[]>([]);
@@ -208,17 +209,19 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
-            {/* Import */}
+            {/* Import (admin only) */}
+            {isAdmin && (
             <label className={`p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer transition-colors ${isImporting ? 'opacity-50' : ''}`} title="Importar">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
               <input type="file" accept=".xlsx" onChange={handleImport} className="hidden" disabled={isImporting} />
             </label>
+            )}
             {/* Export */}
             <button onClick={handleExport} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" title="Exportar">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /></svg>
             </button>
-            {/* Bulk delete */}
-            {selectedEntries.size > 0 && (
+            {/* Bulk delete (admin only) */}
+            {isAdmin && selectedEntries.size > 0 && (
               <button
                 onClick={handleBulkDelete}
                 disabled={isDeleting}
@@ -256,12 +259,14 @@ export function SectorKnowledgeTab({ sectorName }: SectorKnowledgeTabProps) {
                         <span className="text-xs text-gray-400 ml-2">{new Date(v.created_at).toLocaleString('pt-BR')}</span>
                         <span className="text-xs text-gray-500 ml-2">{v.entry_count} entradas</span>
                       </div>
+                      {isAdmin && (
                       <button
                         onClick={() => handleRollback(v.version_id)}
                         className="flex-shrink-0 text-xs px-2.5 py-1 border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
                       >
                         Reverter
                       </button>
+                      )}
                     </div>
                   ))}
                 </div>

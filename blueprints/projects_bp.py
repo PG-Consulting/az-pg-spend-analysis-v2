@@ -1,34 +1,55 @@
 """Blueprint for project and sector management endpoints."""
+
 import logging
 import azure.functions as func
 from src.utils import get_models_dir
-from src.api_helpers import json_response, error_response, handle_errors
+from src.api_helpers import json_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ConflictError, ValidationError
+from src.auth import require_auth, require_admin
 from src.project_manager import (
-    list_sectors, create_sector, update_sector, delete_sector,
-    list_projects, get_project, create_project, update_project, delete_project,
-    resolve_hierarchy, resolve_hierarchy_from_body,
+    list_sectors,
+    create_sector,
+    update_sector,
+    delete_sector,
+    list_projects,
+    create_project,
+    update_project,
+    delete_project,
+    resolve_hierarchy,
+    resolve_hierarchy_from_body,
 )
 
 logger = logging.getLogger(__name__)
 projects_bp = func.Blueprint()
 
 
-@projects_bp.route(route="ListSectors", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="ListSectors", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS
+)
 @handle_errors("ListSectors")
+@require_auth
 def list_sectors_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/ListSectors - List all sectors"""
+    if req.method == "OPTIONS":
+        return options_response(req, "GET, OPTIONS")
     models_dir = get_models_dir()
     sectors = list_sectors(models_dir)
     return json_response(sectors)
 
 
-@projects_bp.route(route="CreateSector", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="CreateSector",
+    methods=["POST", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("CreateSector")
+@require_admin
 def create_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CreateSector - Create a new sector
     Body: {name: str, display_name: str, custom_hierarchy?: list}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "POST, OPTIONS")
     body = req.get_json()
     name = body.get("name", "").strip().lower()
     display_name = body.get("display_name", "").strip()
@@ -40,12 +61,19 @@ def create_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(sector, 201)
 
 
-@projects_bp.route(route="UpdateSector", methods=["PUT"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="UpdateSector",
+    methods=["PUT", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("UpdateSector")
+@require_admin
 def update_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """PUT /api/UpdateSector - Update sector
     Body: {name: str, display_name?: str, custom_hierarchy?: list|null}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "PUT, OPTIONS")
     body = req.get_json()
     name = body.get("name", "").strip().lower()
     if not name:
@@ -55,10 +83,17 @@ def update_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(sector)
 
 
-@projects_bp.route(route="DeleteSector", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="DeleteSector",
+    methods=["DELETE", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("DeleteSector")
+@require_admin
 def delete_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteSector?sectorName=xxx&force=false"""
+    if req.method == "OPTIONS":
+        return options_response(req, "DELETE, OPTIONS")
     sector_name = req.params.get("sectorName", "").strip()
     if not sector_name:
         raise ValidationError("sectorName is required")
@@ -73,22 +108,36 @@ def delete_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response({"success": True, **result})
 
 
-@projects_bp.route(route="ListProjects", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="ListProjects",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("ListProjects")
+@require_auth
 def list_projects_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/ListProjects - List all projects"""
+    if req.method == "OPTIONS":
+        return options_response(req, "GET, OPTIONS")
     models_dir = get_models_dir()
     projects = list_projects(models_dir)
     return json_response(projects)
 
 
-@projects_bp.route(route="CreateProject", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="CreateProject",
+    methods=["POST", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("CreateProject")
+@require_auth
 def create_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CreateProject
     Body: {display_name, sector, client_context?, custom_hierarchy?, hierarchy_file_base64?,
            hierarchy_filename?, hierarchy_source?}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "POST, OPTIONS")
     body = req.get_json()
     resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
@@ -96,12 +145,19 @@ def create_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(project, 201)
 
 
-@projects_bp.route(route="UpdateProject", methods=["PUT"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="UpdateProject",
+    methods=["PUT", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("UpdateProject")
+@require_auth
 def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """PUT /api/UpdateProject
     Body: {project_id, display_name?, client_context?, custom_hierarchy?, hierarchy_file_base64?, ...}
     """
+    if req.method == "OPTIONS":
+        return options_response(req, "PUT, OPTIONS")
     body = req.get_json()
     project_id = body.get("project_id", "").strip()
     if not project_id:
@@ -112,10 +168,17 @@ def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response(project)
 
 
-@projects_bp.route(route="DeleteProject", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="DeleteProject",
+    methods=["DELETE", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("DeleteProject")
+@require_auth
 def delete_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteProject?projectId=xxx"""
+    if req.method == "OPTIONS":
+        return options_response(req, "DELETE, OPTIONS")
     project_id = req.params.get("projectId", "").strip()
     if not project_id:
         raise ValidationError("projectId is required")
@@ -126,18 +189,27 @@ def delete_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     return json_response({"success": True})
 
 
-@projects_bp.route(route="GetProjectHierarchy", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@projects_bp.route(
+    route="GetProjectHierarchy",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
 @handle_errors("GetProjectHierarchy")
+@require_auth
 def get_project_hierarchy_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetProjectHierarchy?projectId=xxx"""
+    if req.method == "OPTIONS":
+        return options_response(req, "GET, OPTIONS")
     project_id = req.params.get("projectId", "").strip()
     if not project_id:
         raise ValidationError("projectId is required")
     models_dir = get_models_dir()
     hierarchy, source = resolve_hierarchy(project_id, models_dir)
-    return json_response({
-        "project_id": project_id,
-        "hierarchy": hierarchy,
-        "source": source,
-        "has_hierarchy": hierarchy is not None
-    })
+    return json_response(
+        {
+            "project_id": project_id,
+            "hierarchy": hierarchy,
+            "source": source,
+            "has_hierarchy": hierarchy is not None,
+        }
+    )

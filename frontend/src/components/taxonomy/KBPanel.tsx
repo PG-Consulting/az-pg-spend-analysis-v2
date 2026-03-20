@@ -1,6 +1,7 @@
 import React from 'react'
 import { KnowledgeTab } from '@/components/taxonomy/KnowledgeTab'
 import { SectorKnowledgeTab } from '@/components/taxonomy/SectorKnowledgeTab'
+import { useAuth } from '@/contexts/AuthContext'
 import type { HierarchyEntry } from '@/lib/types'
 
 interface KBPanelProps {
@@ -22,6 +23,8 @@ export default function KBPanel({
   sectorDisplayName,
   useSectorKb,
 }: KBPanelProps) {
+  const { isAdmin } = useAuth()
+
   return (
     <div className="flex flex-col h-full">
       {/* Sub-tabs: Projeto / Setor */}
@@ -58,10 +61,12 @@ export default function KBPanel({
             projectHierarchy={projectHierarchy}
             sectorName={sectorName}
             useSectorKb={useSectorKb}
+            isAdmin={isAdmin}
           />
         ) : useSectorKb ? (
           <SectorKnowledgeTab
             sectorName={sectorName}
+            isAdmin={isAdmin}
           />
         ) : (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">

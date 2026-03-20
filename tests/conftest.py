@@ -1,8 +1,17 @@
-"""Shared fixtures for Spend Analysis v3 tests."""
+"""Shared fixtures for Spend.AI v3 tests."""
 
 import uuid
 import pytest
 from datetime import datetime, timezone
+
+
+@pytest.fixture(autouse=True)
+def skip_auth_for_tests(request, monkeypatch):
+    """Bypass auth por default. Testes com @pytest.mark.real_auth não usam SKIP_AUTH."""
+    if "real_auth" in [m.name for m in request.node.iter_markers()]:
+        return  # Não setar SKIP_AUTH — teste quer validar auth real
+    monkeypatch.setenv("SKIP_AUTH", "true")
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
 
 
 @pytest.fixture
@@ -62,27 +71,117 @@ def sample_hierarchy():
     """
     hierarchy = [
         # --- Materiais ---
-        {"N1": "Materiais", "N2": "Componentes Mecanicos", "N3": "Fixacao", "N4": "Parafusos"},
-        {"N1": "Materiais", "N2": "Componentes Mecanicos", "N3": "Fixacao", "N4": "Porcas"},
-        {"N1": "Materiais", "N2": "Componentes Mecanicos", "N3": "Vedacao", "N4": "Aneis O-Ring"},
-        {"N1": "Materiais", "N2": "Componentes Mecanicos", "N3": "Vedacao", "N4": "Juntas Metalicas"},
-        {"N1": "Materiais", "N2": "Componentes Eletricos", "N3": "Cabos e Condutores", "N4": "Cabos de Potencia"},
-        {"N1": "Materiais", "N2": "Componentes Eletricos", "N3": "Cabos e Condutores", "N4": "Cabos de Instrumentacao"},
-        {"N1": "Materiais", "N2": "Componentes Eletricos", "N3": "Conectores", "N4": "Conectores Circulares"},
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Mecanicos",
+            "N3": "Fixacao",
+            "N4": "Parafusos",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Mecanicos",
+            "N3": "Fixacao",
+            "N4": "Porcas",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Mecanicos",
+            "N3": "Vedacao",
+            "N4": "Aneis O-Ring",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Mecanicos",
+            "N3": "Vedacao",
+            "N4": "Juntas Metalicas",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Eletricos",
+            "N3": "Cabos e Condutores",
+            "N4": "Cabos de Potencia",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Eletricos",
+            "N3": "Cabos e Condutores",
+            "N4": "Cabos de Instrumentacao",
+        },
+        {
+            "N1": "Materiais",
+            "N2": "Componentes Eletricos",
+            "N3": "Conectores",
+            "N4": "Conectores Circulares",
+        },
         # --- Servicos ---
-        {"N1": "Servicos", "N2": "Manutencao", "N3": "Manutencao Preventiva", "N4": "Inspecao Programada"},
-        {"N1": "Servicos", "N2": "Manutencao", "N3": "Manutencao Preventiva", "N4": "Troca de Filtros"},
-        {"N1": "Servicos", "N2": "Manutencao", "N3": "Manutencao Corretiva", "N4": "Reparo de Motor"},
-        {"N1": "Servicos", "N2": "Manutencao", "N3": "Manutencao Corretiva", "N4": "Reparo de Bomba"},
+        {
+            "N1": "Servicos",
+            "N2": "Manutencao",
+            "N3": "Manutencao Preventiva",
+            "N4": "Inspecao Programada",
+        },
+        {
+            "N1": "Servicos",
+            "N2": "Manutencao",
+            "N3": "Manutencao Preventiva",
+            "N4": "Troca de Filtros",
+        },
+        {
+            "N1": "Servicos",
+            "N2": "Manutencao",
+            "N3": "Manutencao Corretiva",
+            "N4": "Reparo de Motor",
+        },
+        {
+            "N1": "Servicos",
+            "N2": "Manutencao",
+            "N3": "Manutencao Corretiva",
+            "N4": "Reparo de Bomba",
+        },
         {"N1": "Servicos", "N2": "Engenharia", "N3": "Projetos", "N4": "Projeto Naval"},
-        {"N1": "Servicos", "N2": "Engenharia", "N3": "Projetos", "N4": "Projeto Estrutural"},
+        {
+            "N1": "Servicos",
+            "N2": "Engenharia",
+            "N3": "Projetos",
+            "N4": "Projeto Estrutural",
+        },
         # --- Equipamentos ---
-        {"N1": "Equipamentos", "N2": "Propulsao", "N3": "Motores Principais", "N4": "Motor Diesel Maritimo"},
-        {"N1": "Equipamentos", "N2": "Propulsao", "N3": "Motores Principais", "N4": "Motor a Gas"},
-        {"N1": "Equipamentos", "N2": "Propulsao", "N3": "Sistemas Auxiliares", "N4": "Bomba de Combustivel"},
-        {"N1": "Equipamentos", "N2": "Propulsao", "N3": "Sistemas Auxiliares", "N4": "Trocador de Calor"},
-        {"N1": "Equipamentos", "N2": "Navegacao", "N3": "Instrumentos", "N4": "Radar Maritimo"},
-        {"N1": "Equipamentos", "N2": "Navegacao", "N3": "Instrumentos", "N4": "GPS Diferencial"},
+        {
+            "N1": "Equipamentos",
+            "N2": "Propulsao",
+            "N3": "Motores Principais",
+            "N4": "Motor Diesel Maritimo",
+        },
+        {
+            "N1": "Equipamentos",
+            "N2": "Propulsao",
+            "N3": "Motores Principais",
+            "N4": "Motor a Gas",
+        },
+        {
+            "N1": "Equipamentos",
+            "N2": "Propulsao",
+            "N3": "Sistemas Auxiliares",
+            "N4": "Bomba de Combustivel",
+        },
+        {
+            "N1": "Equipamentos",
+            "N2": "Propulsao",
+            "N3": "Sistemas Auxiliares",
+            "N4": "Trocador de Calor",
+        },
+        {
+            "N1": "Equipamentos",
+            "N2": "Navegacao",
+            "N3": "Instrumentos",
+            "N4": "Radar Maritimo",
+        },
+        {
+            "N1": "Equipamentos",
+            "N2": "Navegacao",
+            "N3": "Instrumentos",
+            "N4": "GPS Diferencial",
+        },
     ]
     return hierarchy
 

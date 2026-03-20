@@ -1,12 +1,11 @@
 """
-Core logic for Spend Analysis Classification (N4 x Keyword).
+Core logic for Spend.AI Classification (N4 x Keyword).
 
 This module contains the logic to normalize text, build regex patterns from a dictionary,
 and classify item descriptions into N4 subcategories based on keyword matching.
 """
 
 import re
-from collections import Counter
 from functools import lru_cache
 from typing import List, Dict, Any, Tuple
 
@@ -24,29 +23,30 @@ from src.utils import INCOMPLETE_VALUES
 # Supports both Portuguese (with/without accents) and English names.
 COL_DESC_CANDIDATES_DEFAULT = [
     "Item_Description",  # Standard English name
-    "Descricao",         # Portuguese without accent
-    "Descrição",         # Portuguese with accent
-    "Descrição do Item", # Full Portuguese name
+    "Descricao",  # Portuguese without accent
+    "Descrição",  # Portuguese with accent
+    "Descrição do Item",  # Full Portuguese name
     "Material_Description",
     "Description",
     "Long_Description",
     "Short_Description",
     "Texto Breve",
-    "Texto Longo"
+    "Texto Longo",
 ]
 
 # Analytics configuration
 PARETO_CLASS_A_THRESHOLD = 0.80  # 80% threshold for Pareto Class A
 PARETO_CLASS_B_THRESHOLD = 0.95  # 95% threshold for Pareto Class B
-MIN_WORD_LENGTH_FOR_GAPS = 3     # Minimum word length for gap analysis
-LRU_CACHE_SIZE = 10000           # Maximum cache size for duplicate descriptions
-TOP_GAPS_COUNT = 20              # Number of top gap words to return
-TOP_AMBIGUITY_COUNT = 20         # Number of top ambiguous combinations to return
+MIN_WORD_LENGTH_FOR_GAPS = 3  # Minimum word length for gap analysis
+LRU_CACHE_SIZE = 10000  # Maximum cache size for duplicate descriptions
+TOP_GAPS_COUNT = 20  # Number of top gap words to return
+TOP_AMBIGUITY_COUNT = 20  # Number of top ambiguous combinations to return
 
 
 # ================================
 # HELPERS
 # ================================
+
 
 def split_terms(cell_value: Any) -> List[str]:
     """
@@ -66,15 +66,15 @@ def split_terms(cell_value: Any) -> List[str]:
     """
     if cell_value is None:
         return []
-    
+
     if isinstance(cell_value, float) and pd.isna(cell_value):
         return []
-    
+
     if isinstance(cell_value, list):
         terms = cell_value
     else:
         terms = [t.strip() for t in str(cell_value).split(",")]
-    
+
     return [t for t in terms if t]
 
 
@@ -94,11 +94,11 @@ def to_regex(term: str) -> re.Pattern:
     norm = normalize_text(term)
     if not norm:
         norm = term.lower()
-    
+
     norm = re.escape(norm)
     # Spaces in the expression become flexible separators (space/hyphen/underscore)
     norm = norm.replace(r"\ ", r"[\s_-]+")
-    
+
     return re.compile(rf"\b{norm}\b", flags=re.IGNORECASE)
 
 
@@ -121,25 +121,26 @@ def pick(df: pd.DataFrame, options: List[str]) -> str:
     for option in options:
         if option in df.columns:
             return option
-    
+
     normalized_cols = {normalize_text(c): c for c in df.columns}
     for option in options:
         key = normalize_text(option)
         if key in normalized_cols:
             return normalized_cols[key]
-    
-    raise ValueError(
-        f"Column not found. Try renaming to one of these: {options}"
-    )
+
+    raise ValueError(f"Column not found. Try renaming to one of these: {options}")
 
 
 # ================================
 # CORE: LOAD AND BUILD PATTERNS
 # ================================
 
+
 def build_patterns(
     dict_df: pd.DataFrame,
-) -> Tuple[Dict[str, List[re.Pattern]], Dict[str, List[str]], Dict[str, Dict[str, str]]]:
+) -> Tuple[
+    Dict[str, List[re.Pattern]], Dict[str, List[str]], Dict[str, Dict[str, str]]
+]:
     """
     Build regex patterns from the dictionary DataFrame.
 
@@ -164,7 +165,9 @@ def build_patterns(
     COL_N1 = pick(dict_df, ["N1_Categoria", "N1", "Categoria N1"])
     COL_N2 = pick(dict_df, ["N2_Subcategoria", "N2", "Subcategoria N2"])
     COL_N3 = pick(dict_df, ["N3_Subcategoria", "N3", "Subcategoria N3"])
-    COL_N4 = pick(dict_df, ["N4_Subcategorias", "N4_Subcategoria", "N4", "Subcategoria N4"])
+    COL_N4 = pick(
+        dict_df, ["N4_Subcategorias", "N4_Subcategoria", "N4", "Subcategoria N4"]
+    )
     COL_BASE = pick(
         dict_df,
         [
@@ -175,7 +178,7 @@ def build_patterns(
             "Palavras-chave / Variações",
         ],
     )
-    
+
     try:
         COL_VAR = pick(
             dict_df,
@@ -189,7 +192,7 @@ def build_patterns(
         )
     except ValueError:
         COL_VAR = None
-    
+
     # Optional stopwords (prevent overly generic terms from matching alone)
     STOP = {
         "kit",
@@ -205,48 +208,52 @@ def build_patterns(
         "varios",
         "diversos",
     }
-    
+
     patterns_by_n4: Dict[str, List[re.Pattern]] = {}
     terms_by_n4: Dict[str, List[str]] = {}
     taxonomy_by_n4: Dict[str, Dict[str, str]] = {}
-    
+
     for _, row in dict_df.iterrows():
         n1_value = str(row.get(COL_N1, "")).strip()
         n2_value = str(row.get(COL_N2, "")).strip()
         n3_value = str(row.get(COL_N3, "")).strip()
         n4_category = str(row.get(COL_N4, "")).strip()
-        
+
         if not n4_category:
             continue
-        
+
         base_terms = split_terms(row.get(COL_BASE, ""))
         variation_terms = split_terms(row.get(COL_VAR, "")) if COL_VAR else []
         all_terms = base_terms + variation_terms
-        
+
         # Remove empty and duplicate (normalized) terms + apply stopwords
         seen_normalized = set()
         clean_terms = []
         for term in all_terms:
             normalized_key = normalize_text(term)
-            if (not normalized_key) or (normalized_key in seen_normalized) or (normalized_key in STOP):
+            if (
+                (not normalized_key)
+                or (normalized_key in seen_normalized)
+                or (normalized_key in STOP)
+            ):
                 continue
             seen_normalized.add(normalized_key)
             clean_terms.append(term)
-        
+
         patterns = [to_regex(term) for term in clean_terms]
-        
+
         # Always populate taxonomy for this N4 (use first occurrence found)
         if n4_category not in taxonomy_by_n4:
             taxonomy_by_n4[n4_category] = {
                 "N1": n1_value,
                 "N2": n2_value,
                 "N3": n3_value,
-                "N4": n4_category
+                "N4": n4_category,
             }
 
         if not patterns:
             continue
-        
+
         # Merge with existing patterns for this N4 if it appeared before
         if n4_category in patterns_by_n4:
             patterns_by_n4[n4_category].extend(patterns)
@@ -254,20 +261,21 @@ def build_patterns(
         else:
             patterns_by_n4[n4_category] = patterns
             terms_by_n4[n4_category] = clean_terms
-    
+
     # Do NOT raise error if dictionary has no keywords (allows ML-only usage)
     # if not patterns_by_n4:
     #     raise ValueError(...)
     if not patterns_by_n4:
         # Just return empty structures if no keywords found
         pass
-    
+
     return patterns_by_n4, terms_by_n4, taxonomy_by_n4
 
 
 # ================================
 # DESCRIPTION MATCHING WITH PATTERNS
 # ================================
+
 
 def match_n4_without_priority(
     desc_norm: str,
@@ -293,30 +301,30 @@ def match_n4_without_priority(
     """
     if not desc_norm:
         return {}, "Nenhum", [], 0
-    
+
     scores: Dict[str, int] = {}
     matched_terms_per_n4: Dict[str, List[str]] = {}
-    
+
     for n4_category, pattern_list in patterns_by_n4.items():
         score = 0
         matched_terms = []
-        
+
         for pattern, original_term in zip(pattern_list, terms_by_n4[n4_category]):
             if pattern.search(desc_norm):
                 score += 1
                 matched_terms.append(original_term)
-        
+
         if score > 0:
             scores[n4_category] = score
             matched_terms_per_n4[n4_category] = matched_terms
-    
+
     if not scores:
         return {}, "Nenhum", [], 0
-    
+
     # Find highest score
     max_score = max(scores.values())
     winners = [n4 for n4, score in scores.items() if score == max_score]
-    
+
     if len(winners) == 1:
         winning_n4 = winners[0]
         return (
@@ -328,37 +336,39 @@ def match_n4_without_priority(
     else:
         # Tie -> Ambiguous - check each level independently
         # Only show ambiguity at levels where values actually differ
-        
+
         # Extract values for each level across all winners
         n1_values = [taxonomy_by_n4.get(n4, {}).get("N1", "") for n4 in winners]
         n2_values = [taxonomy_by_n4.get(n4, {}).get("N2", "") for n4 in winners]
         n3_values = [taxonomy_by_n4.get(n4, {}).get("N3", "") for n4 in winners]
         n4_values = winners
-        
+
         # For each level, check if all values are the same
         # If yes, use the single value; if no, join with " | "
         def resolve_level(values: List[str]) -> str:
-            unique_values = list(dict.fromkeys(v for v in values if v))  # Remove duplicates, preserve order
+            unique_values = list(
+                dict.fromkeys(v for v in values if v)
+            )  # Remove duplicates, preserve order
             if len(unique_values) == 1:
                 return unique_values[0]
             elif len(unique_values) > 1:
                 return " | ".join(unique_values)
             else:
                 return ""
-        
+
         # Create a taxonomy dict with ambiguous markers only where needed
         ambiguous_taxonomy = {
             "N1": resolve_level(n1_values),
             "N2": resolve_level(n2_values),
             "N3": resolve_level(n3_values),
-            "N4": resolve_level(n4_values)
+            "N4": resolve_level(n4_values),
         }
-        
+
         # Join terms from tied categories (for reference)
         all_matched_terms: List[str] = []
         for winner_n4 in winners:
             all_matched_terms.extend(matched_terms_per_n4.get(winner_n4, []))
-        
+
         # Deduplicate preserving order
         seen_normalized_terms = set()
         unique_matched_terms: List[str] = []
@@ -367,13 +377,14 @@ def match_n4_without_priority(
             if normalized_key not in seen_normalized_terms:
                 seen_normalized_terms.add(normalized_key)
                 unique_matched_terms.append(term)
-        
+
         return (ambiguous_taxonomy, "Ambíguo", unique_matched_terms, max_score)
 
 
 # ================================
 # MAIN FUNCTION FOR THE APP
 # ================================
+
 
 def classify_items(
     dict_records: List[Dict[str, Any]],
@@ -398,48 +409,50 @@ def classify_items(
     """
     if col_desc_candidates is None:
         col_desc_candidates = COL_DESC_CANDIDATES_DEFAULT.copy()
-    
+
     if desc_column:
         # If caller explicitly provided a column, prioritize it
         col_desc_candidates = [desc_column] + [
             c for c in col_desc_candidates if c != desc_column
         ]
-    
+
     dict_df = pd.DataFrame(dict_records)
     items_df = pd.DataFrame(item_records)
-    
+
     # Identify description column in items file
     desc_col_name = pick(items_df, col_desc_candidates)
-    
+
     # Normalize item description (keep original too)
     items_df["_desc_original"] = items_df[desc_col_name].fillna("")
     items_df["_desc_norm"] = items_df["_desc_original"].map(normalize_text)
-    
+
     # Prepare dictionary N4 -> patterns
     patterns_by_n4, terms_by_n4, taxonomy_by_n4 = build_patterns(dict_df)
-    
+
     # Apply classification with caching for duplicate descriptions
     # Convert patterns to hashable format for caching
     @lru_cache(maxsize=LRU_CACHE_SIZE)
-    def classify_cached(desc_norm: str) -> Tuple[str, str, str, str, str, str, int, bool]:
+    def classify_cached(
+        desc_norm: str,
+    ) -> Tuple[str, str, str, str, str, str, int, bool]:
         """Cached classification to avoid reprocessing duplicate descriptions."""
         taxonomy, match_type, matched_terms, match_score = match_n4_without_priority(
             desc_norm, patterns_by_n4, terms_by_n4, taxonomy_by_n4
         )
-        
+
         # Extract individual levels from taxonomy dict
         n1 = taxonomy.get("N1", "")
         n2 = taxonomy.get("N2", "")
         n3 = taxonomy.get("N3", "")
         n4 = taxonomy.get("N4", "")
-        
+
         matched_terms_str = ", ".join(matched_terms)
         needs_review = match_type in ("Ambíguo", "Nenhum")
         return n1, n2, n3, n4, match_type, matched_terms_str, match_score, needs_review
-    
+
     # Vectorized application using pandas apply
     results = items_df["_desc_norm"].apply(classify_cached)
-    
+
     # Unpack results into separate columns
     result_cols = {
         "N1": [r[0] for r in results],
@@ -452,16 +465,16 @@ def classify_items(
         "Needs_Review": [r[7] for r in results],
         "Classification_Source": ["Dictionary"] * len(results),
     }
-    
+
     # Append result columns
     items_df = pd.concat([items_df, pd.DataFrame(result_cols)], axis=1)
-    
+
     # Build summary
     total_items = len(items_df)
     ambiguous_count = int((items_df["Match_Type"] == "Ambíguo").sum())
     unmatched_count = int((items_df["Match_Type"] == "Nenhum").sum())
     unique_count = int((items_df["Match_Type"] == "Único").sum())
-    
+
     summary = {
         "total_linhas": total_items,
         "coluna_descricao_utilizada": desc_col_name,
@@ -469,13 +482,13 @@ def classify_items(
         "ambiguo": ambiguous_count,
         "nenhum": unmatched_count,
     }
-    
+
     # Generate analytics before dropping internal columns
     analytics = generate_analytics(items_df)
 
     # We don't need to return _desc_norm
     items_output = items_df.drop(columns=["_desc_norm"]).to_dict(orient="records")
-    
+
     return {
         "items": items_output,
         "summary": summary,
@@ -523,8 +536,11 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
 
             # Mark Pareto classes
             pareto["Classe"] = pareto["% Acumulado"].apply(
-                lambda x: "A" if x <= PARETO_CLASS_A_THRESHOLD
-                else ("B" if x <= PARETO_CLASS_B_THRESHOLD else "C")
+                lambda x: (
+                    "A"
+                    if x <= PARETO_CLASS_A_THRESHOLD
+                    else ("B" if x <= PARETO_CLASS_B_THRESHOLD else "C")
+                )
             )
 
             analytics[f"pareto_{level}"] = pareto.head(20).to_dict(orient="records")
@@ -540,7 +556,10 @@ def generate_analytics(df_items: pd.DataFrame) -> Dict[str, Any]:
 
     return analytics
 
-def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -> Dict[str, Any]:
+
+def generate_summary(
+    df_items: pd.DataFrame, desc_col_name: str = "Descricao"
+) -> Dict[str, Any]:
     """
     Generate summary statistics from the classified items DataFrame.
 
@@ -553,7 +572,9 @@ def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -
     incomplete_mask = pd.Series(False, index=df_items.index)
     for lvl in ("N1", "N2", "N3", "N4"):
         if lvl in df_items.columns:
-            incomplete_mask = incomplete_mask | df_items[lvl].fillna("").astype(str).str.strip().isin(INCOMPLETE_VALUES)
+            incomplete_mask = incomplete_mask | df_items[lvl].fillna("").astype(
+                str
+            ).str.strip().isin(INCOMPLETE_VALUES)
     nenhum_count = int(incomplete_mask.sum())
     unico_count = total_items - nenhum_count
 
@@ -561,6 +582,6 @@ def generate_summary(df_items: pd.DataFrame, desc_col_name: str = "Descricao") -
         "total_linhas": total_items,
         "coluna_descricao_utilizada": desc_col_name,
         "unico": unico_count,
-        "ambiguo": 0,          # conceito removido — manter campo por compat
+        "ambiguo": 0,  # conceito removido — manter campo por compat
         "nenhum": nenhum_count,
     }

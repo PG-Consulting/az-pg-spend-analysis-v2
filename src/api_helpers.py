@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import functools
 
 import azure.functions as func
@@ -12,12 +13,41 @@ from src.exceptions import SpendAnalysisError
 
 logger = logging.getLogger(__name__)
 
+# --- CORS helpers ---
+
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
+
+def _resolve_origin(request) -> str:
+    """Return the request Origin if it is in ALLOWED_ORIGINS, else the first allowed origin."""
+    if request is not None:
+        origin = None
+        try:
+            origin = request.headers.get("Origin")
+        except Exception:
+            pass
+        if origin and origin in ALLOWED_ORIGINS:
+            return origin
+    return ALLOWED_ORIGINS[0] if ALLOWED_ORIGINS else "http://localhost:3000"
+
+
+def _cors_headers(request=None) -> dict:
+    """Build CORS response headers with dynamic origin."""
+    return {
+        "Access-Control-Allow-Origin": _resolve_origin(request),
+        "Access-Control-Allow-Credentials": "true",
+    }
+
 
 def json_response(
-    data, status_code: int = 200, headers: dict = None
+    data, status_code: int = 200, headers: dict = None, request=None
 ) -> func.HttpResponse:
     """Create a JSON HttpResponse using safe_json_dumps."""
-    resp_headers = {"Access-Control-Allow-Origin": "*"}
+    resp_headers = _cors_headers(request)
     if headers:
         resp_headers.update(headers)
     return func.HttpResponse(
@@ -28,26 +58,38 @@ def json_response(
     )
 
 
-def error_response(message: str, status_code: int = 500) -> func.HttpResponse:
+def error_response(
+    message: str, status_code: int = 500, request=None
+) -> func.HttpResponse:
     """Create a standardized error response: {"error": "message"}."""
     return func.HttpResponse(
         body=json.dumps({"error": message}, ensure_ascii=False),
         status_code=status_code,
         mimetype="application/json",
-        headers={"Access-Control-Allow-Origin": "*"},
+        headers=_cors_headers(request),
     )
 
 
-def options_response(methods: str = "GET, POST, OPTIONS") -> func.HttpResponse:
-    """Create a CORS preflight response."""
-    return func.HttpResponse(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": methods,
-            "Access-Control-Allow-Headers": "Content-Type",
-        },
-    )
+def options_response(req_or_methods=None, methods: str = None) -> func.HttpResponse:
+    """Create a CORS preflight response.
+
+    Backwards-compatible:
+        options_response("GET, POST, OPTIONS")           # old style
+        options_response(req, "GET, POST, OPTIONS")      # new style with request
+    """
+    if req_or_methods is None or isinstance(req_or_methods, str):
+        # Old-style call: options_response() or options_response("GET, OPTIONS")
+        request = None
+        actual_methods = req_or_methods or "GET, POST, OPTIONS"
+    else:
+        # New-style call: options_response(req, "GET, OPTIONS")
+        request = req_or_methods
+        actual_methods = methods or "GET, POST, OPTIONS"
+
+    cors = _cors_headers(request)
+    cors["Access-Control-Allow-Methods"] = actual_methods
+    cors["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return func.HttpResponse(status_code=200, headers=cors)
 
 
 def handle_errors(func_or_name=None):
@@ -66,6 +108,8 @@ def handle_errors(func_or_name=None):
 
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            # Extract request object for CORS headers
+            req = args[0] if args and hasattr(args[0], "headers") else None
             try:
                 return fn(*args, **kwargs)
             except filelock.Timeout:
@@ -78,19 +122,19 @@ def handle_errors(func_or_name=None):
                     status_code=503,
                     mimetype="application/json",
                     headers={
-                        "Access-Control-Allow-Origin": "*",
+                        **_cors_headers(req),
                         "Retry-After": "2",
                     },
                 )
             except SpendAnalysisError as e:
                 logger.warning(f"{endpoint_name}: {e}")
-                return error_response(str(e), e.status_code)
+                return error_response(str(e), e.status_code, request=req)
             except ValueError as e:
                 logger.warning(f"{endpoint_name} validation error: {e}")
-                return error_response(str(e), 400)
+                return error_response(str(e), 400, request=req)
             except Exception as e:
                 logger.error(f"{endpoint_name} error: {e}", exc_info=True)
-                return error_response(str(e), 500)
+                return error_response(str(e), 500, request=req)
 
         return wrapper
 

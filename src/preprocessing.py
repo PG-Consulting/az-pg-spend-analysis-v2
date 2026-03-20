@@ -1,5 +1,5 @@
 """
-Shared preprocessing utilities for Spend Analysis Classification.
+Shared preprocessing utilities for Spend.AI Classification.
 
 This module provides text normalization and feature extraction functions
 used by both the training pipeline and the ML classifier runtime.
@@ -22,15 +22,25 @@ ABBREVIATIONS = {
 
 # Noise words (prepositions, articles) removed during normalization
 NOISE_WORDS = {
-    "para", "com", "de", "do", "da",  # Prepositions
-    "em", "no", "na",                  # More prepositions
-    "a", "o", "as", "os",              # Articles
+    "para",
+    "com",
+    "de",
+    "do",
+    "da",  # Prepositions
+    "em",
+    "no",
+    "na",  # More prepositions
+    "a",
+    "o",
+    "as",
+    "os",  # Articles
 }
 
 
 # ================================
 # TEXT NORMALIZATION
 # ================================
+
 
 def normalize_text(s: str) -> str:
     """
@@ -53,37 +63,37 @@ def normalize_text(s: str) -> str:
     """
     if not isinstance(s, str):
         return ""
-    
+
     s = s.lower()
-    
+
     # Remove accents (NFD + Mn filter)
     s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    
+
     # Remove everything that is not a letter, number, space, or hyphen
     s = re.sub(r"[^\w\s\-]", " ", s, flags=re.UNICODE)
-    
+
     # Hyphen becomes a separator (space)
     s = s.replace("-", " ")
-    
+
     # Compact spaces
     s = re.sub(r"\s+", " ", s).strip()
-    
+
     # Expand abbreviations and remove noise words
     words = s.split()
     new_words = []
     for w in words:
         # Expand abbreviation if exists
         w = ABBREVIATIONS.get(w, w)
-        
+
         # Skip noise words
         if w in NOISE_WORDS:
             continue
-            
+
         new_words.append(w)
-    
+
     s = " ".join(new_words)
-    
+
     return s
 
 
@@ -104,11 +114,12 @@ def normalize_corpus(texts: List[str]) -> List[str]:
 # FEATURE EXTRACTION
 # ================================
 
+
 def build_tfidf_vectorizer(
     max_features: int = 5000,
     ngram_range: tuple = (1, 2),
     min_df: int = 2,
-    max_df: float = 0.95
+    max_df: float = 0.95,
 ) -> TfidfVectorizer:
     """
     Create a TF-IDF vectorizer configured for spend classification.
@@ -137,6 +148,7 @@ def build_tfidf_vectorizer(
 # HEADER NORMALIZATION
 # ================================
 
+
 def normalize_header(header: str) -> str:
     """
     Normaliza nomes de colunas de arquivos de treinamento para nomes canônicos.
@@ -150,7 +162,13 @@ def normalize_header(header: str) -> str:
     Returns:
         Nome canônico da coluna ou o header original se não houver mapeamento.
     """
-    normalized = unicodedata.normalize("NFD", str(header)).encode("ascii", "ignore").decode("utf-8").lower().strip()
+    normalized = (
+        unicodedata.normalize("NFD", str(header))
+        .encode("ascii", "ignore")
+        .decode("utf-8")
+        .lower()
+        .strip()
+    )
     if normalized in ("descricao", "item_description", "description", "desc"):
         return "Descricao"
     if normalized in ("n1", "nivel 1", "level 1", "categoria"):
