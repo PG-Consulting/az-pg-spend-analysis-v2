@@ -91,13 +91,16 @@ def _validate_jwt_token(token: str) -> dict:
         raise AuthenticationError("Token signed with unknown key")
 
     issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    # Access tokens for custom API scopes (api://{clientId}/...) have
+    # audience = "api://{clientId}", not the bare clientId.
+    audience = f"api://{client_id}"
 
     try:
         claims = jwt.decode(
             token,
             key=rsa_key,
             algorithms=["RS256"],
-            audience=client_id,
+            audience=audience,
             issuer=issuer,
         )
         return claims
