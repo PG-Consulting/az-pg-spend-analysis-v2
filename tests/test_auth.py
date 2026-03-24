@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import patch
 
+
 from src.exceptions import AuthenticationError, ForbiddenError
 
 
@@ -220,3 +221,129 @@ class TestRequireAdmin:
         req = _MockHttpRequest(method="OPTIONS")
         resp = endpoint(req)
         assert resp.status_code == 200
+
+
+@pytest.mark.real_auth
+class TestValidateJwtTokenIssuers:
+    """Tests that exercise _validate_jwt_token directly with real RSA keys and JWTs."""
+
+    @staticmethod
+    def _make_rsa_pair():
+        """Generate a real RSA key pair and return (private_key, jwk_dict, kid)."""
+        import base64
+        import json  # noqa: F401 — used for JWK serialization sanity
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.backends import default_backend
+
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend(),
+        )
+        public_key = private_key.public_key()
+        pub_numbers = public_key.public_numbers()
+
+        def _int_to_base64(n: int) -> str:
+            byte_length = (n.bit_length() + 7) // 8
+            return (
+                base64.urlsafe_b64encode(n.to_bytes(byte_length, byteorder="big"))
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+
+        kid = "test-key-id"
+        jwk_dict = {
+            "kid": kid,
+            "kty": "RSA",
+            "n": _int_to_base64(pub_numbers.n),
+            "e": _int_to_base64(pub_numbers.e),
+        }
+        return private_key, jwk_dict, kid
+
+    @staticmethod
+    def _make_token(
+        private_key, kid: str, issuer: str, audience: str = "api://test-client"
+    ) -> str:
+        """Encode a real JWT signed with the given private key."""
+        import time
+        import jwt as pyjwt
+
+        now = int(time.time())
+        payload = {
+            "iss": issuer,
+            "aud": audience,
+            "preferred_username": "user@test.com",
+            "name": "Test User",
+            "iat": now,
+            "nbf": now,
+            "exp": now + 3600,
+        }
+        token = pyjwt.encode(
+            payload,
+            private_key,
+            algorithm="RS256",
+            headers={"kid": kid},
+        )
+        return token
+
+    @patch("src.auth._get_jwks_keys")
+    @patch("jwt.get_unverified_header")
+    def test_v2_issuer_accepted(self, mock_header, mock_jwks, monkeypatch):
+        """JWT with v2.0 issuer must be accepted by _validate_jwt_token."""
+        monkeypatch.setenv("AZURE_AD_TENANT_ID", "test-tenant")
+        monkeypatch.setenv("AZURE_AD_CLIENT_ID", "test-client")
+
+        from src.auth import _validate_jwt_token
+
+        private_key, jwk_dict, kid = self._make_rsa_pair()
+        issuer = "https://login.microsoftonline.com/test-tenant/v2.0"
+        token = self._make_token(private_key, kid, issuer)
+
+        mock_header.return_value = {"kid": kid, "alg": "RS256"}
+        mock_jwks.return_value = [jwk_dict]
+
+        claims = _validate_jwt_token(token)
+        assert claims["preferred_username"] == "user@test.com"
+        assert claims["iss"] == issuer
+
+    @patch("src.auth._get_jwks_keys")
+    @patch("jwt.get_unverified_header")
+    def test_v1_issuer_accepted(self, mock_header, mock_jwks, monkeypatch):
+        """JWT with v1.0 issuer must be accepted by _validate_jwt_token.
+
+        This test WILL FAIL until Task 2 adds v1.0 issuer support.
+        """
+        monkeypatch.setenv("AZURE_AD_TENANT_ID", "test-tenant")
+        monkeypatch.setenv("AZURE_AD_CLIENT_ID", "test-client")
+
+        from src.auth import _validate_jwt_token
+
+        private_key, jwk_dict, kid = self._make_rsa_pair()
+        issuer = "https://sts.windows.net/test-tenant/"
+        token = self._make_token(private_key, kid, issuer)
+
+        mock_header.return_value = {"kid": kid, "alg": "RS256"}
+        mock_jwks.return_value = [jwk_dict]
+
+        claims = _validate_jwt_token(token)
+        assert claims["preferred_username"] == "user@test.com"
+        assert claims["iss"] == issuer
+
+    @patch("src.auth._get_jwks_keys")
+    @patch("jwt.get_unverified_header")
+    def test_unknown_issuer_rejected(self, mock_header, mock_jwks, monkeypatch):
+        """JWT with an unknown issuer must raise AuthenticationError."""
+        monkeypatch.setenv("AZURE_AD_TENANT_ID", "test-tenant")
+        monkeypatch.setenv("AZURE_AD_CLIENT_ID", "test-client")
+
+        from src.auth import _validate_jwt_token
+
+        private_key, jwk_dict, kid = self._make_rsa_pair()
+        issuer = "https://evil.example.com/"
+        token = self._make_token(private_key, kid, issuer)
+
+        mock_header.return_value = {"kid": kid, "alg": "RS256"}
+        mock_jwks.return_value = [jwk_dict]
+
+        with pytest.raises(AuthenticationError, match="Invalid token issuer"):
+            _validate_jwt_token(token)
