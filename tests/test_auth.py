@@ -231,7 +231,6 @@ class TestValidateJwtTokenIssuers:
     def _make_rsa_pair():
         """Generate a real RSA key pair and return (private_key, jwk_dict, kid)."""
         import base64
-        import json  # noqa: F401 — used for JWK serialization sanity
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.backends import default_backend
 
@@ -309,10 +308,7 @@ class TestValidateJwtTokenIssuers:
     @patch("src.auth._get_jwks_keys")
     @patch("jwt.get_unverified_header")
     def test_v1_issuer_accepted(self, mock_header, mock_jwks, monkeypatch):
-        """JWT with v1.0 issuer must be accepted by _validate_jwt_token.
-
-        This test WILL FAIL until Task 2 adds v1.0 issuer support.
-        """
+        """JWT with v1.0 issuer (sts.windows.net) must be accepted."""
         monkeypatch.setenv("AZURE_AD_TENANT_ID", "test-tenant")
         monkeypatch.setenv("AZURE_AD_CLIENT_ID", "test-client")
 
