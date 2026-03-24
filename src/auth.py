@@ -90,7 +90,14 @@ def _validate_jwt_token(token: str) -> dict:
     if rsa_key is None:
         raise AuthenticationError("Token signed with unknown key")
 
-    issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    # Accept both v2.0 and v1.0 issuer formats.
+    # v1.0 tokens use sts.windows.net when accessTokenAcceptedVersion is null (default).
+    # v2.0 JWKS endpoint serves the same signing keys as v1.0, so a single
+    # JWKS URL is sufficient for both token versions.
+    issuers = [
+        f"https://login.microsoftonline.com/{tenant_id}/v2.0",  # v2.0
+        f"https://sts.windows.net/{tenant_id}/",  # v1.0
+    ]
     # Access tokens for custom API scopes (api://{clientId}/...) have
     # audience = "api://{clientId}", not the bare clientId.
     audience = f"api://{client_id}"
@@ -101,7 +108,7 @@ def _validate_jwt_token(token: str) -> dict:
             key=rsa_key,
             algorithms=["RS256"],
             audience=audience,
-            issuer=issuer,
+            issuer=issuers,
         )
         return claims
     except jwt.ExpiredSignatureError:
