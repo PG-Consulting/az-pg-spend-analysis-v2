@@ -29,7 +29,7 @@
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-        "content-security-policy": "default-src https: 'unsafe-inline' 'unsafe-eval'; img-src https: data:; frame-ancestors 'none';"
+        "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https://*.azurewebsites.net https://login.microsoftonline.com https://*.microsoftonline.com; frame-ancestors 'none'; base-uri 'self';"
     },
     "mimeTypes": {
         ".json": "application/json"

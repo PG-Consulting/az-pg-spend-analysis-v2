@@ -144,3 +144,70 @@ def handle_errors(func_or_name=None):
     if callable(func_or_name):
         return decorator(func_or_name)
     return decorator
+
+
+# --- Rate limiting ---
+
+import threading  # noqa: E402
+import time as _time  # noqa: E402
+from collections import defaultdict  # noqa: E402
+
+_rate_limit_buckets: dict = defaultdict(list)
+_rate_limit_lock = threading.Lock()
+
+
+def _get_client_ip(request) -> str:
+    """Extract client IP from request (handles Azure proxy headers)."""
+    if request is None:
+        return "unknown"
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.headers.get("X-Client-IP", "unknown")
+
+
+def rate_limit(requests: int = 100, window: int = 60):
+    """Decorator: per-IP sliding window rate limiter.
+
+    Returns 429 with Retry-After header when limit is exceeded.
+    Bypasses OPTIONS preflight requests.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            req = args[0] if args and hasattr(args[0], "headers") else None
+
+            # Bypass OPTIONS
+            if req and hasattr(req, "method") and req.method == "OPTIONS":
+                return fn(*args, **kwargs)
+
+            client_ip = _get_client_ip(req)
+            now = _time.time()
+
+            with _rate_limit_lock:
+                bucket = _rate_limit_buckets[client_ip]
+                bucket[:] = [ts for ts in bucket if now - ts < window]
+
+                if len(bucket) >= requests:
+                    reset_time = bucket[0] + window
+                    return func.HttpResponse(
+                        body=json.dumps(
+                            {"error": "Rate limit exceeded. Try again later."},
+                            ensure_ascii=False,
+                        ),
+                        status_code=429,
+                        mimetype="application/json",
+                        headers={
+                            **_cors_headers(req),
+                            "Retry-After": str(int(reset_time - now) + 1),
+                        },
+                    )
+
+                bucket.append(now)
+
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

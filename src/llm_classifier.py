@@ -9,6 +9,7 @@ import logging
 import random
 import time
 import requests
+from enum import Enum
 from typing import List, Dict, Optional, Union
 
 from src.types import ClassificationResultDict, HierarchyEntryDict, KBEntryDict
@@ -21,6 +22,51 @@ logger = logging.getLogger(__name__)
 LLM_MAX_RETRIES = 2  # Backoff exponencial em chamadas à API
 LLM_MAX_CONCURRENT_CALLS = 15  # Max chamadas LLM simultâneas (global, cross-chunk)
 _LLM_SEMAPHORE = threading.Semaphore(LLM_MAX_CONCURRENT_CALLS)
+
+
+class CircuitState(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class CircuitBreaker:
+    """Simple circuit breaker for external API calls.
+
+    CLOSED: normal operation.
+    OPEN: fail fast after failure_threshold consecutive failures.
+    HALF_OPEN: one test request after recovery_timeout seconds.
+    """
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = 0.0
+        self.state = CircuitState.CLOSED
+
+    def can_attempt(self) -> bool:
+        if self.state == CircuitState.CLOSED:
+            return True
+        if self.state == CircuitState.OPEN:
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = CircuitState.HALF_OPEN
+                return True
+            return False
+        return True  # HALF_OPEN
+
+    def record_success(self):
+        self.failure_count = 0
+        self.state = CircuitState.CLOSED
+
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitState.OPEN
+
+
+_CIRCUIT_BREAKER = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
 
 # UNSPSC Segment/Family definitions for prompt context
 # We use a simplified subset to guide the model, or rely on its internal knowledge (GPT-4 handles UNSPSC well)
@@ -266,6 +312,12 @@ def _call_openai_api_inner(
 ):
     """Actual API call logic, called under semaphore."""
 
+    if not _CIRCUIT_BREAKER.can_attempt():
+        logger.warning(
+            "Circuit breaker OPEN — skipping Grok API call, returning fallback"
+        )
+        return [_create_manual_fallback(item) for item in items], None
+
     # Construct the system message
     client_info = f"para o cliente: {client_context}" if client_context else ""
 
@@ -375,7 +427,6 @@ def _call_openai_api_inner(
     if not config["api_key"] or len(config["api_key"]) < 10:
         logging.warning("CRITICAL: Grok API Key missing or too short!")
 
-
     max_retries = LLM_MAX_RETRIES
     response = None
     for attempt in range(max_retries + 1):
@@ -418,11 +469,13 @@ def _call_openai_api_inner(
             if attempt < max_retries:
                 time.sleep(2**attempt + random.uniform(0, 1))
             else:
+                _CIRCUIT_BREAKER.record_failure()
                 return [_create_manual_fallback(item) for item in items], None
 
     _empty_usage = None
     try:
         if response is None or response.status_code != 200:
+            _CIRCUIT_BREAKER.record_failure()
             code = response.status_code if response else "N/A"
             return [
                 _create_manual_fallback(item, f"Erro {code} após retentativas")
@@ -540,6 +593,7 @@ def _call_openai_api_inner(
                     _create_manual_fallback(item_text, "Item não retornado pelo LLM")
                 )
 
+        _CIRCUIT_BREAKER.record_success()
         return formatted_results, token_usage
 
     except Exception as e:

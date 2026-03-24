@@ -20,6 +20,7 @@ from src.api_helpers import (
     json_response,
     options_response,
     handle_errors,
+    rate_limit,
 )
 from src.exceptions import NotFoundError, ValidationError, ConflictError
 from src.validation import safe_resource_id
@@ -58,6 +59,7 @@ def _derive_status(row: dict) -> str:
 )
 @handle_errors("SubmitTaxonomyJob")
 @require_auth
+@rate_limit(requests=10, window=60)
 def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/SubmitTaxonomyJob
     Accepts a file upload, splits it into chunks, and queues it for async processing.
