@@ -165,9 +165,36 @@ def _extract_and_validate(req) -> dict:
     """Extract and validate JWT from request. Returns user info dict."""
     auth_header = req.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        logger.warning(
+            "No Bearer token from %s — header: '%s'",
+            req.headers.get("X-Forwarded-For", "unknown-ip"),
+            auth_header[:20] if auth_header else "(empty)",
+        )
         raise AuthenticationError()  # default: "Authentication required"
 
     token = auth_header[7:]
+
+    # Temporary debug: log token claims without verification to diagnose
+    try:
+        unverified = jwt.decode(
+            token,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_iss": False,
+                "verify_exp": False,
+            },
+        )
+        logger.info(
+            "Token debug — iss: %s, aud: %s, sub: %s, preferred_username: %s",
+            unverified.get("iss", "MISSING"),
+            unverified.get("aud", "MISSING"),
+            unverified.get("sub", "MISSING"),
+            unverified.get("preferred_username", unverified.get("email", "MISSING")),
+        )
+    except Exception:
+        logger.warning("Could not decode token for debug logging")
+
     try:
         claims = _validate_jwt_token(token)
     except AuthenticationError as e:

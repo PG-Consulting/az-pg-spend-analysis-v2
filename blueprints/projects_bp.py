@@ -44,7 +44,7 @@ def list_sectors_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 @handle_errors("CreateSector")
-@require_admin
+@require_auth
 def create_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """POST /api/CreateSector - Create a new sector
     Body: {name: str, display_name: str, custom_hierarchy?: list}
