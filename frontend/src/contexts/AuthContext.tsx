@@ -240,6 +240,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const token = await getAccessToken();
         if (!token) {
+          // Token null = MSAL could not acquire (transient issue).
+          // Do NOT logoutRedirect here — would cause infinite loop.
+          console.warn('[Auth] No access token available — will retry on next interaction');
           setIsLoading(false);
           return;
         }
@@ -250,8 +253,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: profile.role as 'admin' | 'consultor',
         });
         profileFetchedRef.current = true;
-      } catch (err) {
-        console.error('Failed to fetch user profile:', err);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 401) {
+          // Backend CONFIRMED the token is invalid — safe to force re-login
+          console.warn('[Auth] Token rejected by backend (401) — forcing re-login');
+          instance.logoutRedirect();
+          return;
+        }
+        // Other errors (network, 500, CORS) — don't force logout
+        console.error('[Auth] Failed to fetch user profile:', err);
       } finally {
         setIsLoading(false);
       }
