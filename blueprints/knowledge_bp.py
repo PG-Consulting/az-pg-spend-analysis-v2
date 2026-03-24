@@ -10,6 +10,7 @@ from src.api_helpers import (
     handle_errors,
 )
 from src.exceptions import NotFoundError, ValidationError
+from src.validation import safe_resource_id
 from src.utils import get_models_dir
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
 from src.auth import require_auth, require_admin
@@ -20,7 +21,7 @@ knowledge_bp = func.Blueprint()
 
 def _get_project_id(req: func.HttpRequest) -> str:
     """Extract and validate projectId from query params."""
-    return req.params.get("projectId", "").strip()
+    return safe_resource_id(req.params.get("projectId", ""), field="projectId")
 
 
 @knowledge_bp.route(
@@ -38,8 +39,6 @@ def get_knowledge_base_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     project_id = _get_project_id(req)
-    if not project_id:
-        raise ValidationError("projectId is required")
 
     page = int(req.params.get("page", 1))
     page_size = min(int(req.params.get("pageSize", 50)), 200)
@@ -80,9 +79,7 @@ def add_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    project_id = body.get("projectId", "").strip()
-    if not project_id:
-        raise ValidationError("projectId is required")
+    project_id = safe_resource_id(body.get("projectId", ""), field="projectId")
 
     description = body.get("description", "").strip()
     if not description:
@@ -127,10 +124,8 @@ def update_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "PUT, OPTIONS")
 
     body = req.get_json()
-    project_id = body.get("projectId", "").strip()
-    entry_id = body.get("entryId", "").strip()
-    if not project_id or not entry_id:
-        raise ValidationError("projectId and entryId are required")
+    project_id = safe_resource_id(body.get("projectId", ""), field="projectId")
+    entry_id = safe_resource_id(body.get("entryId", ""), field="entryId")
 
     # Build update payload from provided fields
     update_data = {}
@@ -175,10 +170,8 @@ def delete_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "DELETE, OPTIONS")
 
-    project_id = req.params.get("projectId", "").strip()
-    entry_id = req.params.get("entryId", "").strip()
-    if not project_id or not entry_id:
-        raise ValidationError("projectId and entryId are required")
+    project_id = safe_resource_id(req.params.get("projectId", ""), field="projectId")
+    entry_id = safe_resource_id(req.params.get("entryId", ""), field="entryId")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(project_id, models_dir)
@@ -207,8 +200,6 @@ def get_kb_coverage_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     project_id = _get_project_id(req)
-    if not project_id:
-        raise ValidationError("projectId is required")
 
     models_dir = get_models_dir()
 
@@ -268,8 +259,6 @@ def get_kb_versions_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     project_id = _get_project_id(req)
-    if not project_id:
-        raise ValidationError("projectId is required")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(project_id, models_dir)
@@ -293,10 +282,8 @@ def rollback_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    project_id = body.get("projectId", "").strip()
-    version_id = body.get("versionId", "").strip()
-    if not project_id or not version_id:
-        raise ValidationError("projectId and versionId are required")
+    project_id = safe_resource_id(body.get("projectId", ""), field="projectId")
+    version_id = safe_resource_id(body.get("versionId", ""), field="versionId")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(project_id, models_dir)
@@ -322,8 +309,6 @@ def export_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     project_id = _get_project_id(req)
-    if not project_id:
-        raise ValidationError("projectId is required")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(project_id, models_dir)
@@ -357,11 +342,9 @@ def import_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    project_id = body.get("projectId", "").strip()
+    project_id = safe_resource_id(body.get("projectId", ""), field="projectId")
     file_content_b64 = body.get("fileContentBase64", "").strip()
 
-    if not project_id:
-        raise ValidationError("projectId is required")
     if not file_content_b64:
         raise ValidationError("fileContentBase64 is required")
 
@@ -385,7 +368,9 @@ def import_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
 
 def _get_sector_name(req: func.HttpRequest) -> str:
     """Extract and validate sectorName from query params."""
-    return req.params.get("sectorName", "").strip().lower()
+    return safe_resource_id(
+        req.params.get("sectorName", ""), field="sectorName"
+    ).lower()
 
 
 @knowledge_bp.route(
@@ -401,8 +386,6 @@ def get_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     sector_name = _get_sector_name(req)
-    if not sector_name:
-        raise ValidationError("sectorName is required")
 
     page = int(req.params.get("page", 1))
     page_size = min(int(req.params.get("pageSize", 50)), 200)
@@ -437,8 +420,6 @@ def get_sector_kb_coverage_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     sector_name = _get_sector_name(req)
-    if not sector_name:
-        raise ValidationError("sectorName is required")
 
     models_dir = get_models_dir()
 
@@ -468,8 +449,6 @@ def get_sector_kb_versions_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     sector_name = _get_sector_name(req)
-    if not sector_name:
-        raise ValidationError("sectorName is required")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
@@ -493,8 +472,6 @@ def export_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "GET, OPTIONS")
 
     sector_name = _get_sector_name(req)
-    if not sector_name:
-        raise ValidationError("sectorName is required")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
@@ -528,11 +505,11 @@ def import_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    sector_name = body.get("sectorName", "").strip().lower()
+    sector_name = safe_resource_id(
+        body.get("sectorName", ""), field="sectorName"
+    ).lower()
     file_content_b64 = body.get("fileContentBase64", "").strip()
 
-    if not sector_name:
-        raise ValidationError("sectorName is required")
     if not file_content_b64:
         raise ValidationError("fileContentBase64 is required")
 
@@ -566,10 +543,10 @@ def update_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "PUT, OPTIONS")
 
     body = req.get_json()
-    sector_name = body.get("sectorName", "").strip().lower()
-    entry_id = body.get("entryId", "").strip()
-    if not sector_name or not entry_id:
-        raise ValidationError("sectorName and entryId are required")
+    sector_name = safe_resource_id(
+        body.get("sectorName", ""), field="sectorName"
+    ).lower()
+    entry_id = safe_resource_id(body.get("entryId", ""), field="entryId")
 
     update_data = {}
     for field in (
@@ -613,10 +590,10 @@ def delete_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "DELETE, OPTIONS")
 
-    sector_name = req.params.get("sectorName", "").strip().lower()
-    entry_id = req.params.get("entryId", "").strip()
-    if not sector_name or not entry_id:
-        raise ValidationError("sectorName and entryId are required")
+    sector_name = safe_resource_id(
+        req.params.get("sectorName", ""), field="sectorName"
+    ).lower()
+    entry_id = safe_resource_id(req.params.get("entryId", ""), field="entryId")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
@@ -645,10 +622,10 @@ def rollback_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    sector_name = body.get("sectorName", "").strip().lower()
-    version_id = body.get("versionId", "").strip()
-    if not sector_name or not version_id:
-        raise ValidationError("sectorName and versionId are required")
+    sector_name = safe_resource_id(
+        body.get("sectorName", ""), field="sectorName"
+    ).lower()
+    version_id = safe_resource_id(body.get("versionId", ""), field="versionId")
 
     models_dir = get_models_dir()
     kb = KnowledgeBase(sector_name, models_dir, entity_type="sector")
@@ -677,9 +654,9 @@ def add_sector_kb_entry_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    sector_name = body.get("sectorName", "").strip().lower()
-    if not sector_name:
-        raise ValidationError("sectorName is required")
+    sector_name = safe_resource_id(
+        body.get("sectorName", ""), field="sectorName"
+    ).lower()
 
     description = body.get("description", "").strip()
     if not description:
@@ -724,14 +701,12 @@ def promote_to_sector_kb_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    project_id = body.get("projectId", "").strip()
-    sector_name = body.get("sectorName", "").strip().lower()
+    project_id = safe_resource_id(body.get("projectId", ""), field="projectId")
+    sector_name = safe_resource_id(
+        body.get("sectorName", ""), field="sectorName"
+    ).lower()
     entry_ids = body.get("entryIds", [])
 
-    if not project_id:
-        raise ValidationError("projectId is required")
-    if not sector_name:
-        raise ValidationError("sectorName is required")
     if not entry_ids:
         raise ValidationError("entryIds must not be empty")
 

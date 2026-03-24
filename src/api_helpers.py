@@ -36,10 +36,13 @@ def _resolve_origin(request) -> str:
 
 
 def _cors_headers(request=None) -> dict:
-    """Build CORS response headers with dynamic origin."""
+    """Build CORS + security response headers with dynamic origin."""
     return {
         "Access-Control-Allow-Origin": _resolve_origin(request),
         "Access-Control-Allow-Credentials": "true",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
     }
 
 

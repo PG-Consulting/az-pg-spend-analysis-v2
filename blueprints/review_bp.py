@@ -17,7 +17,8 @@ from src.utils import (
 from src.knowledge_base import KnowledgeBase, merge_kb_entries
 from src.api_helpers import json_response, options_response, handle_errors
 from src.auth import require_auth
-from src.exceptions import NotFoundError, ValidationError
+from src.exceptions import NotFoundError
+from src.validation import safe_resource_id
 from src.file_lock import read_status
 
 logger = logging.getLogger(__name__)
@@ -45,10 +46,11 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    job_id = body.get("jobId", "")
-    if not job_id:
-        raise ValidationError("jobId is required")
-    project_id = body.get("projectId", "")
+    job_id = safe_resource_id(body.get("jobId", ""), field="jobId")
+    project_id_raw = body.get("projectId", "").strip()
+    project_id = (
+        safe_resource_id(project_id_raw, field="projectId") if project_id_raw else ""
+    )
     items = body.get("items", [])
     instruction = body.get("instruction", "")
 
@@ -172,10 +174,11 @@ def approve_classifications_endpoint(req: func.HttpRequest) -> func.HttpResponse
         return options_response(req, "POST, OPTIONS")
 
     body = req.get_json()
-    job_id = body.get("jobId", "")
-    if not job_id:
-        raise ValidationError("jobId is required")
-    project_id = body.get("projectId", "")
+    job_id = safe_resource_id(body.get("jobId", ""), field="jobId")
+    project_id_raw = body.get("projectId", "").strip()
+    project_id = (
+        safe_resource_id(project_id_raw, field="projectId") if project_id_raw else ""
+    )
     decisions = body.get("decisions", [])
 
     models_dir = get_models_dir()

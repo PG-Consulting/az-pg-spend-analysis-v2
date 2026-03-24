@@ -68,9 +68,30 @@ def _probe_grok_api() -> dict:
 @health_bp.route(route="health", methods=["GET"])
 @handle_errors("HealthCheck")
 def HealthCheck(req: func.HttpRequest) -> func.HttpResponse:
-    """GET /api/health — returns service status and basic checks."""
-    models_dir = get_models_dir()
+    """GET /api/health — returns service status.
 
+    Public: minimal status only.
+    Authenticated admin (or SKIP_AUTH dev): full diagnostic checks.
+    """
+    from src.auth import _is_skip_auth_allowed, _extract_and_validate
+    from src.exceptions import AuthenticationError, ForbiddenError
+
+    # Determine if caller is authenticated admin
+    show_details = False
+    if _is_skip_auth_allowed():
+        show_details = True
+    else:
+        try:
+            user = _extract_and_validate(req)
+            show_details = user.get("role") == "admin"
+        except (AuthenticationError, ForbiddenError):
+            pass  # Not authenticated or not authorized — show public response
+
+    if not show_details:
+        return json_response({"status": "healthy", "version": "3.0"})
+
+    # Full diagnostics for admin
+    models_dir = get_models_dir()
     grok_probe = _probe_grok_api()
 
     checks = {
@@ -81,17 +102,9 @@ def HealthCheck(req: func.HttpRequest) -> func.HttpResponse:
         "models_dir_configured": bool(models_dir),
     }
 
-    if not checks["filesystem"]:
-        status = "degraded"
-    elif not checks["grok_api_reachable"]:
+    if not checks["filesystem"] or not checks["grok_api_reachable"]:
         status = "degraded"
     else:
         status = "healthy"
 
-    return json_response(
-        {
-            "status": status,
-            "version": "3.0",
-            "checks": checks,
-        }
-    )
+    return json_response({"status": status, "version": "3.0", "checks": checks})

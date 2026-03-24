@@ -8,6 +8,14 @@
             "allowedRoles": [
                 "authenticated"
             ]
+        },
+        {
+            "route": "/.auth/login/github",
+            "statusCode": 404
+        },
+        {
+            "route": "/.auth/login/twitter",
+            "statusCode": 404
         }
     ],
     "responseOverrides": {
@@ -17,7 +25,11 @@
         }
     },
     "globalHeaders": {
-        "content-security-policy": "default-src https: 'unsafe-inline' 'unsafe-eval'; img-src https: data:;"
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "content-security-policy": "default-src https: 'unsafe-inline' 'unsafe-eval'; img-src https: data:; frame-ancestors 'none';"
     },
     "mimeTypes": {
         ".json": "application/json"

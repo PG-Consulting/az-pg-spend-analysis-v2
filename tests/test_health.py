@@ -28,10 +28,11 @@ class _MockHttpResponse:
 class _MockHttpRequest:
     """Minimal mock of azure.functions.HttpRequest."""
 
-    def __init__(self, method="GET", url="", params=None, body=None):
+    def __init__(self, method="GET", url="", params=None, body=None, headers=None):
         self.method = method
         self.url = url
         self.params = params or {}
+        self.headers = headers or {}
         self._body = body
 
     def get_json(self):
@@ -68,6 +69,21 @@ from blueprints.health_bp import HealthCheck
 
 
 class TestHealthCheck:
+    def test_public_returns_minimal_info(self):
+        """Health endpoint without auth returns only status and version."""
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("SKIP_AUTH", "WEBSITE_SITE_NAME")
+        }
+        with patch.dict(os.environ, env, clear=True):
+            resp = HealthCheck(_MockHttpRequest())
+
+        assert resp.status_code == 200
+        body = json.loads(resp.get_body())
+        assert body == {"status": "healthy", "version": "3.0"}
+        assert "checks" not in body
+
     @patch(
         "blueprints.health_bp._probe_grok_api",
         return_value={"reachable": True, "latency_ms": 50},
@@ -78,8 +94,16 @@ class TestHealthCheck:
         os.makedirs(models_dir)
 
         with patch("blueprints.health_bp.get_models_dir", return_value=models_dir):
-            with patch.dict(os.environ, {"GROK_API_KEY": "test-key-123"}):
-                resp = HealthCheck(_MockHttpRequest())
+            with patch.dict(
+                os.environ,
+                {"GROK_API_KEY": "test-key-123", "SKIP_AUTH": "true"},
+                clear=False,
+            ):
+                env = {k: v for k, v in os.environ.items() if k != "WEBSITE_SITE_NAME"}
+                env["GROK_API_KEY"] = "test-key-123"
+                env["SKIP_AUTH"] = "true"
+                with patch.dict(os.environ, env, clear=True):
+                    resp = HealthCheck(_MockHttpRequest())
 
         assert resp.status_code == 200
         body = json.loads(resp.get_body())
@@ -99,11 +123,15 @@ class TestHealthCheck:
         """Health reports degraded when models_dir doesn't exist."""
         fake_dir = "/nonexistent/path/models"
         with patch("blueprints.health_bp.get_models_dir", return_value=fake_dir):
-            with patch.dict(os.environ, {}, clear=False):
-                # Remove GROK_API_KEY if present
-                env = {k: v for k, v in os.environ.items() if k != "GROK_API_KEY"}
-                with patch.dict(os.environ, env, clear=True):
-                    resp = HealthCheck(_MockHttpRequest())
+            # Remove GROK_API_KEY and WEBSITE_SITE_NAME, add SKIP_AUTH
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("GROK_API_KEY", "WEBSITE_SITE_NAME")
+            }
+            env["SKIP_AUTH"] = "true"
+            with patch.dict(os.environ, env, clear=True):
+                resp = HealthCheck(_MockHttpRequest())
 
         assert resp.status_code == 200
         body = json.loads(resp.get_body())
@@ -121,7 +149,11 @@ class TestHealthCheck:
         os.makedirs(models_dir)
 
         with patch("blueprints.health_bp.get_models_dir", return_value=models_dir):
-            resp = HealthCheck(_MockHttpRequest())
+            with patch.dict(os.environ, {"SKIP_AUTH": "true"}, clear=False):
+                env = {k: v for k, v in os.environ.items() if k != "WEBSITE_SITE_NAME"}
+                env["SKIP_AUTH"] = "true"
+                with patch.dict(os.environ, env, clear=True):
+                    resp = HealthCheck(_MockHttpRequest())
 
         assert "Access-Control-Allow-Origin" in resp.headers
 
@@ -129,16 +161,25 @@ class TestHealthCheck:
 class TestGrokProbe:
     """Health check deve testar conectividade com a API Grok."""
 
+    @patch("src.auth._is_skip_auth_allowed", return_value=True)
     @patch("blueprints.health_bp.os.path.isdir", return_value=True)
     @patch("blueprints.health_bp.os.environ.get")
     @patch(
         "blueprints.health_bp._probe_grok_api",
         return_value={"reachable": True, "latency_ms": 150},
     )
-    def test_healthy_when_grok_reachable(self, mock_probe, mock_env, mock_isdir):
+    def test_healthy_when_grok_reachable(
+        self, mock_probe, mock_env, mock_isdir, mock_skip
+    ):
         """Se Grok responde, status deve ser healthy."""
         mock_env.side_effect = lambda key, *args: (
-            "fake-key" if key == "GROK_API_KEY" else ""
+            "fake-key"
+            if key == "GROK_API_KEY"
+            else "true"
+            if key == "SKIP_AUTH"
+            else args[0]
+            if args
+            else ""
         )
         from blueprints.health_bp import HealthCheck
 
@@ -148,16 +189,25 @@ class TestGrokProbe:
         assert body["status"] == "healthy"
         assert body["checks"]["grok_api_reachable"] is True
 
+    @patch("src.auth._is_skip_auth_allowed", return_value=True)
     @patch("blueprints.health_bp.os.path.isdir", return_value=True)
     @patch("blueprints.health_bp.os.environ.get")
     @patch(
         "blueprints.health_bp._probe_grok_api",
         return_value={"reachable": False, "latency_ms": 0},
     )
-    def test_degraded_when_grok_unreachable(self, mock_probe, mock_env, mock_isdir):
+    def test_degraded_when_grok_unreachable(
+        self, mock_probe, mock_env, mock_isdir, mock_skip
+    ):
         """Se Grok não responde, status deve ser degraded."""
         mock_env.side_effect = lambda key, *args: (
-            "fake-key" if key == "GROK_API_KEY" else ""
+            "fake-key"
+            if key == "GROK_API_KEY"
+            else "true"
+            if key == "SKIP_AUTH"
+            else args[0]
+            if args
+            else ""
         )
         from blueprints.health_bp import HealthCheck
 

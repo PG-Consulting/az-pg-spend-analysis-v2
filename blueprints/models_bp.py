@@ -16,6 +16,7 @@ from src.api_helpers import (
     handle_errors,
 )
 from src.exceptions import NotFoundError, ValidationError
+from src.validation import safe_resource_id
 from src.auth import require_auth
 
 logger = logging.getLogger(__name__)
@@ -127,11 +128,11 @@ def TrainModel(req: func.HttpRequest) -> func.HttpResponse:
     body = req.get_json()
 
     file_content_b64 = body.get("fileContent")
-    sector = body.get("sector")
+    sector = safe_resource_id(body.get("sector", ""), field="sector")
     filename = body.get("filename", "dataset.csv")
 
-    if not file_content_b64 or not sector:
-        raise ValidationError("Missing fileContent or sector")
+    if not file_content_b64:
+        raise ValidationError("Missing fileContent")
 
     models_dir = get_models_dir()
 
@@ -327,11 +328,9 @@ def GetModelHistory(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
 
-    sector = req.params.get("sector")
-    if not sector:
-        raise ValidationError("Missing 'sector' query parameter")
-
-    sector = sector.strip().lower()
+    sector = (
+        safe_resource_id(req.params.get("sector", ""), field="sector").strip().lower()
+    )
     models_dir = get_models_dir()
     history_file = os.path.join(models_dir, sector, "model_history.json")
 
@@ -360,11 +359,8 @@ def SetActiveModel(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "POST, OPTIONS")
 
     req_body = req.get_json()
-    sector = req_body.get("sector")
-    version_id = req_body.get("version_id")
-
-    if not sector or not version_id:
-        raise ValidationError("Missing sector or version_id")
+    sector = safe_resource_id(req_body.get("sector", ""), field="sector")
+    version_id = safe_resource_id(req_body.get("version_id", ""), field="version_id")
 
     models_dir = get_models_dir()
     sector_dir = os.path.join(models_dir, sector.lower())
@@ -426,11 +422,11 @@ def GetModelInfo(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
 
-    sector = req.params.get("sector")
-    version_id = req.params.get("version_id")
-
-    if not sector:
-        raise ValidationError("Missing 'sector' parameter.")
+    sector = safe_resource_id(req.params.get("sector", ""), field="sector")
+    version_id_raw = req.params.get("version_id", "").strip()
+    version_id = (
+        safe_resource_id(version_id_raw, field="version_id") if version_id_raw else None
+    )
 
     models_dir = get_models_dir()
     sector_dir = os.path.join(models_dir, sector.lower())
@@ -594,9 +590,7 @@ def GetTrainingData(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
 
-    sector = req.params.get("sector")
-    if not sector:
-        raise ValidationError("Missing 'sector' parameter.")
+    sector = safe_resource_id(req.params.get("sector", ""), field="sector")
 
     page = int(req.params.get("page", 1))
     page_size = min(int(req.params.get("page_size", 50)), 200)
@@ -688,13 +682,10 @@ def DeleteTrainingData(req: func.HttpRequest) -> func.HttpResponse:
 
     body = req.get_json()
 
-    sector = body.get("sector")
+    sector = safe_resource_id(body.get("sector", ""), field="sector")
     row_ids = body.get("row_ids", [])
     version = body.get("version")
     items = body.get("items", [])
-
-    if not sector:
-        raise ValidationError("Missing 'sector' parameter.")
 
     if not row_ids and not version and not items:
         raise ValidationError(

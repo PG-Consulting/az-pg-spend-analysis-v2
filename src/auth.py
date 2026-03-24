@@ -130,7 +130,7 @@ def _validate_group_claim(claims: dict) -> None:
     """Validate that the user belongs to the required group.
 
     Only enforced if ALLOWED_GROUP_ID is set. If the claim 'groups' is absent,
-    the IdP app registration may not be configured to emit groups — skip silently.
+    raises ForbiddenError — token without group membership is not trusted.
     """
     allowed_group = os.environ.get("ALLOWED_GROUP_ID", "").strip()
     if not allowed_group:
@@ -138,9 +138,10 @@ def _validate_group_claim(claims: dict) -> None:
 
     groups = claims.get("groups", [])
     if not groups:
-        # groups claim not present — IdP not configured to emit it
-        logger.warning("ALLOWED_GROUP_ID set but token has no 'groups' claim")
-        return
+        logger.warning(
+            "ALLOWED_GROUP_ID set but token has no 'groups' claim — blocking access"
+        )
+        raise ForbiddenError("Token missing required group membership claim")
 
     if allowed_group not in groups:
         raise ForbiddenError("User is not a member of the required security group")
@@ -157,10 +158,15 @@ def _extract_and_validate(req) -> dict:
     """Extract and validate JWT from request. Returns user info dict."""
     auth_header = req.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        raise AuthenticationError("Missing or invalid Authorization header")
+        raise AuthenticationError()  # default: "Authentication required"
 
     token = auth_header[7:]
-    claims = _validate_jwt_token(token)
+    try:
+        claims = _validate_jwt_token(token)
+    except AuthenticationError as e:
+        # Log the specific reason for debugging, return generic message to client
+        logger.warning(f"JWT validation failed: {e}")
+        raise AuthenticationError()  # default: "Authentication required"
 
     # Validate group membership
     _validate_group_claim(claims)

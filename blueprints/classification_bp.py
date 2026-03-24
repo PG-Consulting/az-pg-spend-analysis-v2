@@ -22,6 +22,7 @@ from src.api_helpers import (
     handle_errors,
 )
 from src.exceptions import NotFoundError, ValidationError, ConflictError
+from src.validation import safe_resource_id
 from src.file_lock import read_status, locked_status
 from src.auth import require_auth
 
@@ -97,7 +98,10 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
     jobs_dir = get_jobs_dir()
 
     # --- Resolve sector and project context ---
-    project_id = req_body.get("projectId", "").strip()
+    project_id_raw = req_body.get("projectId", "").strip()
+    project_id = (
+        safe_resource_id(project_id_raw, field="projectId") if project_id_raw else ""
+    )
     client_context = req_body.get("clientContext", "")
     custom_hierarchy_b64 = req_body.get("customHierarchy")  # legacy path
     project_config = None
@@ -124,10 +128,9 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
             custom_hierarchy_b64 = None
     else:
         # Legacy path: sector from body
-        sector_raw = req_body.get("sector")
-        if not sector_raw:
-            raise ValidationError("Missing projectId or sector")
-        sector = sector_raw.strip().capitalize()
+        sector = safe_resource_id(
+            req_body.get("sector", ""), field="sector"
+        ).capitalize()
         custom_hierarchy_list = None  # will be parsed by worker from b64
 
     # --- Create job directory ---
@@ -280,9 +283,7 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
 
-    job_id = req.params.get("jobId")
-    if not job_id:
-        raise ValidationError("Missing jobId")
+    job_id = safe_resource_id(req.params.get("jobId", ""), field="jobId")
 
     jobs_dir = get_jobs_dir()
     job_dir = os.path.join(jobs_dir, job_id)
@@ -343,9 +344,7 @@ def CancelJob(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "POST, OPTIONS")
 
-    job_id = req.params.get("jobId")
-    if not job_id:
-        raise ValidationError("Missing jobId")
+    job_id = safe_resource_id(req.params.get("jobId", ""), field="jobId")
 
     jobs_dir = get_jobs_dir()
     job_dir = os.path.join(jobs_dir, job_id)
@@ -387,9 +386,7 @@ def GetJobResults(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
 
-    job_id = req.params.get("jobId", "").strip()
-    if not job_id:
-        raise ValidationError("Missing jobId")
+    job_id = safe_resource_id(req.params.get("jobId", ""), field="jobId")
 
     jobs_dir = get_jobs_dir()
     job_dir = os.path.join(jobs_dir, job_id)
@@ -510,9 +507,7 @@ def DownloadJobExcel(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "GET, POST, OPTIONS")
 
-    job_id = req.params.get("jobId", "").strip()
-    if not job_id:
-        raise ValidationError("Missing jobId")
+    job_id = safe_resource_id(req.params.get("jobId", ""), field="jobId")
 
     jobs_dir = get_jobs_dir()
     job_dir = os.path.join(jobs_dir, job_id)

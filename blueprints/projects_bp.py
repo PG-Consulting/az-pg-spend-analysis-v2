@@ -5,6 +5,7 @@ import azure.functions as func
 from src.utils import get_models_dir
 from src.api_helpers import json_response, options_response, handle_errors
 from src.exceptions import NotFoundError, ConflictError, ValidationError
+from src.validation import safe_resource_id
 from src.auth import require_auth, require_admin
 from src.project_manager import (
     list_sectors,
@@ -94,9 +95,7 @@ def delete_sector_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteSector?sectorName=xxx&force=false"""
     if req.method == "OPTIONS":
         return options_response(req, "DELETE, OPTIONS")
-    sector_name = req.params.get("sectorName", "").strip()
-    if not sector_name:
-        raise ValidationError("sectorName is required")
+    sector_name = safe_resource_id(req.params.get("sectorName", ""), field="sectorName")
     force = req.params.get("force", "false").lower() == "true"
     models_dir = get_models_dir()
     try:
@@ -159,9 +158,7 @@ def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_response(req, "PUT, OPTIONS")
     body = req.get_json()
-    project_id = body.get("project_id", "").strip()
-    if not project_id:
-        raise ValidationError("project_id is required")
+    project_id = safe_resource_id(body.get("project_id", ""), field="projectId")
     resolve_hierarchy_from_body(body)
     models_dir = get_models_dir()
     project = update_project(project_id, body, models_dir)
@@ -179,9 +176,7 @@ def delete_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """DELETE /api/DeleteProject?projectId=xxx"""
     if req.method == "OPTIONS":
         return options_response(req, "DELETE, OPTIONS")
-    project_id = req.params.get("projectId", "").strip()
-    if not project_id:
-        raise ValidationError("projectId is required")
+    project_id = safe_resource_id(req.params.get("projectId", ""), field="projectId")
     models_dir = get_models_dir()
     success = delete_project(project_id, models_dir)
     if not success:
@@ -200,9 +195,7 @@ def get_project_hierarchy_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     """GET /api/GetProjectHierarchy?projectId=xxx"""
     if req.method == "OPTIONS":
         return options_response(req, "GET, OPTIONS")
-    project_id = req.params.get("projectId", "").strip()
-    if not project_id:
-        raise ValidationError("projectId is required")
+    project_id = safe_resource_id(req.params.get("projectId", ""), field="projectId")
     models_dir = get_models_dir()
     hierarchy, source = resolve_hierarchy(project_id, models_dir)
     return json_response(

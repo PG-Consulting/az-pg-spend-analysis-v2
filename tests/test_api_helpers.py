@@ -279,3 +279,20 @@ class TestHandleErrors:
         req = _MockHttpRequest(origin="http://localhost:3000")
         resp = endpoint(req)
         assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+
+
+class TestSecurityHeaders:
+    def test_cors_headers_include_security_headers(self):
+        from src.api_helpers import _cors_headers
+
+        headers = _cors_headers()
+        assert headers["X-Content-Type-Options"] == "nosniff"
+        assert headers["X-Frame-Options"] == "DENY"
+        assert headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+    def test_json_response_includes_security_headers(self):
+        from src.api_helpers import json_response
+
+        resp = json_response({"ok": True})
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+        assert resp.headers["X-Frame-Options"] == "DENY"

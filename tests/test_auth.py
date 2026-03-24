@@ -86,8 +86,9 @@ class TestValidateGroupClaim:
         monkeypatch.setenv("ALLOWED_GROUP_ID", "group-123")
         from src.auth import _validate_group_claim
 
-        # Should NOT raise — IdP not configured to emit groups
-        _validate_group_claim({"preferred_username": "user@test.com"})
+        # MUST raise — token without groups claim is not trusted
+        with pytest.raises(ForbiddenError):
+            _validate_group_claim({"preferred_username": "user@test.com"})
 
 
 class TestIsSkipAuthAllowed:
@@ -164,8 +165,18 @@ class TestRequireAuth:
             return _MockHttpResponse(200)
 
         req = _MockHttpRequest()
-        with pytest.raises(AuthenticationError):
+        with pytest.raises(AuthenticationError, match="Authentication required"):
             endpoint(req)
+
+    def test_invalid_token_returns_generic_message(self, monkeypatch):
+        monkeypatch.delenv("SKIP_AUTH", raising=False)
+        monkeypatch.setenv("AZURE_AD_TENANT_ID", "test-tenant")
+        monkeypatch.setenv("AZURE_AD_CLIENT_ID", "test-client")
+        from src.auth import _extract_and_validate
+
+        req = _MockHttpRequest(headers={"Authorization": "Bearer invalid.token.here"})
+        with pytest.raises(AuthenticationError, match="Authentication required"):
+            _extract_and_validate(req)
 
 
 class TestRequireAdmin:
