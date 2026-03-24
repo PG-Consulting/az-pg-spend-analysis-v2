@@ -164,8 +164,12 @@ def _extract_and_validate(req) -> dict:
     try:
         claims = _validate_jwt_token(token)
     except AuthenticationError as e:
-        # Log the specific reason for debugging, return generic message to client
-        logger.warning(f"JWT validation failed: {e}")
+        # Log specific reason + client IP for debugging in production
+        logger.warning(
+            "JWT validation failed for %s: %s",
+            req.headers.get("X-Forwarded-For", "unknown-ip"),
+            e,
+        )
         raise AuthenticationError()  # default: "Authentication required"
 
     # Validate group membership
