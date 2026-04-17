@@ -26,7 +26,7 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SALMON_BEACH_05662180F }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SALMON_MEADOW_00D2BBA0F }}
           repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
           action: "upload"
           ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
@@ -36,7 +36,7 @@ jobs:
           output_location: "out" # Built app content directory - optional
           app_build_command: "npm run build" # Override Azure's auto-detection to prevent deprecated next export
         env: # Add environment variables here for build-time injection
-          NEXT_PUBLIC_API_URL: https://az-pg-spend-analysis-ai-agent.azurewebsites.net/api
+          NEXT_PUBLIC_API_URL: https://pg-ai-pi-spendai-api.azurewebsites.net/api
           NEXT_PUBLIC_AZURE_AD_CLIENT_ID: 09ed8a33-cc9e-446c-8db5-e4ca0955650f
           NEXT_PUBLIC_AZURE_AD_TENANT_ID: f5e3f799-605a-4c12-9c43-859706522b40
           ###### End of Repository/Build Configurations ######
@@ -50,5 +50,5 @@ jobs:
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SALMON_BEACH_05662180F }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SALMON_MEADOW_00D2BBA0F }}
           action: "close"
