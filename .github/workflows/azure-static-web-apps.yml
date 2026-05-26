@@ -37,7 +37,7 @@ jobs:
           app_build_command: "npm run build" # Override Azure's auto-detection to prevent deprecated next export
         env: # Add environment variables here for build-time injection
           NEXT_PUBLIC_API_URL: https://pg-ai-pi-spendai-api.azurewebsites.net/api
-          NEXT_PUBLIC_AZURE_AD_CLIENT_ID: 09ed8a33-cc9e-446c-8db5-e4ca0955650f
+          NEXT_PUBLIC_AZURE_AD_CLIENT_ID: 080abbe9-9cd7-43c7-be86-6c758c0a73b1
           NEXT_PUBLIC_AZURE_AD_TENANT_ID: f5e3f799-605a-4c12-9c43-859706522b40
           ###### End of Repository/Build Configurations ######
 
