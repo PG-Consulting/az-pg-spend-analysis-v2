@@ -19,8 +19,8 @@ cp .env.local.example .env.local
 npm run dev                   # http://localhost:3000
 
 # Testes — zero chamadas ao Grok/xAI
-python3 -m pytest tests/ -v                          # Backend (406 testes, ~9s)
-cd frontend && npx jest --verbose                     # Frontend (50 testes, ~3s)
+python3 -m pytest tests/ -v                          # Backend (411 testes, ~9s)
+cd frontend && npx jest --verbose                     # Frontend (55 testes, ~3s)
 python3 -m pytest tests/ --cov=src --cov-report=term-missing  # Coverage
 ```
 
@@ -65,7 +65,7 @@ Promoção para setor = ação separada (PromoteToSectorKB)
 │   ├── sectors/{name}/          # sector_config.json + knowledge_base.json + kb_versions/
 │   ├── projects/{id}/           # project_config.json + knowledge_base.json + kb_versions/
 │   └── taxonomy_jobs/           # Fila de jobs async
-├── tests/                       # pytest (406 testes)
+├── tests/                       # pytest (411 testes)
 └── frontend/                    # Next.js (ver frontend/CLAUDE.md)
 ```
 
@@ -137,7 +137,7 @@ ALLOWED_GROUP_ID=                # ID do grupo de segurança Azure AD (opcional 
 ## Deployment
 
 - **Frontend**: Push para `main` → deploy automático via GitHub Actions (Azure Static Web Apps)
-- **Backend**: Deploy manual — `func azure functionapp publish az-pg-spend-analysis-ai-agent --python`
+- **Backend**: Deploy manual — `func azure functionapp publish pg-ai-pi-spendai-api --python` (RG `CopilotPG`, subscription "Copilot subscription" — é o app que o frontend chama. O legado `az-pg-spend-analysis-ai-agent` está em outra subscription e fora de uso)
 
 ## Segurança
 
