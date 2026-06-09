@@ -166,7 +166,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                     }
 
                     if (status.status === 'ERROR') {
-                        throw new Error((status as any).message || 'Erro no processamento do arquivo.')
+                        throw new Error((status as any).error || (status as any).message || 'Erro no processamento do arquivo.')
                     }
 
                 } catch (pollErr: any) {

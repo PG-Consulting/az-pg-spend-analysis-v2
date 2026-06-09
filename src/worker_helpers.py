@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 STALE_THRESHOLD_SECONDS = 3600  # 1 hour - jobs PROCESSING beyond this become ERROR
 MAX_PARALLEL_CHUNKS = 5  # Max simultaneous chunks across all active jobs
+# Acima deste % de fallback, tratamos como falha sistêmica da API (param inválido,
+# circuit breaker, outage) e marcamos o job ERROR em vez de CLASSIFIED silencioso.
+# É estatisticamente implausível que ~todo um arquivo real seja inclassificável.
+FALLBACK_ERROR_THRESHOLD = 95.0
 
 
 # ---------------------------------------------------------------------------
@@ -536,17 +540,32 @@ def consolidate_job(job_info: JobInfoDict) -> None:
                 f"[Worker] job={job_id} has status '{current.get('status')}', skipping consolidation"
             )
             return
-        current["status"] = "CLASSIFIED"
         current["download_filename"] = final_result.get("filename", "")
         current["fallback_pct"] = fallback_pct
-        if fallback_pct > 50.0:
-            current["warning"] = (
-                f"{fallback_pct}% dos itens não foram classificados — "
-                "a API pode estar instável. Considere re-submeter o job."
+        if fallback_pct >= FALLBACK_ERROR_THRESHOLD:
+            # Falha sistêmica: quase nada foi classificado. Surfacear como ERROR
+            # em vez de esconder num CLASSIFIED com warning — era exatamente isso
+            # que mascarava a falha (ex.: web search) do consultor.
+            current["status"] = "ERROR"
+            current["error"] = (
+                f"Classificação falhou: {fallback_pct}% dos itens não foram "
+                "classificados (provável erro de API). Verifique a configuração "
+                "e re-submeta o job."
             )
-            logger.warning(
-                f"[Worker] job={job_id} — CLASSIFIED com {fallback_pct}% fallback"
+            logger.error(
+                f"[Worker] job={job_id} — ERROR: {fallback_pct}% fallback "
+                "(falha sistêmica da API)"
             )
+        else:
+            current["status"] = "CLASSIFIED"
+            if fallback_pct > 50.0:
+                current["warning"] = (
+                    f"{fallback_pct}% dos itens não foram classificados — "
+                    "a API pode estar instável. Considere re-submeter o job."
+                )
+                logger.warning(
+                    f"[Worker] job={job_id} — CLASSIFIED com {fallback_pct}% fallback"
+                )
 
     # Clean up intermediate chunk and result files
     for chunk_file in glob_mod.glob(os.path.join(job_dir, "chunk_*.json")):

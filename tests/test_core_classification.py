@@ -11,7 +11,6 @@ from src.core_classification import (
     process_dataframe_chunk,
     _llm_direct_pipeline,
     KB_DIRECT_MATCH_THRESHOLD,
-    KB_ENRICHED_MAX_EXAMPLES,
 )
 from src.kb_retriever import KBRetriever
 from src.knowledge_base import merge_kb_entries
@@ -68,6 +67,7 @@ KB_ENTRIES = [
 @pytest.fixture
 def kb_entries():
     import copy
+
     return copy.deepcopy(KB_ENTRIES)
 
 
@@ -91,6 +91,7 @@ def _make_llm_result(desc, n4="LLM Category"):
 # ---------------------------------------------------------------------------
 # Tests: KB direct match (Phase 1)
 # ---------------------------------------------------------------------------
+
 
 class TestKBDirectMatch:
     @patch("src.llm_classifier.classify_items_with_llm")
@@ -136,7 +137,9 @@ class TestKBDirectMatch:
         retriever = KBRetriever(bad_kb)
 
         descriptions = ["servico transporte pessoas"]
-        mock_llm.return_value = [_make_llm_result(descriptions[0], "Transporte Rodoviário")]
+        mock_llm.return_value = [
+            _make_llm_result(descriptions[0], "Transporte Rodoviário")
+        ]
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -155,7 +158,9 @@ class TestKBDirectMatch:
         mock_llm.assert_called_once()
 
     @patch("src.llm_classifier.classify_items_with_llm")
-    def test_kb_direct_match_confidence_is_similarity(self, mock_llm, kb_entries, kb_retriever):
+    def test_kb_direct_match_confidence_is_similarity(
+        self, mock_llm, kb_entries, kb_retriever
+    ):
         """KB direct match confidence should be the cosine similarity score."""
         descriptions = ["parafuso sextavado m8 inox"]
         mock_llm.return_value = []
@@ -178,6 +183,7 @@ class TestKBDirectMatch:
 # ---------------------------------------------------------------------------
 # Tests: Items sent to LLM (Phase 2)
 # ---------------------------------------------------------------------------
+
 
 class TestRemainingItemsSentToLLM:
     @patch("src.llm_classifier.classify_items_with_llm")
@@ -209,9 +215,7 @@ class TestRemainingItemsSentToLLM:
         """Without a kb_retriever, all items go directly to LLM (backward compatible)."""
         descriptions = ["parafuso sextavado m8 inox", "computador laptop dell"]
 
-        mock_llm.return_value = [
-            _make_llm_result(d) for d in descriptions
-        ]
+        mock_llm.return_value = [_make_llm_result(d) for d in descriptions]
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -235,18 +239,21 @@ class TestRemainingItemsSentToLLM:
 # Tests: Mixed batch (Phase 1 + Phase 2)
 # ---------------------------------------------------------------------------
 
+
 class TestMixedBatch:
     @patch("src.llm_classifier.classify_items_with_llm")
     def test_mixed_batch_splits_correctly(self, mock_llm, kb_entries, kb_retriever):
         """Batch with mix of KB-matched and unmatched items processes correctly."""
         descriptions = [
-            "parafuso sextavado m8 inox",       # Should match KB (sim ~1.0)
-            "computador laptop dell latitude",   # No KB match → LLM
-            "oleo lubrificante motor diesel",    # Should match KB (sim ~1.0)
+            "parafuso sextavado m8 inox",  # Should match KB (sim ~1.0)
+            "computador laptop dell latitude",  # No KB match → LLM
+            "oleo lubrificante motor diesel",  # Should match KB (sim ~1.0)
         ]
 
         # LLM should only receive the 1 unmatched item
-        mock_llm.return_value = [_make_llm_result("computador laptop dell latitude", "Laptop")]
+        mock_llm.return_value = [
+            _make_llm_result("computador laptop dell latitude", "Laptop")
+        ]
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -305,9 +312,12 @@ class TestMixedBatch:
 # Tests: process_dataframe_chunk integration
 # ---------------------------------------------------------------------------
 
+
 class TestProcessDataframeChunkWithKBRetriever:
     @patch("src.llm_classifier.classify_items_with_llm")
-    def test_process_dataframe_chunk_passes_kb_retriever(self, mock_llm, kb_entries, kb_retriever):
+    def test_process_dataframe_chunk_passes_kb_retriever(
+        self, mock_llm, kb_entries, kb_retriever
+    ):
         """process_dataframe_chunk passes kb_retriever through to _llm_direct_pipeline."""
         df = pd.DataFrame({"Descricao": ["parafuso sextavado m8 inox"]})
 
@@ -346,6 +356,7 @@ class TestProcessDataframeChunkWithKBRetriever:
 # Tests: Enriched examples passed to LLM
 # ---------------------------------------------------------------------------
 
+
 class TestEnrichedExamples:
     @patch("src.llm_classifier.classify_items_with_llm")
     def test_llm_receives_enriched_examples(self, mock_llm, kb_entries, kb_retriever):
@@ -379,8 +390,18 @@ class TestEnrichedExamples:
         descriptions = ["xyz completely unrelated thing"]
 
         few_shot = [
-            {"description_norm": "item a", "N4": "Cat A", "source": "llm_approved", "confidence": 0.8},
-            {"description_norm": "item b", "N4": "Cat B", "source": "llm_approved", "confidence": 0.7},
+            {
+                "description_norm": "item a",
+                "N4": "Cat A",
+                "source": "llm_approved",
+                "confidence": 0.8,
+            },
+            {
+                "description_norm": "item b",
+                "N4": "Cat B",
+                "source": "llm_approved",
+                "confidence": 0.7,
+            },
         ]
 
         # Create retriever with entries that won't match
@@ -408,6 +429,7 @@ class TestEnrichedExamples:
 # Tests: Confidence zeroed for "Não Identificado"
 # ---------------------------------------------------------------------------
 
+
 class TestNaoIdentificadoConfidence:
     @patch("src.llm_classifier.classify_items_with_llm")
     def test_nao_identificado_n4_gets_zero_confidence(self, mock_llm):
@@ -415,14 +437,16 @@ class TestNaoIdentificadoConfidence:
         descriptions = ["servico transporte de pessoas"]
 
         # LLM returns N1-N3 but empty N4 with high confidence
-        mock_llm.return_value = [{
-            "N1": "Serviços",
-            "N2": "Transporte e Logística",
-            "N3": "Transporte de Passageiros",
-            "N4": "Não Identificado",
-            "source": "LLM (Batch)",
-            "confidence": 0.95,
-        }]
+        mock_llm.return_value = [
+            {
+                "N1": "Serviços",
+                "N2": "Transporte e Logística",
+                "N3": "Transporte de Passageiros",
+                "N4": "Não Identificado",
+                "source": "LLM (Batch)",
+                "confidence": 0.95,
+            }
+        ]
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -442,14 +466,16 @@ class TestNaoIdentificadoConfidence:
         """Items with all N1-N4 filled keep their original confidence."""
         descriptions = ["parafuso sextavado m8"]
 
-        mock_llm.return_value = [{
-            "N1": "MRO",
-            "N2": "Fixação",
-            "N3": "Parafusos",
-            "N4": "Parafuso Sextavado",
-            "source": "LLM (Batch)",
-            "confidence": 0.92,
-        }]
+        mock_llm.return_value = [
+            {
+                "N1": "MRO",
+                "N2": "Fixação",
+                "N3": "Parafusos",
+                "N4": "Parafuso Sextavado",
+                "source": "LLM (Batch)",
+                "confidence": 0.92,
+            }
+        ]
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -468,6 +494,7 @@ class TestNaoIdentificadoConfidence:
 # ---------------------------------------------------------------------------
 # Tests: Merged KB (sector + project) in pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestMergedKBInPipeline:
     @patch("src.llm_classifier.classify_items_with_llm")
@@ -592,28 +619,40 @@ class TestMergedKBInPipeline:
 import os
 from unittest.mock import patch as _patch
 
+
 class TestWebSearchToggle:
     """Test use_web_search parameter propagation."""
 
     @patch("src.llm_classifier.requests.post")
     @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
-    def test_web_search_adds_tools_to_payload(self, mock_post):
-        """When use_web_search=True, payload must include tools."""
+    def test_web_search_does_not_add_invalid_tools(self, mock_post):
+        """Mesmo com use_web_search=True, o payload NÃO pode incluir o tool
+        web_search: a xAI o rejeita com HTTP 422 e zera a classificação.
+        Web search foi descontinuado — degradamos com segurança."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "choices": [
+                {
+                    "message": {
+                        "content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'
+                    }
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
         mock_post.return_value = mock_response
 
         from src.llm_classifier import classify_items_with_llm
+
         classify_items_with_llm(["item test"], use_web_search=True)
 
         call_kwargs = mock_post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert "tools" in payload, "Payload should include 'tools' when use_web_search=True"
-        assert payload["tools"] == [{"type": "web_search"}]
+        tools = payload.get("tools", []) or []
+        assert not any(
+            isinstance(t, dict) and t.get("type") == "web_search" for t in tools
+        ), "Payload não pode enviar o tool web_search (xAI rejeita com HTTP 422)"
 
     @patch("src.llm_classifier.requests.post")
     @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
@@ -622,12 +661,19 @@ class TestWebSearchToggle:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "choices": [
+                {
+                    "message": {
+                        "content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'
+                    }
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
         mock_post.return_value = mock_response
 
         from src.llm_classifier import classify_items_with_llm
+
         classify_items_with_llm(["item test"])
 
         call_kwargs = mock_post.call_args
@@ -636,21 +682,30 @@ class TestWebSearchToggle:
 
     @patch("src.llm_classifier.requests.post")
     @_patch.dict(os.environ, {"GROK_API_KEY": "test-key-12345"})
-    def test_web_search_adds_prompt_instruction(self, mock_post):
-        """When use_web_search=True, system message must include search instruction."""
+    def test_web_search_does_not_promise_internet_in_prompt(self, mock_post):
+        """Com web search descontinuado, o prompt NÃO pode prometer acesso à
+        internet ao modelo (degradação segura — evita o modelo alegar que
+        pesquisou)."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'}}],
+            "choices": [
+                {
+                    "message": {
+                        "content": '[{"item": "x", "N1": "A", "N2": "B", "N3": "C", "N4": "D", "confidence": 0.9}]'
+                    }
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
         mock_post.return_value = mock_response
 
         from src.llm_classifier import classify_items_with_llm
+
         classify_items_with_llm(["item test"], use_web_search=True)
 
         call_kwargs = mock_post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         system_msg = payload["messages"][0]["content"]
-        assert "BUSCA NA INTERNET" in system_msg
-        assert "Pesquise na web" in system_msg
+        assert "BUSCA NA INTERNET" not in system_msg
+        assert "Pesquise na web" not in system_msg

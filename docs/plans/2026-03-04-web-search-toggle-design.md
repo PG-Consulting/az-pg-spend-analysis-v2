@@ -1,7 +1,15 @@
 # Design — Toggle de Busca na Internet (Web Search)
 
+> ⚠️ **DESCONTINUADO (2026-06-09)** — A xAI descontinuou web search no endpoint
+> `chat/completions`: o antigo `tools:[{"type":"web_search"}]` é rejeitado com
+> HTTP 422 e a Live Search (`search_parameters`) retorna HTTP 410 ("switch to
+> Agent Tools API"). Com o toggle ligado, **100% dos itens caíam em fallback**
+> ("Não Identificado") sem erro visível. O toggle foi **removido** do ClassifyTab
+> e o backend degrada com segurança (classifica sem busca). Reativar exigiria
+> migrar para a Agent Tools API da xAI. Doc mantido como registro histórico.
+
 **Data**: 2026-03-04
-**Status**: Aprovado
+**Status**: ~~Aprovado~~ → **Descontinuado (2026-06-09)**
 **Abordagem**: Toggle por job no ClassifyTab (Abordagem A)
 
 ## Objetivo

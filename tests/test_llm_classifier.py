@@ -146,3 +146,52 @@ class TestMapCategoriesSemaphore:
         # Semáforo deve ter sido adquirido e liberado pelo menos 1 vez
         assert mock_sem.acquire.call_count >= 1
         assert mock_sem.release.call_count >= 1
+
+
+class TestWebSearchDoesNotBreakClassification:
+    """Regressão: use_web_search=True NÃO pode injetar o parâmetro `tools`
+    [{"type": "web_search"}], que a API xAI/Grok rejeita com HTTP 422
+    ("unknown variant `web_search`"). Esse param fazia 100% dos itens caírem
+    em fallback ('Não Identificado') silenciosamente, sem erro visível.
+    Web search foi descontinuado pela xAI (Live Search → 410 Gone), então o
+    comportamento correto é degradar com segurança: classificar normalmente."""
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.requests.post")
+    def test_web_search_does_not_send_invalid_tools_param(self, mock_post, mock_config):
+        from src.llm_classifier import _call_openai_api_inner, _CIRCUIT_BREAKER
+
+        # garante breaker fechado (testes anteriores podem tê-lo aberto)
+        _CIRCUIT_BREAKER.record_success()
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '[{"item": "Parafuso M8", "N1": "Fixadores", '
+                        '"N2": "Parafusos", "N3": "", "N4": "", "confidence": 0.9}]'
+                    }
+                }
+            ],
+            "usage": {},
+        }
+
+        results, _ = _call_openai_api_inner(
+            ["Parafuso M8"],
+            FAKE_CONFIG,
+            use_web_search=True,
+        )
+
+        # A chamada HTTP deve ter sido feita...
+        assert mock_post.call_count == 1
+        # ...e o payload NÃO pode conter tools:[{type:web_search}] (422 na xAI)
+        payload = mock_post.call_args.kwargs["json"]
+        tools = payload.get("tools", []) or []
+        assert not any(
+            isinstance(t, dict) and t.get("type") == "web_search" for t in tools
+        ), "payload não deve enviar o tool web_search (xAI rejeita com HTTP 422)"
+
+        # E a classificação deve funcionar normalmente (não 100% fallback)
+        assert results[0]["N1"] == "Fixadores"
+        assert results[0]["confidence"] != 0.0

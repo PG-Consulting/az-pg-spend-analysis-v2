@@ -391,17 +391,15 @@ def _call_openai_api_inner(
             f"{user_instruction}\n"
         )
 
-    # Add web search instruction if enabled
+    # Web search foi descontinuado pela xAI: a Live Search retorna HTTP 410
+    # ("deprecated, switch to Agent Tools API") e o antigo
+    # tools:[{"type":"web_search"}] é rejeitado com HTTP 422. Quando ligado,
+    # isso fazia 100% dos itens caírem em fallback silenciosamente. Degradamos
+    # com segurança: classificamos normalmente, sem prometer internet ao modelo.
     if use_web_search:
-        system_message += (
-            "\n\nBUSCA NA INTERNET (HABILITADA):\n"
-            "Você tem acesso à internet. Para itens com descrições ambíguas, "
-            "códigos, siglas, nomes de fornecedores, fabricantes ou marcas "
-            "que você não reconhece com certeza:\n"
-            "- Pesquise na web o que o fornecedor/fabricante produz\n"
-            "- Pesquise o que o produto/material/serviço é\n"
-            "- Use essa informação para escolher a categoria mais precisa\n\n"
-            "Mantenha o formato de saída JSON idêntico."
+        logger.debug(
+            "use_web_search solicitado, mas web search foi descontinuado pela "
+            "xAI; classificando sem busca na internet (degradação segura)"
         )
 
     user_content = "Classifique os seguintes itens:\n" + "\n".join(
@@ -417,8 +415,8 @@ def _call_openai_api_inner(
         "temperature": 0.0,
     }
 
-    if use_web_search:
-        payload["tools"] = [{"type": "web_search"}]
+    # NÃO injetar tools:[{"type":"web_search"}] — a xAI rejeita com HTTP 422
+    # ("unknown variant `web_search`"). Web search foi descontinuado; ver acima.
 
     # xAI (Grok) API endpoint
     endpoint = f"{config['endpoint'].rstrip('/')}/chat/completions"

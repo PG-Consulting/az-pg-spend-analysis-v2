@@ -385,6 +385,43 @@ class TestConsolidateJob:
         assert items[1]["N3"] == "Não Identificado"
         assert items[1]["N4"] == "Não Identificado"
 
+    def test_total_fallback_marks_job_as_error(self, tmp_path):
+        """Hardening: quando ~100% dos itens caem em fallback (confidence 0.0),
+        é falha sistêmica da API (ex.: param inválido, circuit breaker, outage),
+        não classificação legítima. O job deve virar ERROR — não 'CLASSIFIED'
+        silencioso com warning, que escondia a falha do consultor."""
+        chunk_data = [{"Descricao": "Item A"}, {"Descricao": "Item B"}]
+        result_data = [
+            {
+                "description": "Item A",
+                "N1": "Não Identificado",
+                "N2": "Não Identificado",
+                "N3": "Não Identificado",
+                "N4": "Não Identificado",
+                "source": "None",
+                "confidence": 0.0,
+            },
+            {
+                "description": "Item B",
+                "N1": "Não Identificado",
+                "N2": "Não Identificado",
+                "N3": "Não Identificado",
+                "N4": "Não Identificado",
+                "source": "None",
+                "confidence": 0.0,
+            },
+        ]
+
+        job_info = self._make_job(
+            tmp_path, "test-total-fallback", [chunk_data], [result_data]
+        )
+        consolidate_job(job_info)
+
+        with open(job_info["status_path"], encoding="utf-8") as f:
+            final_status = json.load(f)
+        assert final_status["status"] == "ERROR"
+        assert final_status.get("error"), "ERROR deve carregar mensagem explicativa"
+
     def test_status_set_to_classified(self, tmp_path):
         """consolidate_job deve definir status como CLASSIFIED (não COMPLETED)."""
         chunk_data = [{"Descricao": "Item A"}]
