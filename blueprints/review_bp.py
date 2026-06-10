@@ -109,7 +109,7 @@ def reclassify_items_endpoint(req: func.HttpRequest) -> func.HttpResponse:
             else None
         )
 
-    llm_results = classify_items_with_llm(
+    llm_results, _ = classify_items_with_llm(
         descriptions,
         sector=project.get("sector", "Padrao") if project else "Padrao",
         client_context=client_context,

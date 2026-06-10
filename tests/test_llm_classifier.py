@@ -50,7 +50,7 @@ class TestFallbackChunkSize:
             raise RuntimeError("API Error on last chunk")
 
         mock_api.side_effect = side_effect
-        results = classify_items_with_llm(descriptions)
+        results, _ = classify_items_with_llm(descriptions)
 
         assert len(results) == 150
         # First 100 should be successful classifications
@@ -70,7 +70,7 @@ class TestFallbackChunkSize:
         descriptions = [f"item_{i}" for i in range(50)]
         mock_api.side_effect = RuntimeError("API Error")
 
-        results = classify_items_with_llm(descriptions)
+        results, _ = classify_items_with_llm(descriptions)
 
         assert len(results) == 50
         for r in results:
@@ -334,3 +334,51 @@ class TestCheckLLMHealth:
 
         check_llm_health()
         mock_get.assert_not_called()
+
+
+class TestTokenUsageReturn:
+    """(f) classify_items_with_llm deve retornar (results, total_usage) com os
+    tokens agregados de todos os batches — antes o total era logado e descartado."""
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier._call_openai_api")
+    def test_returns_results_and_aggregated_usage(self, mock_api, mock_config):
+        descriptions = [f"item_{i}" for i in range(150)]  # 2 batches (100 + 50)
+
+        def side_effect(items, *args, **kwargs):
+            results = [
+                {
+                    "N1": "Cat",
+                    "N2": "Sub",
+                    "N3": "Grp",
+                    "N4": "Det",
+                    "confidence": 0.9,
+                    "LLM_Explanation": "ok",
+                }
+                for _ in items
+            ]
+            usage = {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "reasoning_tokens": 10,
+                "total_tokens": 160,
+            }
+            return results, usage
+
+        mock_api.side_effect = side_effect
+        results, total_usage = classify_items_with_llm(descriptions)
+
+        assert len(results) == 150
+        assert total_usage["prompt_tokens"] == 200
+        assert total_usage["completion_tokens"] == 100
+        assert total_usage["reasoning_tokens"] == 20
+        assert total_usage["total_tokens"] == 320
+
+    @patch(
+        "src.llm_classifier.get_azure_openai_config",
+        return_value={"endpoint": "", "api_key": "", "deployment": ""},
+    )
+    def test_unconfigured_key_returns_results_and_none_usage(self, mock_config):
+        results, usage = classify_items_with_llm(["a"])
+        assert len(results) == 1
+        assert usage is None

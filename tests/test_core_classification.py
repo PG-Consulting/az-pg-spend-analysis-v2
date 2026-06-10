@@ -100,7 +100,7 @@ class TestKBDirectMatch:
         # Query with exact same text as KB entry → should get similarity ~1.0
         descriptions = ["parafuso sextavado m8 inox"]
 
-        mock_llm.return_value = []  # Should not be called
+        mock_llm.return_value = ([], None)  # Should not be called
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -137,9 +137,9 @@ class TestKBDirectMatch:
         retriever = KBRetriever(bad_kb)
 
         descriptions = ["servico transporte pessoas"]
-        mock_llm.return_value = [
+        mock_llm.return_value = ([
             _make_llm_result(descriptions[0], "Transporte Rodoviário")
-        ]
+        ], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -163,7 +163,7 @@ class TestKBDirectMatch:
     ):
         """KB direct match confidence should be the cosine similarity score."""
         descriptions = ["parafuso sextavado m8 inox"]
-        mock_llm.return_value = []
+        mock_llm.return_value = ([], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -191,7 +191,7 @@ class TestRemainingItemsSentToLLM:
         """Items with no KB match should be sent to LLM."""
         descriptions = ["computador laptop dell latitude"]
 
-        mock_llm.return_value = [_make_llm_result(descriptions[0], "Laptop")]
+        mock_llm.return_value = ([_make_llm_result(descriptions[0], "Laptop")], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -215,7 +215,7 @@ class TestRemainingItemsSentToLLM:
         """Without a kb_retriever, all items go directly to LLM (backward compatible)."""
         descriptions = ["parafuso sextavado m8 inox", "computador laptop dell"]
 
-        mock_llm.return_value = [_make_llm_result(d) for d in descriptions]
+        mock_llm.return_value = ([_make_llm_result(d) for d in descriptions], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -251,9 +251,9 @@ class TestMixedBatch:
         ]
 
         # LLM should only receive the 1 unmatched item
-        mock_llm.return_value = [
+        mock_llm.return_value = ([
             _make_llm_result("computador laptop dell latitude", "Laptop")
-        ]
+        ], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -321,7 +321,7 @@ class TestProcessDataframeChunkWithKBRetriever:
         """process_dataframe_chunk passes kb_retriever through to _llm_direct_pipeline."""
         df = pd.DataFrame({"Descricao": ["parafuso sextavado m8 inox"]})
 
-        mock_llm.return_value = []
+        mock_llm.return_value = ([], None)
 
         results = process_dataframe_chunk(
             df,
@@ -339,7 +339,7 @@ class TestProcessDataframeChunkWithKBRetriever:
         """process_dataframe_chunk without kb_retriever sends all to LLM (backward compat)."""
         df = pd.DataFrame({"Descricao": ["parafuso sextavado m8 inox"]})
 
-        mock_llm.return_value = [_make_llm_result("parafuso", "Parafusos")]
+        mock_llm.return_value = ([_make_llm_result("parafuso", "Parafusos")], None)
 
         results = process_dataframe_chunk(
             df,
@@ -365,7 +365,7 @@ class TestEnrichedExamples:
         # so it goes to LLM, but with enriched examples from the KB
         descriptions = ["filtro ar industrial para compressor de ar"]
 
-        mock_llm.return_value = [_make_llm_result(descriptions[0], "Filtro Ar")]
+        mock_llm.return_value = ([_make_llm_result(descriptions[0], "Filtro Ar")], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -406,7 +406,7 @@ class TestEnrichedExamples:
 
         # Create retriever with entries that won't match
         retriever = KBRetriever(few_shot)
-        mock_llm.return_value = [_make_llm_result(descriptions[0])]
+        mock_llm.return_value = ([_make_llm_result(descriptions[0])], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -437,7 +437,7 @@ class TestNaoIdentificadoConfidence:
         descriptions = ["servico transporte de pessoas"]
 
         # LLM returns N1-N3 but empty N4 with high confidence
-        mock_llm.return_value = [
+        mock_llm.return_value = ([
             {
                 "N1": "Serviços",
                 "N2": "Transporte e Logística",
@@ -446,7 +446,7 @@ class TestNaoIdentificadoConfidence:
                 "source": "LLM (Batch)",
                 "confidence": 0.95,
             }
-        ]
+        ], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -466,7 +466,7 @@ class TestNaoIdentificadoConfidence:
         """Items with all N1-N4 filled keep their original confidence."""
         descriptions = ["parafuso sextavado m8"]
 
-        mock_llm.return_value = [
+        mock_llm.return_value = ([
             {
                 "N1": "MRO",
                 "N2": "Fixação",
@@ -475,7 +475,7 @@ class TestNaoIdentificadoConfidence:
                 "source": "LLM (Batch)",
                 "confidence": 0.92,
             }
-        ]
+        ], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -530,7 +530,7 @@ class TestMergedKBInPipeline:
         retriever = KBRetriever(merged)
 
         descriptions = ["parafuso sextavado m8 inox"]
-        mock_llm.return_value = []
+        mock_llm.return_value = ([], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -595,7 +595,7 @@ class TestMergedKBInPipeline:
         retriever = KBRetriever(merged)
 
         descriptions = ["parafuso sextavado m8 inox"]
-        mock_llm.return_value = []
+        mock_llm.return_value = ([], None)
 
         results = _llm_direct_pipeline(
             descriptions,
@@ -709,3 +709,78 @@ class TestWebSearchToggle:
         system_msg = payload["messages"][0]["content"]
         assert "BUSCA NA INTERNET" not in system_msg
         assert "Pesquise na web" not in system_msg
+
+
+# ---------------------------------------------------------------------------
+# (f) Token usage propagado via usage_sink
+# ---------------------------------------------------------------------------
+
+
+class TestTokenUsageSink:
+    @patch("src.llm_classifier.classify_items_with_llm")
+    def test_llm_direct_pipeline_accumulates_usage_into_sink(self, mock_llm):
+        """O usage retornado pelo LLM deve ser acumulado no usage_sink."""
+        mock_llm.return_value = (
+            [_make_llm_result("item x")],
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "reasoning_tokens": 2,
+                "total_tokens": 17,
+            },
+        )
+        usage_sink = {}
+
+        results = _llm_direct_pipeline(
+            ["item x"],
+            sector="Padrao",
+            client_context="",
+            custom_hierarchy=None,
+            few_shot_examples=None,
+            hierarchy_lookup=None,
+            usage_sink=usage_sink,
+        )
+
+        assert len(results) == 1
+        assert usage_sink["prompt_tokens"] == 10
+        assert usage_sink["total_tokens"] == 17
+
+    @patch("src.llm_classifier.classify_items_with_llm")
+    def test_usage_sink_optional_backward_compat(self, mock_llm):
+        """Sem usage_sink (callers legados), pipeline funciona normalmente."""
+        mock_llm.return_value = ([_make_llm_result("item x")], None)
+
+        results = _llm_direct_pipeline(
+            ["item x"],
+            sector="Padrao",
+            client_context="",
+            custom_hierarchy=None,
+            few_shot_examples=None,
+            hierarchy_lookup=None,
+        )
+
+        assert len(results) == 1
+        assert results[0]["N4"] == "LLM Category"
+
+    @patch("src.llm_classifier.classify_items_with_llm")
+    def test_process_dataframe_chunk_passes_usage_sink(self, mock_llm):
+        """process_dataframe_chunk repassa o usage_sink ao pipeline LLM."""
+        mock_llm.return_value = (
+            [_make_llm_result("item x")],
+            {
+                "prompt_tokens": 7,
+                "completion_tokens": 3,
+                "reasoning_tokens": 1,
+                "total_tokens": 11,
+            },
+        )
+        usage_sink = {}
+        df = pd.DataFrame({"Descricao": ["item x"]})
+
+        process_dataframe_chunk(
+            df,
+            desc_column="Descricao",
+            usage_sink=usage_sink,
+        )
+
+        assert usage_sink["total_tokens"] == 11

@@ -32,7 +32,7 @@ from src.utils import (
     INCOMPLETE_VALUES,
 )
 from src.project_manager import get_project
-from src.file_lock import read_status, update_status, locked_status
+from src.file_lock import read_status, locked_status
 from src.queue_helpers import enqueue_job
 from src.exceptions import BillingError
 
@@ -386,11 +386,14 @@ def parse_custom_hierarchy(
 # ---------------------------------------------------------------------------
 
 
-def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
+def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> Dict[str, int]:
     """
     Process a single chunk of a job and save the result.
     Does NOT update status.json (caller must call update_job_progress after a parallel batch).
     Passes KB entries and project info to process_dataframe_chunk for few-shot support.
+
+    Returns the chunk token usage dict (prompt/completion/reasoning/total) —
+    o caller acumula em status.json via update_job_progress (main thread).
     """
     import pandas as pd
     from src.core_classification import process_dataframe_chunk
@@ -409,7 +412,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
             f"[Worker] job={job_id} chunk={chunk_index} — status '{current}', "
             "pulando chunk"
         )
-        return
+        return {}
 
     chunk_file = os.path.join(job_dir, f"chunk_{chunk_index}.json")
     result_file = os.path.join(job_dir, f"result_{chunk_index}.json")
@@ -433,6 +436,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
     models_dir = get_models_dir()
 
     llm_start = time.time()
+    usage_sink: Dict[str, int] = {}
     results = process_dataframe_chunk(
         df_chunk,
         desc_column=desc_col,
@@ -446,6 +450,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
         project_id=project_id,
         kb_retriever=kb_retriever,
         use_web_search=use_web_search,
+        usage_sink=usage_sink,
     )
     llm_duration = time.time() - llm_start
 
@@ -457,6 +462,7 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
         f"[Worker] job={job_id} chunk={chunk_index}/{total_chunks} — done "
         f"({len(results)} items, classify={llm_duration:.1f}s, total={chunk_duration:.1f}s)"
     )
+    return usage_sink
 
 
 # ---------------------------------------------------------------------------
@@ -464,13 +470,16 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def update_job_progress(job_info: JobInfoDict) -> None:
+def update_job_progress(
+    job_info: JobInfoDict, chunk_usage: Optional[Dict[str, int]] = None
+) -> None:
     """Update processed_chunks count in status.json.
 
-    Uses update_status (atomic read-modify-write) to only update progress
-    fields without overwriting the entire status (avoids clobbering CANCELLED).
-    Também renova lease_renewed_at (heartbeat): cada chunk concluído prova que
-    o worker está vivo — cleanup/steal medem staleness a partir daqui.
+    Atomic read-modify-write sob file lock: só atualiza campos de progresso,
+    sem sobrescrever o status inteiro (não clobbera CANCELLED).
+    - Renova lease_renewed_at (heartbeat): cada chunk concluído prova que o
+      worker está vivo — cleanup/steal medem staleness a partir daqui.
+    - Acumula chunk_usage em token_usage (cumulativo — sobrevive a retomadas).
     """
     job_dir = job_info["job_dir"]
     total_chunks = job_info["total_chunks"]
@@ -480,13 +489,19 @@ def update_job_progress(job_info: JobInfoDict) -> None:
         if os.path.exists(os.path.join(job_dir, f"result_{j}.json"))
     )
     job_info["status"]["processed_chunks"] = processed_so_far
-    update_status(
-        job_info["status_path"],
-        {
-            "processed_chunks": processed_so_far,
-            "lease_renewed_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    with locked_status(job_info["status_path"]) as data:
+        data["processed_chunks"] = processed_so_far
+        data["lease_renewed_at"] = datetime.now(timezone.utc).isoformat()
+        if chunk_usage and any(chunk_usage.values()):
+            usage = data.get("token_usage") or {}
+            for k in (
+                "prompt_tokens",
+                "completion_tokens",
+                "reasoning_tokens",
+                "total_tokens",
+            ):
+                usage[k] = int(usage.get(k, 0)) + int(chunk_usage.get(k, 0))
+            data["token_usage"] = usage
 
 
 # ---------------------------------------------------------------------------
@@ -814,8 +829,9 @@ def process_single_job(job_id: str) -> None:
                 }
                 for future in as_completed(futures):
                     idx = futures[future]
-                    future.result()  # re-raises on error
-                    update_job_progress(job_info)
+                    chunk_usage = future.result()  # re-raises on error
+                    # Acumulação no main thread (uma aquisição de lock por chunk)
+                    update_job_progress(job_info, chunk_usage=chunk_usage)
 
         # All chunks done — consolidate
         consolidate_job(job_info)

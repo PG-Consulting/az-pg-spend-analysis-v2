@@ -10,7 +10,7 @@ import random
 import time
 import requests
 from enum import Enum
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Tuple, Union
 
 from src.types import ClassificationResultDict, HierarchyEntryDict, KBEntryDict
 from src.exceptions import BillingError
@@ -181,7 +181,7 @@ def classify_items_with_llm(
     few_shot_examples: Optional[List[KBEntryDict]] = None,
     user_instruction: Optional[str] = None,
     use_web_search: bool = False,
-) -> List[ClassificationResultDict]:
+) -> Tuple[List[ClassificationResultDict], Optional[Dict[str, int]]]:
     """
     Classifies a list of item descriptions using Azure OpenAI.
 
@@ -195,7 +195,10 @@ def classify_items_with_llm(
         user_instruction: Optional freeform instruction from the consultant (highest priority).
 
     Returns:
-        List of dicts with keys: N1, N2, N3, N4, confidence, explanation
+        Tuple (results, total_usage):
+        - results: list of dicts with keys N1, N2, N3, N4, confidence, explanation
+        - total_usage: dict agregado {prompt_tokens, completion_tokens,
+          reasoning_tokens, total_tokens} ou None quando não houve chamada à API
     """
     config = get_azure_openai_config()
 
@@ -208,7 +211,7 @@ def classify_items_with_llm(
         logging.warning(
             "Azure OpenAI keys not configured. Skipping LLM classification."
         )
-        return [_create_empty_result() for _ in descriptions]
+        return [_create_empty_result() for _ in descriptions], None
 
     # Prepare batch prompt (process in chunks if needed, here we assume small batches or separate calls)
     # For a list, we might want to process all at once if small, or loop.
@@ -291,7 +294,7 @@ def classify_items_with_llm(
             len(chunks),
         )
 
-    return [
+    final_results = [
         r
         if r is not None
         else _create_manual_fallback(
@@ -299,6 +302,7 @@ def classify_items_with_llm(
         )
         for r in results
     ]
+    return final_results, total_usage
 
 
 def _create_empty_result() -> ClassificationResultDict:

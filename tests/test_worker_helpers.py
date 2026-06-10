@@ -1424,3 +1424,142 @@ class TestChunkCancelPreCheck:
 
         mock_pdc.assert_not_called()
         assert not os.path.exists(os.path.join(str(job_dir), "result_0.json"))
+
+
+# ---------------------------------------------------------------------------
+# (f) Persistência cumulativa de token_usage no status.json
+# ---------------------------------------------------------------------------
+
+
+class TestTokenUsagePersistence:
+    """token_usage deve ser acumulado no status.json por chunk e SOBREVIVER
+    a retomadas (acumula, não sobrescreve)."""
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_process_single_job_accumulates_token_usage(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-token-usage"
+        _create_job_dir(tmp_path, job_id, num_chunks=2)
+
+        def chunk_with_usage(job_info, chunk_idx):
+            _fake_chunk_writer(job_info, chunk_idx)
+            return {
+                "prompt_tokens": 100,
+                "completion_tokens": 40,
+                "reasoning_tokens": 10,
+                "total_tokens": 150,
+            }
+
+        mock_chunk.side_effect = chunk_with_usage
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CLASSIFIED"
+        assert status["token_usage"]["prompt_tokens"] == 200
+        assert status["token_usage"]["completion_tokens"] == 80
+        assert status["token_usage"]["reasoning_tokens"] == 20
+        assert status["token_usage"]["total_tokens"] == 300
+
+    def test_token_usage_survives_resume(self, tmp_path):
+        """Retomada NÃO zera tokens já contabilizados — acumula sobre o existente."""
+        from src.worker_helpers import update_job_progress
+
+        job_dir = _create_job_dir(
+            tmp_path,
+            "test-usage-resume",
+            num_chunks=2,
+            status_override={
+                "token_usage": {
+                    "prompt_tokens": 500,
+                    "completion_tokens": 200,
+                    "reasoning_tokens": 50,
+                    "total_tokens": 750,
+                }
+            },
+        )
+        status = json.loads((job_dir / "status.json").read_text())
+        job_info = {
+            "job_id": "test-usage-resume",
+            "job_dir": str(job_dir),
+            "status_path": str(job_dir / "status.json"),
+            "status": status,
+            "total_chunks": 2,
+        }
+
+        update_job_progress(
+            job_info,
+            chunk_usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 40,
+                "reasoning_tokens": 10,
+                "total_tokens": 150,
+            },
+        )
+
+        updated = json.loads((job_dir / "status.json").read_text())
+        assert updated["token_usage"]["prompt_tokens"] == 600
+        assert updated["token_usage"]["total_tokens"] == 900
+
+    @patch("src.core_classification.process_dataframe_chunk")
+    def test_process_single_chunk_returns_usage(self, mock_pdc, tmp_path):
+        """process_single_chunk repassa usage_sink e retorna o usage do chunk."""
+        from src.worker_helpers import process_single_chunk
+
+        def fake_pdc(df, **kwargs):
+            sink = kwargs.get("usage_sink")
+            if sink is not None:
+                sink.update(
+                    {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 4,
+                        "reasoning_tokens": 1,
+                        "total_tokens": 15,
+                    }
+                )
+            return [
+                {
+                    "description": "Item 0A",
+                    "N1": "A",
+                    "N2": "B",
+                    "N3": "C",
+                    "N4": "D",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
+                {
+                    "description": "Item 0B",
+                    "N1": "A",
+                    "N2": "B",
+                    "N3": "C",
+                    "N4": "D",
+                    "source": "LLM (Batch)",
+                    "confidence": 0.9,
+                },
+            ]
+
+        mock_pdc.side_effect = fake_pdc
+
+        job_dir = _create_job_dir(tmp_path, "test-chunk-usage")
+        status = json.loads((job_dir / "status.json").read_text())
+        job_info = {
+            "job_id": "test-chunk-usage",
+            "job_dir": str(job_dir),
+            "status_path": str(job_dir / "status.json"),
+            "status": status,
+            "total_chunks": 1,
+            "custom_hierarchy": None,
+            "hierarchy_lookup": None,
+            "kb_entries": [],
+            "kb_retriever": None,
+        }
+
+        usage = process_single_chunk(job_info, 0)
+
+        assert usage["total_tokens"] == 15
+        assert os.path.exists(os.path.join(str(job_dir), "result_0.json"))
