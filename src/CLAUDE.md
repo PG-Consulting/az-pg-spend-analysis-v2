@@ -4,7 +4,7 @@
 
 | Arquivo | Responsabilidade |
 |---------|-----------------|
-| `exceptions.py` | Hierarquia de exceções de domínio (`SpendAnalysisError` → `NotFoundError`, `ValidationError`, `ConflictError`, `ExternalServiceError`) |
+| `exceptions.py` | Hierarquia de exceções de domínio (`SpendAnalysisError` → `NotFoundError`, `ValidationError`, `ConflictError`, `ExternalServiceError` → `BillingError`) |
 | `auth.py` | Autenticação JWT Azure AD: `@require_auth`, `@require_admin`, JWKS cache, group claim validation |
 | `validation.py` | `safe_resource_id()` — sanitização de IDs contra path traversal, null bytes, oversized inputs |
 | `api_helpers.py` | `json_response()`, `error_response()`, `options_response()`, `@handle_errors`, `@rate_limit` decorators + security headers |
@@ -17,7 +17,7 @@
 | `core_classification.py` | Two-Phase pipeline (KB match + LLM) ou ML+Dict+LLM (legado) |
 | `queue_helpers.py` | `enqueue_job(job_id)` — envia mensagem para Azure Storage Queue `taxonomy-jobs`. Fallback gracioso (cleanup timer é safety net) |
 | `worker_helpers.py` | `process_single_job()` (queue path), `_prepare_job_info()` (shared), cleanup, process_chunk, consolidate. `get_active_jobs()`/`run_worker_cycle()` DEPRECATED |
-| `llm_classifier.py` | Grok/xAI (async, 15 workers) + few-shot + instrução + circuit breaker |
+| `llm_classifier.py` | Grok/xAI (async, 15 workers) + few-shot + instrução + circuit breaker + billing fail-fast (`check_llm_health`, `BillingError` em 401/403) |
 | `hierarchy_validator.py` | Validação cascata pós-LLM (exact → shift → fuzzy → n4-reverse) |
 | `preprocessing.py` | `normalize_text()`, `build_tfidf_vectorizer()` |
 | `taxonomy_engine.py` | Dicionário (regex/keywords) + analytics (Pareto) |
@@ -31,7 +31,10 @@
 ```python
 CHUNK_SIZE = 500                   # worker_helpers — linhas por chunk
 MAX_PARALLEL_CHUNKS = 5            # chunks paralelos por job (ThreadPoolExecutor)
-STALE_THRESHOLD_SECONDS = 3600     # PROCESSING > 1h → ERROR
+STALE_THRESHOLD_SECONDS = 3600     # PROCESSING sem progresso > 1h → cleanup re-enfileira
+WORKER_DEADLINE_SECONDS = 1500     # 25min — parada limpa + self-re-enqueue (functionTimeout: 40min)
+LEASE_STALE_SECONDS = 600          # 10min sem heartbeat → outro worker pode roubar o lease
+MAX_RESUME_ATTEMPTS = 3            # retomadas via cleanup antes de marcar ERROR
 
 LLM_BATCH_SIZE = 100               # itens por chamada Grok
 LLM_MAX_CONCURRENT_CALLS = 15      # max chamadas LLM simultâneas (global, Semaphore)
@@ -114,8 +117,12 @@ ML_CONFIDENCE_AMBIGUOUS = 0.25     # legado
 
 ### Worker e Consolidação
 - **Queue trigger**: `ProcessTaxonomyJob` recebe `{job_id}` da queue `taxonomy-jobs`, chama `process_single_job()` que processa 1 job completo (PENDING→CLASSIFIED)
-- **Retry via queue**: em caso de erro, `process_single_job()` NÃO escreve ERROR — re-levanta exceção para que a queue faça retry (maxDequeueCount=5). Após 5 falhas → poison queue
-- **Cleanup timer (1h)**: `CleanupStaleJobs` marca PROCESSING > 1h como ERROR e re-enfileira PENDING órfãos > 5min
+- **Retry via queue**: erro genérico → `process_single_job()` NÃO escreve ERROR — re-levanta exceção para retry da queue (maxDequeueCount=5) → poison. Exceções que retornam normal: deadline (self-re-enqueue), `BillingError` (ERROR explícito), cancel
+- **Deadline cooperativo (25min)**: worker para limpo antes do functionTimeout (40min) — limpa o lease, re-enfileira `{job_id}` e retorna sucesso; o próximo slice retoma via `find_next_chunks`
+- **Lease com heartbeat**: claim grava `processing_worker_id` + `lease_renewed_at`; renovado a cada chunk (`update_job_progress`). Lease >10min stale → outro worker ROUBA e retoma; lease fresco → skip (idempotência preservada)
+- **Billing fail-fast**: pre-flight `check_llm_health()` (GET /v1/models) ao claimar o job + `BillingError` in-flight (401/403, sem retry) → job ERROR imediato com mensagem explícita "créditos xAI esgotados"
+- **`classify_items_with_llm` retorna tuple** `(results, total_usage)` — sempre desempacotar; `token_usage` acumulado por chunk no status.json (sobrevive a resume)
+- **Cleanup timer (1h)**: re-enfileira PENDING órfãos > 5min E PROCESSING sem progresso > 1h (mede por `lease_renewed_at`, fallback `created_at`; máx 3 retomadas via `resume_attempts`, depois ERROR)
 - **host.json queues**: `messageEncoding: "none"` (obrigatório — extension bundle v4 default é Base64, incompatível com SDK Python)
 - **Consolidação preenche NaN** com `"Não Identificado"` (N1-N4)
 - **Remove colunas de classificação do chunk original** antes do merge → evita `N1.1`, `N2.1`

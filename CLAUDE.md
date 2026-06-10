@@ -19,8 +19,8 @@ cp .env.local.example .env.local
 npm run dev                   # http://localhost:3000
 
 # Testes — zero chamadas ao Grok/xAI
-python3 -m pytest tests/ -v                          # Backend (411 testes, ~9s)
-cd frontend && npx jest --verbose                     # Frontend (55 testes, ~3s)
+python3 -m pytest tests/ -v                          # Backend (450 testes, ~9s)
+cd frontend && npx jest --verbose                     # Frontend (60 testes, ~3s)
 python3 -m pytest tests/ --cov=src --cov-report=term-missing  # Coverage
 ```
 
@@ -41,11 +41,13 @@ python3 -m pytest tests/ --cov=src --cov-report=term-missing  # Coverage
 Upload → sort por descrição → chunks de 500 → salva em taxonomy_jobs/
 SubmitTaxonomyJob → enfileira {job_id} na Azure Storage Queue (taxonomy-jobs)
 Queue trigger (ProcessTaxonomyJob):
+  → Pre-flight billing (GET /v1/models) — 401/403 → ERROR imediato ("créditos xAI esgotados")
   → Merge KB setor (se use_sector_kb) + projeto (1x por job)
   → Two-Phase: (1) KB direct match ≥0.90 (2) LLM com enriched examples
   → Validação hierarquia (cascade: exact → shift → fuzzy → n4-reverse)
   → Consolida → "Não Identificado" nos vazios → CLASSIFIED
-Cleanup timer (1x/hora): safety net — re-enfileira PENDING órfãos, marca PROCESSING > 1h como ERROR
+  → Deadline cooperativo 25min: para limpo, limpa lease e re-enfileira a continuação (resume por chunk)
+Cleanup timer (1x/hora): safety net — re-enfileira PENDING órfãos e PROCESSING sem progresso > 1h (máx 3 retomadas → ERROR)
 
 Revisão → ApproveClassifications → alimenta KB projeto → Excel → COMPLETED
 Promoção para setor = ação separada (PromoteToSectorKB)
@@ -65,7 +67,7 @@ Promoção para setor = ação separada (PromoteToSectorKB)
 │   ├── sectors/{name}/          # sector_config.json + knowledge_base.json + kb_versions/
 │   ├── projects/{id}/           # project_config.json + knowledge_base.json + kb_versions/
 │   └── taxonomy_jobs/           # Fila de jobs async
-├── tests/                       # pytest (411 testes)
+├── tests/                       # pytest (450 testes)
 └── frontend/                    # Next.js (ver frontend/CLAUDE.md)
 ```
 
@@ -110,6 +112,7 @@ ALLOWED_GROUP_ID=                # ID do grupo de segurança Azure AD (opcional 
 - Hooks em `frontend/src/hooks/` para lógica de estado
 - API client em `frontend/src/lib/api.ts`
 - Design tokens em `frontend/src/lib/design-tokens.ts`
+- Erro de job chega à UI: `GetTaxonomyJobStatus` retorna `error` → `useTaxonomySession` expõe `processingError`/`clearProcessingError` → `ProcessingOverlay` exibe em estilo destrutivo com botão "Fechar"
 
 ### Nomenclatura
 - Níveis: N1 (mais alto) → N4 (mais granular)
@@ -145,6 +148,7 @@ ALLOWED_GROUP_ID=                # ID do grupo de segurança Azure AD (opcional 
 - **Sanitização**: `safe_resource_id()` em todos os IDs de recurso (path traversal prevention)
 - **Rate limiting**: `@rate_limit` no SubmitTaxonomyJob (10 req/min/IP)
 - **Circuit breaker**: Grok API fail-fast após 5 falhas consecutivas (60s recovery)
+- **Billing fail-fast**: 401/403 da xAI → `BillingError` → job ERROR imediato com mensagem explícita (pre-flight + in-flight), sem queimar chunks em fallback
 - **HTTPS Only**: habilitado no Azure Functions (HTTP → 301)
 - **Security headers**: X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy, CSP com connect-src restrito
 - **CORS**: dinâmico via `ALLOWED_ORIGINS` env var
