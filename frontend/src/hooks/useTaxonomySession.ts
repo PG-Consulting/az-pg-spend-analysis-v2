@@ -24,9 +24,12 @@ interface UseTaxonomySessionReturn {
     isProcessing: boolean
     isCancelling: boolean
     progress: { message: string; pct: number } | null
+    /** Erro real do job (status ERROR) — consumido pelo ProcessingOverlay */
+    processingError: string | null
     clientContext: string
     activeProjectId: string | null
 
+    clearProcessingError: () => void
     setClientContext: (context: string) => void
     setActiveSessionId: (id: string | null) => void
     setActiveProjectId: (id: string | null) => void
@@ -48,6 +51,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
     const [isProcessing, setIsProcessing] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
     const [progress, setProgress] = useState<{ message: string; pct: number } | null>(null)
+    const [processingError, setProcessingError] = useState<string | null>(null)
     const [clientContext, setClientContext] = useState('')
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
 
@@ -89,6 +93,7 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         setIsProcessing(true)
         setIsCancelling(false)
         cancelledRef.current = false
+        setProcessingError(null)
         setProgress({ message: 'Enviando arquivo...', pct: 0 })
 
         try {
@@ -166,7 +171,13 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
                     }
 
                     if (status.status === 'ERROR') {
-                        throw new Error((status as any).error || (status as any).message || 'Erro no processamento do arquivo.')
+                        // Erro real do backend (ex.: créditos xAI esgotados).
+                        // Para o polling e expõe no estado que o modal consome —
+                        // throw aqui seria engolido pelo catch de polling abaixo.
+                        const errMsg = status.error || status.message || 'Erro no processamento do arquivo.'
+                        console.error(`[Session] Job ${jobId} failed: ${errMsg}`)
+                        setProcessingError(errMsg)
+                        return
                     }
 
                 } catch (pollErr: any) {
@@ -219,6 +230,10 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         await saveSession(updatedSession);
     }, [activeSessionId])
 
+    const clearProcessingError = useCallback(() => {
+        setProcessingError(null)
+    }, [])
+
     const cancelJob = useCallback(async () => {
         const jobId = currentJobIdRef.current
         if (!jobId) return
@@ -262,8 +277,10 @@ export function useTaxonomySession(): UseTaxonomySessionReturn {
         isProcessing,
         isCancelling,
         progress,
+        processingError,
         clientContext,
         activeProjectId,
+        clearProcessingError,
         setClientContext,
         setActiveSessionId,
         setActiveProjectId,

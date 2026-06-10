@@ -160,8 +160,11 @@ export interface JobStatusResponse {
   jobId: string;
   status: JobStatus;
   progress?: number;
+  progress_pct?: number;
+  message?: string;
   total_chunks?: number;
   processed_chunks?: number;
+  /** Mensagem real de erro do backend (presente quando status === 'ERROR') */
   error?: string;
   summary?: Record<string, unknown>;
   analytics?: Record<string, unknown>;

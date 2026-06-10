@@ -311,6 +311,10 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
         message = f"{items_done:,} de {total_rows:,} itens processados"
     elif status["status"] == "PENDING":
         message = "Aguardando inicio do processamento..."
+    elif status["status"] == "ERROR":
+        # Mensagem real do erro (créditos xAI, poison, expiração) em vez do
+        # literal "ERROR" — o frontend exibe isso ao consultor.
+        message = status.get("error") or "ERROR"
     else:
         message = status["status"]
 
@@ -320,6 +324,9 @@ def GetTaxonomyJobStatus(req: func.HttpRequest) -> func.HttpResponse:
         "progress_pct": pct,
         "message": message,
     }
+
+    if status.get("error"):
+        response["error"] = status["error"]
 
     if status["status"] == "COMPLETED":
         result_file = os.path.join(job_dir, "result.json")

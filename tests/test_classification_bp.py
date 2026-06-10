@@ -343,3 +343,97 @@ class TestUploadRowLimit:
             response = SubmitTaxonomyJob(req)
 
         assert response.status_code == 202
+
+
+class TestGetTaxonomyJobStatusError:
+    """(g) Job em ERROR deve expor a mensagem real (status.error) — antes a
+    resposta trazia message='ERROR' literal e o campo error nunca era
+    retornado, deixando o consultor sem saber a causa (ex.: créditos xAI)."""
+
+    ERROR_MSG = (
+        "Créditos da API xAI esgotados ou chave inválida (HTTP 403). "
+        "Recarregue créditos no console.x.ai e re-submeta o job."
+    )
+
+    def _make_job(self, tmp_path, monkeypatch, status):
+        jobs_dir = tmp_path / "taxonomy_jobs"
+        job_dir = jobs_dir / "job-err"
+        job_dir.mkdir(parents=True)
+        (job_dir / "status.json").write_text(json.dumps(status, ensure_ascii=False))
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: str(jobs_dir)
+        )
+
+    def test_error_status_returns_real_message_and_error_field(
+        self, tmp_path, monkeypatch
+    ):
+        from blueprints.classification_bp import GetTaxonomyJobStatus
+
+        self._make_job(
+            tmp_path,
+            monkeypatch,
+            {
+                "status": "ERROR",
+                "error": self.ERROR_MSG,
+                "total_chunks": 4,
+                "processed_chunks": 1,
+            },
+        )
+
+        req = MagicMock()
+        req.method = "GET"
+        req.params = {"jobId": "job-err"}
+
+        resp = GetTaxonomyJobStatus(req)
+        body = json.loads(resp.get_body())
+
+        assert body["status"] == "ERROR"
+        assert body["message"] == self.ERROR_MSG, (
+            "message deve ser o erro real, não o literal 'ERROR'"
+        )
+        assert body["error"] == self.ERROR_MSG
+
+    def test_error_without_message_falls_back_to_literal(self, tmp_path, monkeypatch):
+        from blueprints.classification_bp import GetTaxonomyJobStatus
+
+        self._make_job(
+            tmp_path,
+            monkeypatch,
+            {"status": "ERROR", "total_chunks": 1, "processed_chunks": 0},
+        )
+
+        req = MagicMock()
+        req.method = "GET"
+        req.params = {"jobId": "job-err"}
+
+        resp = GetTaxonomyJobStatus(req)
+        body = json.loads(resp.get_body())
+
+        assert body["status"] == "ERROR"
+        assert body["message"] == "ERROR"
+        assert "error" not in body
+
+    def test_processing_status_keeps_progress_message(self, tmp_path, monkeypatch):
+        """Comportamento preservado: PROCESSING continua com mensagem de progresso."""
+        from blueprints.classification_bp import GetTaxonomyJobStatus
+
+        self._make_job(
+            tmp_path,
+            monkeypatch,
+            {
+                "status": "PROCESSING",
+                "total_chunks": 4,
+                "processed_chunks": 2,
+                "total_rows": 2000,
+            },
+        )
+
+        req = MagicMock()
+        req.method = "GET"
+        req.params = {"jobId": "job-err"}
+
+        resp = GetTaxonomyJobStatus(req)
+        body = json.loads(resp.get_body())
+
+        assert body["status"] == "PROCESSING"
+        assert "itens processados" in body["message"]

@@ -7,6 +7,8 @@ interface ProcessingOverlayProps {
   progress?: number // 0-100
   message?: string
   subMessage?: string
+  /** Erro real do job — quando presente, substitui o subMessage genérico */
+  error?: string
   onCancel?: () => void
   cancelling?: boolean
 }
@@ -17,13 +19,15 @@ export function ProcessingOverlay({
   progress,
   message,
   subMessage,
+  error,
   onCancel,
   cancelling,
 }: ProcessingOverlayProps) {
   const displayMessage = useMemo(() => {
+    if (error) return 'Erro na classificação'
     if (status && status !== 'Processando...') return status
     return message || 'Processando...'
-  }, [status, message])
+  }, [status, message, error])
 
   if (!isVisible) return null
 
@@ -45,7 +49,7 @@ export function ProcessingOverlay({
         </h3>
 
         {/* Progress bar section */}
-        {progress !== undefined && (
+        {progress !== undefined && !error && (
           <div className="mb-4">
             {/* Percentage right-aligned above bar */}
             <div className="flex justify-end mb-1.5">
@@ -67,14 +71,20 @@ export function ProcessingOverlay({
           </div>
         )}
 
-        {/* Subtitle */}
-        {subMessage && (
-          <p className="text-sm text-primary-400 text-center mb-4">
-            {subMessage}
+        {/* Subtitle — erro real (destrutivo) ou mensagem genérica */}
+        {error ? (
+          <p className="text-sm text-red-500 text-center mb-4 break-words">
+            {error}
           </p>
+        ) : (
+          subMessage && (
+            <p className="text-sm text-primary-400 text-center mb-4">
+              {subMessage}
+            </p>
+          )
         )}
 
-        {/* Cancel button */}
+        {/* Cancel / close button */}
         <div className="flex justify-center pt-2">
           <button
             type="button"
@@ -86,7 +96,7 @@ export function ProcessingOverlay({
             }`}
             onClick={onCancel}
           >
-            {cancelling ? 'Cancelando...' : 'Cancelar classificação'}
+            {error ? 'Fechar' : cancelling ? 'Cancelando...' : 'Cancelar classificação'}
           </button>
         </div>
       </div>

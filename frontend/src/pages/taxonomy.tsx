@@ -192,6 +192,8 @@ const TaxonomyPage: NextPage = () => {
     isProcessing,
     isCancelling,
     progress,
+    processingError,
+    clearProcessingError,
     activeProjectId,
     setActiveProjectId,
     setActiveSessionId,
@@ -541,12 +543,13 @@ const TaxonomyPage: NextPage = () => {
           PROCESSING OVERLAY
       ============================================================ */}
       <ProcessingOverlay
-        isVisible={isProcessing}
+        isVisible={isProcessing || !!processingError}
         message="Classificando itens..."
         subMessage="Aguarde enquanto a IA processa o arquivo."
+        error={processingError ?? undefined}
         progress={progressPct}
         status={progress?.message}
-        onCancel={cancelJob}
+        onCancel={processingError ? clearProcessingError : cancelJob}
         cancelling={isCancelling}
       />
 

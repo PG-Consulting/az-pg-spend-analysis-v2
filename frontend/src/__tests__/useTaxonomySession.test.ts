@@ -324,6 +324,92 @@ describe('useTaxonomySession', () => {
     expect(result.current.sessions).toHaveLength(0);
   }, 15000);
 
+  // 6b. handleFileSelect — job ERROR during polling
+  // O backend agora retorna o erro real (status.error). O hook deve PARAR o
+  // polling e expor o erro em processingError (estado consumido pelo modal) —
+  // antes o throw era engolido pelo catch interno e o polling continuava.
+  it('should stop polling and surface the real error when job status is ERROR', async () => {
+    jest.useFakeTimers();
+
+    (getAllSessions as jest.Mock).mockResolvedValue([]);
+
+    const jobId = 'job-error-001';
+    const errorMsg =
+      'Créditos da API xAI esgotados ou chave inválida (HTTP 403). ' +
+      'Recarregue créditos no console.x.ai e re-submeta o job.';
+
+    (apiClient.submitClassificationJobRaw as jest.Mock).mockResolvedValue({ jobId });
+    (apiClient.getJobStatus as jest.Mock).mockResolvedValue({
+      jobId,
+      status: 'ERROR',
+      progress_pct: 10,
+      message: errorMsg,
+      error: errorMsg,
+    });
+
+    const alertMock = jest.fn();
+    window.alert = alertMock;
+
+    const mockFile = new File(['test'], 'test.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const { result } = renderHook(() => useTaxonomySession());
+
+    await act(async () => { await jest.advanceTimersByTimeAsync(50); });
+
+    let fileSelectPromise: Promise<void>;
+    await act(async () => {
+      fileSelectPromise = result.current.handleFileSelect(mockFile, 'base64content');
+    });
+
+    // Primeiro poll (5s) → ERROR → deve encerrar imediatamente
+    await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    await act(async () => { await fileSelectPromise!; });
+
+    expect(result.current.processingError).toBe(errorMsg);
+    expect(result.current.isProcessing).toBe(false);
+    expect(apiClient.getJobStatus).toHaveBeenCalledTimes(1); // parou de pollar
+    expect(result.current.sessions).toHaveLength(0);
+  }, 15000);
+
+  // 6c. clearProcessingError
+  it('should clear processingError when clearProcessingError is called', async () => {
+    jest.useFakeTimers();
+
+    (getAllSessions as jest.Mock).mockResolvedValue([]);
+
+    const jobId = 'job-error-002';
+    (apiClient.submitClassificationJobRaw as jest.Mock).mockResolvedValue({ jobId });
+    (apiClient.getJobStatus as jest.Mock).mockResolvedValue({
+      jobId,
+      status: 'ERROR',
+      error: 'Erro qualquer',
+    });
+
+    const mockFile = new File(['test'], 'test.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const { result } = renderHook(() => useTaxonomySession());
+    await act(async () => { await jest.advanceTimersByTimeAsync(50); });
+
+    let fileSelectPromise: Promise<void>;
+    await act(async () => {
+      fileSelectPromise = result.current.handleFileSelect(mockFile, 'base64content');
+    });
+    await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    await act(async () => { await fileSelectPromise!; });
+
+    expect(result.current.processingError).toBe('Erro qualquer');
+
+    act(() => {
+      result.current.clearProcessingError();
+    });
+
+    expect(result.current.processingError).toBeNull();
+  }, 15000);
+
   // 7. cancelJob
   it('should call apiClient.cancelJob and set isCancelling', async () => {
     jest.useFakeTimers();
