@@ -74,3 +74,7 @@ frontend/tsconfig.tsbuildinfo
 
 # ==== CACHE ====
 /models/cache
+
+# Session-local handoff (not tracked)
+HANDOFF.md
+.benchmark-data/
