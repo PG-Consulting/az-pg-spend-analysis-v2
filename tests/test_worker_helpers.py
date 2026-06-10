@@ -177,17 +177,98 @@ class TestParseHierarchyPriorityOrder:
 
 
 class TestCleanupStaleJobs:
-    """cleanup_stale_jobs deve marcar PROCESSING > 1h como ERROR."""
+    """cleanup_stale_jobs mede staleness por PROGRESSO (lease_renewed_at,
+    fallback created_at) e RE-ENFILEIRA jobs travados em vez de matá-los —
+    ERROR definitivo só após MAX_RESUME_ATTEMPTS retomadas."""
 
-    def test_marks_stale_processing_job_as_error(self, tmp_path):
+    @patch("src.worker_helpers.enqueue_job")
+    def test_stale_job_requeued_not_killed(self, mock_enqueue, tmp_path):
+        """PROCESSING sem progresso > 1h → re-enqueue (retomada), não ERROR."""
+        mock_enqueue.return_value = True
         job_dir = tmp_path / "stale-job"
         job_dir.mkdir()
         two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-        status = {"status": "PROCESSING", "created_at": two_hours_ago}
+        status = {
+            "status": "PROCESSING",
+            "created_at": two_hours_ago,
+            "processing_worker_id": "dead-worker",
+        }
         (job_dir / "status.json").write_text(json.dumps(status))
+
         cleanup_stale_jobs(str(tmp_path))
+
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "PROCESSING"  # retoma, não mata
+        assert result["resume_attempts"] == 1
+        assert not result.get("processing_worker_id")  # lease limpo p/ re-claim
+        mock_enqueue.assert_called_once_with("stale-job")
+
+    @patch("src.worker_helpers.enqueue_job")
+    def test_fresh_lease_protects_long_running_job(self, mock_enqueue, tmp_path):
+        """Job saudável de longa duração (criado há 2h, mas com chunk concluído
+        há 1min) NÃO pode ser tocado — staleness é por progresso, não idade."""
+        job_dir = tmp_path / "long-healthy-job"
+        job_dir.mkdir()
+        two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        one_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        status = {
+            "status": "PROCESSING",
+            "created_at": two_hours_ago,
+            "lease_renewed_at": one_min_ago,
+            "processing_worker_id": "alive-worker",
+        }
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        cleanup_stale_jobs(str(tmp_path))
+
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "PROCESSING"
+        assert "resume_attempts" not in result
+        assert result["processing_worker_id"] == "alive-worker"
+        mock_enqueue.assert_not_called()
+
+    @patch("src.worker_helpers.enqueue_job")
+    def test_stale_lease_requeues(self, mock_enqueue, tmp_path):
+        """Lease parado > 1h → re-enqueue mesmo com created_at presente."""
+        mock_enqueue.return_value = True
+        job_dir = tmp_path / "stale-lease-job"
+        job_dir.mkdir()
+        status = {
+            "status": "PROCESSING",
+            "created_at": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+            "lease_renewed_at": (
+                datetime.now(timezone.utc) - timedelta(hours=2)
+            ).isoformat(),
+        }
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        cleanup_stale_jobs(str(tmp_path))
+
+        result = json.loads((job_dir / "status.json").read_text())
+        assert result["status"] == "PROCESSING"
+        assert result["resume_attempts"] == 1
+        mock_enqueue.assert_called_once()
+
+    @patch("src.worker_helpers.enqueue_job")
+    def test_exhausted_resume_attempts_marks_error(self, mock_enqueue, tmp_path):
+        """Guarda anti-ressurreição infinita: após MAX_RESUME_ATTEMPTS
+        retomadas, marca ERROR com mensagem explicativa."""
+        job_dir = tmp_path / "zombie-job"
+        job_dir.mkdir()
+        two_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        status = {
+            "status": "PROCESSING",
+            "created_at": two_hours_ago,
+            "resume_attempts": 3,
+        }
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        cleanup_stale_jobs(str(tmp_path))
+
         result = json.loads((job_dir / "status.json").read_text())
         assert result["status"] == "ERROR"
+        assert "retomadas" in result["error"]
+        mock_enqueue.assert_not_called()
 
     def test_ignores_recent_processing_job(self, tmp_path):
         job_dir = tmp_path / "recent-job"
@@ -962,3 +1043,384 @@ class TestFallbackDetection:
         assert status["status"] == "CLASSIFIED"
         assert status.get("fallback_pct", 0) == 20.0
         assert "warning" not in status
+
+
+# ---------------------------------------------------------------------------
+# Helpers compartilhados pelos testes de resume/lease/billing
+# ---------------------------------------------------------------------------
+
+
+def _create_job_dir(tmp_path, job_id, status_override=None, num_chunks=1):
+    """Cria job dir com chunks e status.json (mesmo formato de TestProcessSingleJob)."""
+    job_dir = tmp_path / job_id
+    job_dir.mkdir()
+
+    for i in range(num_chunks):
+        chunk_data = [
+            {"Descricao": f"Item {i}A"},
+            {"Descricao": f"Item {i}B"},
+        ]
+        (job_dir / f"chunk_{i}.json").write_text(json.dumps(chunk_data))
+
+    status = {
+        "job_id": job_id,
+        "status": "PENDING",
+        "total_chunks": num_chunks,
+        "processed_chunks": 0,
+        "filename": "test.xlsx",
+        "desc_column": "Descricao",
+        "sector": "Padrao",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "custom_hierarchy_list": None,
+        "custom_hierarchy_b64": None,
+        "project_id": None,
+        "client_context": "",
+        "use_web_search": False,
+        "total_rows": num_chunks * 2,
+    }
+    if status_override:
+        status.update(status_override)
+
+    (job_dir / "status.json").write_text(json.dumps(status, ensure_ascii=False))
+    return job_dir
+
+
+def _fake_chunk_writer(job_info, chunk_idx):
+    """Mock de process_single_chunk que escreve result_N.json válido."""
+    result_data = [
+        {
+            "description": f"Item {chunk_idx}A",
+            "N1": "Cat1",
+            "N2": "S1",
+            "N3": "A",
+            "N4": "X",
+            "source": "LLM (Batch)",
+            "confidence": 0.9,
+        },
+        {
+            "description": f"Item {chunk_idx}B",
+            "N1": "Cat2",
+            "N2": "S2",
+            "N3": "B",
+            "N4": "Y",
+            "source": "LLM (Batch)",
+            "confidence": 0.8,
+        },
+    ]
+    result_path = os.path.join(job_info["job_dir"], f"result_{chunk_idx}.json")
+    with open(result_path, "w") as f:
+        json.dump(result_data, f)
+    return {}
+
+
+# ---------------------------------------------------------------------------
+# (a) Deadline cooperativo + self-re-enqueue
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerDeadline:
+    """Worker deve parar limpo ANTES do functionTimeout: limpar lease,
+    re-enfileirar o job e retornar normalmente (mensagem atual deletada,
+    nova mensagem retoma de onde parou via find_next_chunks)."""
+
+    @patch("src.worker_helpers.enqueue_job")
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_deadline_requeues_and_clears_lease(
+        self, mock_chunk, mock_jobs_dir, mock_enqueue, tmp_path, monkeypatch
+    ):
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_enqueue.return_value = True
+        monkeypatch.setattr("src.worker_helpers.WORKER_DEADLINE_SECONDS", 0)
+
+        job_id = "test-deadline"
+        _create_job_dir(tmp_path, job_id, num_chunks=2)
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)  # retorna normalmente (sem raise)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        # Mantém PROCESSING (sem flicker para PENDING na UI)
+        assert status["status"] == "PROCESSING"
+        # Lease limpo → claim da próxima invocação passa o guard
+        assert not status.get("processing_worker_id")
+        mock_enqueue.assert_called_once_with(job_id)
+        # Parou antes de processar qualquer chunk
+        mock_chunk.assert_not_called()
+
+    @patch("src.worker_helpers.enqueue_job")
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_deadline_enqueue_failure_reraises(
+        self, mock_chunk, mock_jobs_dir, mock_enqueue, tmp_path, monkeypatch
+    ):
+        """Se o re-enqueue falha, re-levanta para a queue retentar a mensagem
+        atual (fallback) — o job não pode ser perdido."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_enqueue.return_value = False
+        monkeypatch.setattr("src.worker_helpers.WORKER_DEADLINE_SECONDS", 0)
+
+        job_id = "test-deadline-fail"
+        _create_job_dir(tmp_path, job_id, num_chunks=2)
+
+        from src.worker_helpers import process_single_job as psj
+
+        with pytest.raises(RuntimeError):
+            psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        # Lease limpo mesmo assim → retry da mensagem atual consegue re-claim
+        assert not status.get("processing_worker_id")
+
+
+# ---------------------------------------------------------------------------
+# (b) Lease heartbeat — skip somente com lease fresco; stale → steal
+# ---------------------------------------------------------------------------
+
+
+class TestLeaseHeartbeat:
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_fresh_lease_skips_job(self, mock_chunk, mock_jobs_dir, tmp_path):
+        """Idempotência preservada: outro worker com lease fresco → skip."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-fresh-lease"
+        _create_job_dir(
+            tmp_path,
+            job_id,
+            status_override={
+                "status": "PROCESSING",
+                "processing_worker_id": "other-worker",
+                "lease_renewed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["processing_worker_id"] == "other-worker"  # não roubou
+        mock_chunk.assert_not_called()
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_stale_lease_steals_and_resumes(self, mock_chunk, mock_jobs_dir, tmp_path):
+        """Worker morto (lease stale > LEASE_STALE_SECONDS) → steal e retoma."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-stale-lease"
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        _create_job_dir(
+            tmp_path,
+            job_id,
+            status_override={
+                "status": "PROCESSING",
+                "processing_worker_id": "dead-worker",
+                "lease_renewed_at": stale,
+            },
+        )
+
+        mock_chunk.side_effect = _fake_chunk_writer
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CLASSIFIED"  # retomou e completou
+        assert status["processing_worker_id"] != "dead-worker"  # steal
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_missing_lease_timestamp_steals(self, mock_chunk, mock_jobs_dir, tmp_path):
+        """Jobs órfãos pré-fix (worker_id setado, sem lease_renewed_at) → steal."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        job_id = "test-no-lease"
+        _create_job_dir(
+            tmp_path,
+            job_id,
+            status_override={
+                "status": "PROCESSING",
+                "processing_worker_id": "dead-worker",
+            },
+        )
+
+        mock_chunk.side_effect = _fake_chunk_writer
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "CLASSIFIED"
+
+    def test_claim_writes_lease_renewed_at(self, tmp_path):
+        """Claim do job deve gravar lease_renewed_at (ISO UTC)."""
+        with (
+            patch("src.worker_helpers.get_jobs_dir", return_value=str(tmp_path)),
+            patch("src.worker_helpers.process_single_chunk") as mock_chunk,
+        ):
+            job_id = "test-claim-lease"
+            _create_job_dir(tmp_path, job_id)
+            mock_chunk.side_effect = _fake_chunk_writer
+
+            from src.worker_helpers import process_single_job as psj
+
+            psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status.get("lease_renewed_at"), "claim deve gravar lease_renewed_at"
+        # Deve parsear como ISO datetime
+        datetime.fromisoformat(status["lease_renewed_at"])
+
+    def test_update_job_progress_renews_lease(self, tmp_path):
+        """Cada chunk concluído renova o lease (heartbeat de progresso)."""
+        from src.worker_helpers import update_job_progress
+
+        job_dir = _create_job_dir(tmp_path, "test-renew", num_chunks=2)
+        status = json.loads((job_dir / "status.json").read_text())
+        job_info = {
+            "job_id": "test-renew",
+            "job_dir": str(job_dir),
+            "status_path": str(job_dir / "status.json"),
+            "status": status,
+            "total_chunks": 2,
+        }
+
+        update_job_progress(job_info)
+
+        updated = json.loads((job_dir / "status.json").read_text())
+        assert updated.get("lease_renewed_at"), (
+            "update_job_progress deve renovar lease_renewed_at"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (d) Billing fail-fast no worker — pre-flight e in-flight
+# ---------------------------------------------------------------------------
+
+
+class TestBillingErrorInWorker:
+    @patch("src.llm_classifier.check_llm_health")
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_preflight_billing_error_marks_job_error(
+        self, mock_chunk, mock_jobs_dir, mock_health, tmp_path
+    ):
+        """Créditos esgotados detectados ANTES de processar chunks → ERROR
+        imediato com mensagem explícita, retorno normal (sem retry/poison)."""
+        from src.exceptions import BillingError
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_health.side_effect = BillingError(
+            "Créditos da API xAI esgotados ou chave inválida (HTTP 403). "
+            "Recarregue créditos no console.x.ai e re-submeta o job."
+        )
+
+        job_id = "test-billing-preflight"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)  # NÃO deve re-levantar
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "ERROR"
+        assert "Créditos da API xAI" in status["error"]
+        mock_chunk.assert_not_called()
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_inflight_billing_error_marks_job_error(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        """403 no meio do job (créditos acabaram durante o processamento) →
+        ERROR explícito, retorno normal (retry não resolve)."""
+        from src.exceptions import BillingError
+
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_chunk.side_effect = BillingError(
+            "Créditos da API xAI esgotados ou chave inválida (HTTP 403). "
+            "Recarregue créditos no console.x.ai e re-submeta o job."
+        )
+
+        job_id = "test-billing-inflight"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        psj(job_id)  # NÃO deve re-levantar
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "ERROR"
+        assert "Créditos da API xAI" in status["error"]
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_generic_error_still_reraised(self, mock_chunk, mock_jobs_dir, tmp_path):
+        """Comportamento preservado: exceção genérica continua re-levantada
+        (poison queue semantics, maxDequeueCount=5)."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_chunk.side_effect = RuntimeError("transient failure")
+
+        job_id = "test-generic-error"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        with pytest.raises(RuntimeError, match="transient failure"):
+            psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "PROCESSING"  # queue retry pode re-entrar
+
+
+# ---------------------------------------------------------------------------
+# (e) Pre-check granular de cancelamento por chunk
+# ---------------------------------------------------------------------------
+
+
+class TestChunkCancelPreCheck:
+    def _job_info(self, job_dir, status):
+        return {
+            "job_id": "test-chunk-precheck",
+            "job_dir": str(job_dir),
+            "status_path": str(job_dir / "status.json"),
+            "status": status,
+            "total_chunks": 1,
+            "custom_hierarchy": None,
+            "hierarchy_lookup": None,
+            "kb_entries": [],
+            "kb_retriever": None,
+        }
+
+    @patch("src.core_classification.process_dataframe_chunk")
+    def test_chunk_skipped_when_cancelled(self, mock_pdc, tmp_path):
+        from src.worker_helpers import process_single_chunk
+
+        mock_pdc.return_value = []
+        job_dir = _create_job_dir(
+            tmp_path, "test-chunk-precheck", status_override={"status": "CANCELLED"}
+        )
+        status = json.loads((job_dir / "status.json").read_text())
+
+        process_single_chunk(self._job_info(job_dir, status), 0)
+
+        mock_pdc.assert_not_called()
+        assert not os.path.exists(os.path.join(str(job_dir), "result_0.json"))
+
+    @patch("src.core_classification.process_dataframe_chunk")
+    def test_chunk_skipped_when_error(self, mock_pdc, tmp_path):
+        from src.worker_helpers import process_single_chunk
+
+        mock_pdc.return_value = []
+        job_dir = _create_job_dir(
+            tmp_path, "test-chunk-precheck", status_override={"status": "ERROR"}
+        )
+        status = json.loads((job_dir / "status.json").read_text())
+
+        process_single_chunk(self._job_info(job_dir, status), 0)
+
+        mock_pdc.assert_not_called()
+        assert not os.path.exists(os.path.join(str(job_dir), "result_0.json"))

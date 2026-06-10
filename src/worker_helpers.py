@@ -33,6 +33,8 @@ from src.utils import (
 )
 from src.project_manager import get_project
 from src.file_lock import read_status, update_status, locked_status
+from src.queue_helpers import enqueue_job
+from src.exceptions import BillingError
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +42,52 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-STALE_THRESHOLD_SECONDS = 3600  # 1 hour - jobs PROCESSING beyond this become ERROR
+STALE_THRESHOLD_SECONDS = 3600  # 1h sem progresso → cleanup re-enfileira (ou ERROR)
+# Deadline cooperativo do worker: parar ANTES do functionTimeout do host
+# (00:40:00) para limpar o lease e re-enfileirar o job, que retoma em nova
+# invocação (find_next_chunks pula chunks com result_N.json). 25min + margem.
+WORKER_DEADLINE_SECONDS = 25 * 60
+# Lease heartbeat: lease_renewed_at é gravado no claim e renovado a cada chunk
+# concluído (update_job_progress). Lease mais velho que isso = worker morto
+# (crash/timeout) — outro worker pode assumir o job (steal) e retomar.
+LEASE_STALE_SECONDS = 10 * 60
+# Máximo de retomadas disparadas pelo cleanup antes de marcar ERROR definitivo
+# (guarda contra ressurreição infinita). Self-re-enqueues do deadline NÃO contam.
+MAX_RESUME_ATTEMPTS = 3
 MAX_PARALLEL_CHUNKS = 5  # Max simultaneous chunks across all active jobs
 # Acima deste % de fallback, tratamos como falha sistêmica da API (param inválido,
 # circuit breaker, outage) e marcamos o job ERROR em vez de CLASSIFIED silencioso.
 # É estatisticamente implausível que ~todo um arquivo real seja inclassificável.
 FALLBACK_ERROR_THRESHOLD = 95.0
+
+
+# ---------------------------------------------------------------------------
+# Small shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _seconds_since(iso_timestamp: str) -> Optional[float]:
+    """Segundos decorridos desde um timestamp ISO (assume UTC se naive).
+
+    Retorna None se o timestamp for inválido/vazio.
+    """
+    try:
+        dt = datetime.fromisoformat(iso_timestamp)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds()
+
+
+def _mark_job_error(status_path: str, job_id: str, message: str) -> None:
+    """Marca o job como ERROR com mensagem explícita (sob file lock)."""
+    with locked_status(status_path) as data:
+        data["status"] = "ERROR"
+        data["error"] = message
+        data["error_at"] = datetime.now(timezone.utc).isoformat()
+        data.pop("processing_worker_id", None)
+    logger.error(f"[Worker] job={job_id} — ERROR: {message}")
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +130,17 @@ def handle_poison_message(job_id: str) -> None:
 
 
 def cleanup_stale_jobs(jobs_root: str) -> None:
-    """Mark PROCESSING jobs older than 1 hour as ERROR (auto-cleanup)."""
+    """Retoma (ou marca ERROR) PROCESSING jobs sem progresso há mais de 1h.
+
+    Staleness é medida a partir de lease_renewed_at (renovado a cada chunk
+    concluído) — fallback para created_at em jobs criados antes do heartbeat
+    (backward compat). Um job saudável de longa duração NUNCA é morto por idade.
+
+    Job stale é RE-ENFILEIRADO para retomar de onde parou (espelha o
+    re-enqueue de PENDING órfãos em worker_bp). Guarda anti-ressurreição:
+    resume_attempts é incrementado a cada retomada disparada pelo cleanup;
+    após MAX_RESUME_ATTEMPTS, o job vira ERROR definitivo.
+    """
     for job_id in os.listdir(jobs_root):
         job_dir = os.path.join(jobs_root, job_id)
         status_path = os.path.join(job_dir, "status.json")
@@ -98,23 +150,44 @@ def cleanup_stale_jobs(jobs_root: str) -> None:
             status = read_status(status_path)
             if status.get("status") != "PROCESSING":
                 continue
-            created_at = status.get("created_at")
-            if not created_at:
+            # Progresso (lease) primeiro; created_at só para jobs pré-heartbeat
+            reference = status.get("lease_renewed_at") or status.get("created_at")
+            if not reference:
                 continue
-            created_dt = datetime.fromisoformat(created_at)
-            elapsed = (datetime.now(timezone.utc) - created_dt).total_seconds()
-            if elapsed > STALE_THRESHOLD_SECONDS:
-                # Atomic check-and-set: only mark ERROR if still PROCESSING
-                with locked_status(status_path) as data:
-                    if data.get("status") != "PROCESSING":
-                        continue
+            elapsed = _seconds_since(reference)
+            if elapsed is None or elapsed <= STALE_THRESHOLD_SECONDS:
+                continue
+
+            # Atomic check-and-set sob lock
+            should_enqueue = False
+            attempts = 0
+            with locked_status(status_path) as data:
+                if data.get("status") != "PROCESSING":
+                    continue
+                attempts = int(data.get("resume_attempts", 0))
+                if attempts >= MAX_RESUME_ATTEMPTS:
                     logger.warning(
-                        f"[Worker] Job {job_id} stuck for {elapsed / 60:.0f}min. Marking as ERROR."
+                        f"[Worker] Job {job_id} sem progresso há "
+                        f"{elapsed / 60:.0f}min após {attempts} retomadas. "
+                        "Marcando ERROR definitivo."
                     )
                     data["status"] = "ERROR"
                     data["error"] = (
-                        f"Job expired after {elapsed / 60:.0f} minutes without completing"
+                        f"Job não completou após {attempts} retomadas — "
+                        "verifique tamanho do arquivo ou logs"
                     )
+                    data["error_at"] = datetime.now(timezone.utc).isoformat()
+                else:
+                    data["resume_attempts"] = attempts + 1
+                    data.pop("processing_worker_id", None)
+                    data.pop("lease_renewed_at", None)
+                    should_enqueue = True
+            if should_enqueue:
+                logger.warning(
+                    f"[Worker] Job {job_id} sem progresso há {elapsed / 60:.0f}min "
+                    f"— re-enfileirando (retomada {attempts + 1}/{MAX_RESUME_ATTEMPTS})"
+                )
+                enqueue_job(job_id)
         except Exception as e:
             logger.error(f"[Worker] Error checking stale job {job_id}: {e}")
 
@@ -327,6 +400,17 @@ def process_single_chunk(job_info: JobInfoDict, chunk_index: int) -> None:
     job_id = job_info["job_id"]
     total_chunks = job_info["total_chunks"]
 
+    # Pre-check granular: re-lê status.json antes de processar o chunk.
+    # Reduz a latência de cancelamento de muitos minutos para <1min
+    # (chunks de 500 linhas ≈ 5 chamadas LLM ≈ ~30s).
+    current = read_status(job_info["status_path"]).get("status", "")
+    if current in ("CANCELLED", "ERROR"):
+        logger.info(
+            f"[Worker] job={job_id} chunk={chunk_index} — status '{current}', "
+            "pulando chunk"
+        )
+        return
+
     chunk_file = os.path.join(job_dir, f"chunk_{chunk_index}.json")
     result_file = os.path.join(job_dir, f"result_{chunk_index}.json")
 
@@ -385,6 +469,8 @@ def update_job_progress(job_info: JobInfoDict) -> None:
 
     Uses update_status (atomic read-modify-write) to only update progress
     fields without overwriting the entire status (avoids clobbering CANCELLED).
+    Também renova lease_renewed_at (heartbeat): cada chunk concluído prova que
+    o worker está vivo — cleanup/steal medem staleness a partir daqui.
     """
     job_dir = job_info["job_dir"]
     total_chunks = job_info["total_chunks"]
@@ -394,7 +480,13 @@ def update_job_progress(job_info: JobInfoDict) -> None:
         if os.path.exists(os.path.join(job_dir, f"result_{j}.json"))
     )
     job_info["status"]["processed_chunks"] = processed_so_far
-    update_status(job_info["status_path"], {"processed_chunks": processed_so_far})
+    update_status(
+        job_info["status_path"],
+        {
+            "processed_chunks": processed_so_far,
+            "lease_renewed_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -622,6 +714,7 @@ def process_single_job(job_id: str) -> None:
     import uuid as uuid_mod
 
     worker_id = str(uuid_mod.uuid4())
+    job_started_at = time.monotonic()  # base do deadline cooperativo
     with locked_status(status_path) as data:
         current = data.get("status", "")
         if current not in ("PENDING", "PROCESSING"):
@@ -630,19 +723,40 @@ def process_single_job(job_id: str) -> None:
             )
             return
         if current == "PROCESSING" and data.get("processing_worker_id"):
-            logger.info(
-                f"[Worker] Job {job_id} already being processed by "
-                f"{data.get('processing_worker_id')} — skipping"
+            # Lease heartbeat: pula SOMENTE se o lease está fresco. Lease stale
+            # ou ausente = worker morto (crash/functionTimeout) — assume (steal)
+            # e retoma o job de onde parou.
+            lease_age = _seconds_since(data.get("lease_renewed_at") or "")
+            if lease_age is not None and lease_age < LEASE_STALE_SECONDS:
+                logger.info(
+                    f"[Worker] Job {job_id} already being processed by "
+                    f"{data.get('processing_worker_id')} "
+                    f"(lease fresco, {lease_age:.0f}s) — skipping"
+                )
+                return
+            logger.warning(
+                f"[Worker] Job {job_id} com lease stale/ausente "
+                f"(worker {data.get('processing_worker_id')}) — assumindo (steal)"
             )
-            return
         data["status"] = "PROCESSING"
         data["processing_worker_id"] = worker_id
+        data["lease_renewed_at"] = datetime.now(timezone.utc).isoformat()
     # Re-read after atomic transition
     status = read_status(status_path)
 
     logger.info(
         f"[Worker] Processing job {job_id} ({status.get('total_chunks')} chunks)"
     )
+
+    # Pre-flight: créditos xAI esgotados ou chave inválida → ERROR imediato
+    # (GET /models é grátis; retry/poison não resolvem falta de créditos)
+    try:
+        from src.llm_classifier import check_llm_health
+
+        check_llm_health()
+    except BillingError as be:
+        _mark_job_error(status_path, job_id, str(be))
+        return  # retorno normal: mensagem deletada, sem retry/poison
 
     try:
         # Setup: hierarchy, KB, KBRetriever
@@ -661,6 +775,28 @@ def process_single_job(job_id: str) -> None:
                 logger.info(
                     f"[Worker] Job {job_id} status='{current_status.get('status')}' — stopping"
                 )
+                return
+
+            # Deadline cooperativo: parar limpo ANTES do functionTimeout matar
+            # o worker no meio do job. Limpa o lease (próximo claim passa o
+            # guard) e re-enfileira; a nova invocação retoma de onde parou.
+            # Mantém status PROCESSING (sem flicker PENDING na UI).
+            elapsed = time.monotonic() - job_started_at
+            if elapsed >= WORKER_DEADLINE_SECONDS:
+                logger.warning(
+                    f"[Worker] job={job_id} atingiu deadline cooperativo "
+                    f"({elapsed / 60:.1f}min ≥ {WORKER_DEADLINE_SECONDS / 60:.0f}min) "
+                    "— re-enfileirando para retomar em nova invocação"
+                )
+                with locked_status(status_path) as data:
+                    data.pop("processing_worker_id", None)
+                if not enqueue_job(job_id):
+                    # Fallback: não perder o job — re-levanta para a queue
+                    # retentar a mensagem atual (maxDequeueCount).
+                    raise RuntimeError(
+                        f"Falha ao re-enfileirar job {job_id} no deadline — "
+                        "mensagem atual será retentada pela queue"
+                    )
                 return
 
             chunks = find_next_chunks(job_info, max_count=MAX_PARALLEL_CHUNKS)
@@ -684,6 +820,11 @@ def process_single_job(job_id: str) -> None:
         # All chunks done — consolidate
         consolidate_job(job_info)
 
+    except BillingError as be:
+        # Créditos esgotados no meio do job: retry não resolve — ERROR
+        # explícito e retorno normal (mensagem deletada, sem poison).
+        _mark_job_error(status_path, job_id, str(be))
+        return
     except Exception as e:
         logger.error(
             f"[Worker] Error processing job {job_id}: {e}\n{traceback.format_exc()}"
