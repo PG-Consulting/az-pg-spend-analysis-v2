@@ -13,6 +13,7 @@ from enum import Enum
 from typing import List, Dict, Optional, Union
 
 from src.types import ClassificationResultDict, HierarchyEntryDict, KBEntryDict
+from src.exceptions import BillingError
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -22,6 +23,44 @@ logger = logging.getLogger(__name__)
 LLM_MAX_RETRIES = 2  # Backoff exponencial em chamadas à API
 LLM_MAX_CONCURRENT_CALLS = 15  # Max chamadas LLM simultâneas (global, cross-chunk)
 _LLM_SEMAPHORE = threading.Semaphore(LLM_MAX_CONCURRENT_CALLS)
+
+# Status codes fatais de billing/auth: retry não resolve (créditos esgotados ou
+# chave inválida). Evidência ao vivo: a xAI retorna 403 code "permission-denied"
+# com "used all available credits or reached its monthly spending limit".
+BILLING_FATAL_STATUS_CODES = (401, 403)
+
+
+def _billing_error_message(status_code) -> str:
+    return (
+        f"Créditos da API xAI esgotados ou chave inválida (HTTP {status_code}). "
+        "Recarregue créditos no console.x.ai e re-submeta o job."
+    )
+
+
+def check_llm_health() -> None:
+    """Pre-flight barato: GET {endpoint}/models (não consome tokens).
+
+    Levanta BillingError quando a API responde 401/403 (créditos esgotados ou
+    chave inválida — comprovado ao vivo que a xAI retorna 403 nesse caso).
+    Outras falhas (rede, 5xx) NÃO bloqueiam o job: o pipeline tem retry e
+    fallback próprios para erros transitórios.
+    """
+    config = get_azure_openai_config()
+    if not config["api_key"] or config["api_key"] == "SUA-CHAVE-AQUI":
+        # Sem chave: classify_items_with_llm já degrada com fallback explícito.
+        return
+    endpoint = f"{config['endpoint'].rstrip('/')}/models"
+    try:
+        response = requests.get(
+            endpoint,
+            headers={"Authorization": f"Bearer {config['api_key']}"},
+            timeout=15,
+        )
+    except Exception as e:
+        logger.warning(f"check_llm_health: falha de rede (não bloqueante): {e}")
+        return
+    if response.status_code in BILLING_FATAL_STATUS_CODES:
+        raise BillingError(_billing_error_message(response.status_code))
 
 
 class CircuitState(Enum):
@@ -224,6 +263,10 @@ def classify_items_with_llm(
                 for offset, res in enumerate(chunk_results):
                     if chunk_start + offset < len(results):
                         results[chunk_start + offset] = res
+            except BillingError:
+                # Fatal (créditos esgotados): NÃO converter em fallback manual —
+                # propaga para o worker marcar o job ERROR com mensagem explícita.
+                raise
             except Exception as e:
                 logging.error(f"Chunk starting at {chunk_start} failed: {e}")
                 failed_chunk_items = next(
@@ -455,11 +498,23 @@ def _call_openai_api_inner(
                     time.sleep(retry_after)
                     continue
 
+            # Billing/auth fatal: 401/403 não são transitórios (créditos
+            # esgotados ou chave inválida) — retry não resolve. Fail fast em
+            # vez de cair em fallback manual silencioso.
+            if response.status_code in BILLING_FATAL_STATUS_CODES:
+                logging.error(
+                    f"Grok API billing/auth error {response.status_code}: {response.text}"
+                )
+                _CIRCUIT_BREAKER.record_failure()
+                raise BillingError(_billing_error_message(response.status_code))
+
             logging.error(
                 f"Grok API Error {response.status_code} (Attempt {attempt + 1}): {response.text}"
             )
             if attempt < max_retries:
                 time.sleep(2**attempt + random.uniform(0, 1))
+        except BillingError:
+            raise  # fatal — propaga para o worker marcar o job ERROR
         except Exception as e:
             logging.error(
                 f"Exception calling Azure OpenAI (Attempt {attempt + 1}): {e}"

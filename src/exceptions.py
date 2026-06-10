@@ -41,6 +41,21 @@ class ExternalServiceError(SpendAnalysisError):
         self.service = service
 
 
+class BillingError(ExternalServiceError):
+    """Falha de billing/créditos em serviço externo (fatal — não retentar).
+
+    Levantada quando a API LLM retorna 401/403 (créditos esgotados ou chave
+    inválida). Retry não resolve; o job deve ser marcado ERROR imediatamente
+    com a mensagem explícita para o consultor.
+    """
+
+    def __init__(self, message: str, service: str = "xAI"):
+        # Bypassa o prefixo "{service}: " de ExternalServiceError — a mensagem
+        # já é exibida diretamente ao consultor em PT-BR.
+        SpendAnalysisError.__init__(self, message, status_code=502)
+        self.service = service
+
+
 class AuthenticationError(SpendAnalysisError):
     """Authentication required (401)."""
 

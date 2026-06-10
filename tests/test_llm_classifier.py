@@ -1,5 +1,6 @@
 """Tests for src.llm_classifier — fallback chunk size and prompt correctness."""
 
+import pytest
 from unittest.mock import patch
 
 from src.llm_classifier import classify_items_with_llm
@@ -195,3 +196,141 @@ class TestWebSearchDoesNotBreakClassification:
         # E a classificação deve funcionar normalmente (não 100% fallback)
         assert results[0]["N1"] == "Fixadores"
         assert results[0]["confidence"] != 0.0
+
+
+class TestBillingFailFast:
+    """HTTP 401/403 da xAI são fatais (créditos esgotados ou chave inválida):
+    retry não resolve, e o fallback manual silencioso mascarava o erro do
+    consultor (evidência ao vivo: xAI retorna 403 "permission-denied" com
+    "used all available credits or reached its monthly spending limit").
+    Devem levantar BillingError imediatamente, sem retry."""
+
+    def setup_method(self):
+        from src.llm_classifier import _CIRCUIT_BREAKER
+
+        _CIRCUIT_BREAKER.record_success()  # garante breaker fechado entre testes
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.time.sleep")
+    @patch("src.llm_classifier.requests.post")
+    def test_403_raises_billing_error_without_retry(
+        self, mock_post, mock_sleep, mock_config
+    ):
+        from src.exceptions import BillingError
+        from src.llm_classifier import _call_openai_api_inner
+
+        mock_post.return_value.status_code = 403
+        mock_post.return_value.text = (
+            '{"code": "permission-denied", "error": "Your team has either used '
+            'all available credits or reached its monthly spending limit."}'
+        )
+
+        with pytest.raises(BillingError, match="Créditos da API xAI"):
+            _call_openai_api_inner(["item"], FAKE_CONFIG)
+
+        assert mock_post.call_count == 1, "403 é fatal — não deve ser retentado"
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.time.sleep")
+    @patch("src.llm_classifier.requests.post")
+    def test_401_raises_billing_error_without_retry(
+        self, mock_post, mock_sleep, mock_config
+    ):
+        from src.exceptions import BillingError
+        from src.llm_classifier import _call_openai_api_inner
+
+        mock_post.return_value.status_code = 401
+        mock_post.return_value.text = "Unauthorized"
+
+        with pytest.raises(BillingError, match="HTTP 401"):
+            _call_openai_api_inner(["item"], FAKE_CONFIG)
+
+        assert mock_post.call_count == 1, "401 é fatal — não deve ser retentado"
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.time.sleep")
+    @patch("src.llm_classifier.requests.post")
+    def test_billing_error_propagates_through_classify_items_with_llm(
+        self, mock_post, mock_sleep, mock_config
+    ):
+        """O ThreadPoolExecutor de classify_items_with_llm NÃO pode engolir
+        BillingError no fallback manual — deve propagar para o worker."""
+        from src.exceptions import BillingError
+
+        mock_post.return_value.status_code = 403
+        mock_post.return_value.text = "permission-denied"
+
+        with pytest.raises(BillingError):
+            classify_items_with_llm(["item a", "item b"])
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.time.sleep")
+    @patch("src.llm_classifier.requests.post")
+    def test_500_still_returns_fallback_not_billing_error(
+        self, mock_post, mock_sleep, mock_config
+    ):
+        """Comportamento preservado: 5xx continua com retry + fallback manual
+        (transitório), sem BillingError."""
+        from src.llm_classifier import _call_openai_api_inner
+
+        mock_post.return_value.status_code = 500
+        mock_post.return_value.text = "Internal Server Error"
+
+        results, usage = _call_openai_api_inner(["item"], FAKE_CONFIG)
+
+        assert len(results) == 1
+        assert results[0]["N1"] == "Não Identificado"
+        assert mock_post.call_count == 3  # 1 + LLM_MAX_RETRIES
+
+
+class TestCheckLLMHealth:
+    """Pre-flight check barato (GET /models, zero tokens) que detecta créditos
+    esgotados ANTES de processar chunks — comprovado ao vivo que retorna 403."""
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.requests.get")
+    def test_health_403_raises_billing_error(self, mock_get, mock_config):
+        from src.exceptions import BillingError
+        from src.llm_classifier import check_llm_health
+
+        mock_get.return_value.status_code = 403
+
+        with pytest.raises(BillingError, match="Créditos da API xAI"):
+            check_llm_health()
+
+        called_url = mock_get.call_args[0][0]
+        assert called_url.endswith("/models"), "deve usar GET /models (grátis)"
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.requests.get")
+    def test_health_200_does_not_raise(self, mock_get, mock_config):
+        from src.llm_classifier import check_llm_health
+
+        mock_get.return_value.status_code = 200
+        check_llm_health()  # não deve levantar
+
+    @patch("src.llm_classifier.get_azure_openai_config", return_value=FAKE_CONFIG)
+    @patch("src.llm_classifier.requests.get")
+    def test_health_network_error_does_not_block(self, mock_get, mock_config):
+        """Falha de rede no pre-flight NÃO bloqueia o job (pipeline tem
+        retry/fallback próprios)."""
+        from src.llm_classifier import check_llm_health
+
+        mock_get.side_effect = ConnectionError("network down")
+        check_llm_health()  # não deve levantar
+
+    @patch(
+        "src.llm_classifier.get_azure_openai_config",
+        return_value={
+            "endpoint": "https://fake.api/v1",
+            "api_key": "",
+            "deployment": "x",
+        },
+    )
+    @patch("src.llm_classifier.requests.get")
+    def test_health_without_key_skips(self, mock_get, mock_config):
+        """Sem chave configurada, classify já degrada com fallback — health não chama API."""
+        from src.llm_classifier import check_llm_health
+
+        check_llm_health()
+        mock_get.assert_not_called()

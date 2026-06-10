@@ -14,6 +14,16 @@ def skip_auth_for_tests(request, monkeypatch):
     monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def no_real_grok_key(monkeypatch):
+    """Garante zero chamadas reais ao Grok/xAI (ex.: check_llm_health no worker).
+
+    Remove a chave do ambiente; testes que precisam de chave fake setam
+    explicitamente via patch.dict (aplicado depois das fixtures autouse).
+    """
+    monkeypatch.delenv("GROK_API_KEY", raising=False)
+
+
 @pytest.fixture
 def tmp_models_dir(tmp_path):
     """Creates a temporary models directory structure with required subdirectories."""
