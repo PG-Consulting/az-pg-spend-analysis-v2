@@ -18,86 +18,112 @@
   .danger { background: #fee; border-left: 4px solid #e44; padding: 8px 12px; margin: 12px 0; border-radius: 4px; font-size: 10pt; }
   .subtitle { color: #666; font-size: 12pt; margin-bottom: 20px; }
   .meta { color: #999; font-size: 9pt; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 6px; }
-  .fill { display: inline-block; width: 280px; border-bottom: 1px solid #999; }
+  .fill { display: inline-block; width: 200px; border-bottom: 1px solid #999; }
   @media print { body { padding: 0; } }
 </style>
 </head>
 <body>
 
 <h1>Configuração do Azure Entra ID</h1>
-<p class="subtitle">Spend Analysis v3 — Liberação de acesso via grupo de segurança</p>
+<p class="subtitle">Spend Analysis v3 — Ativação do login corporativo</p>
 
-<p><strong>Para:</strong> Diretor(a) / Administrador Azure &nbsp;|&nbsp; <strong>Tempo:</strong> ~20 min</p>
+<p><strong>Para:</strong> Administrador Azure &nbsp;|&nbsp; <strong>Tempo estimado:</strong> ~20 min</p>
 
 <!-- 1 -->
 <h2>1. Registrar o aplicativo</h2>
 <ol>
   <li>Acesse <strong>entra.microsoft.com</strong></li>
-  <li><strong>Aplicativos</strong> → <strong>Registros de aplicativo</strong> → <strong>+ Novo registro</strong></li>
+  <li>No menu lateral: <strong>Identidade</strong> → <strong>Aplicativos</strong> → <strong>Registros de aplicativo</strong> → <strong>+ Novo registro</strong></li>
   <li>Preencha:
     <table>
       <tr><td>Nome</td><td><code>Spend Analysis v3</code></td></tr>
-      <tr><td>Tipos de conta</td><td><strong>Contas somente neste diretório organizacional</strong></td></tr>
-      <tr><td>Plataforma</td><td><strong>SPA (Aplicativo de Página Única)</strong></td></tr>
-      <tr><td>URI de redirecionamento</td><td><code>https://salmon-beach-05662180f.6.azurestaticapps.net</code></td></tr>
+      <tr><td>Tipos de conta com suporte</td><td><strong>Contas somente neste diretório organizacional</strong></td></tr>
+      <tr><td>URI de redirecionamento — Plataforma</td><td>Selecione <strong>Aplicativo de página única</strong></td></tr>
+      <tr><td>URI de redirecionamento — URL</td><td><code>https://salmon-beach-05662180f.6.azurestaticapps.net</code></td></tr>
     </table>
   </li>
   <li>Clique <strong>Registrar</strong></li>
-  <li>Vá em <strong>Permissões de API</strong> → confirme que <code>User.Read</code> está listada → clique <strong>Conceder consentimento de administrador</strong></li>
+  <li>Na tela seguinte ("Visão geral"), vá em <strong>Gerenciar</strong> → <strong>Autenticação</strong></li>
+  <li>Na seção "Aplicativo de página única", clique <strong>Adicionar URI</strong> e adicione: <code>http://localhost:3000</code></li>
+  <li>Clique <strong>Salvar</strong></li>
 </ol>
 
 <div class="alert">
-  <strong>Anote</strong> na página "Visão geral" do app: <strong>ID do aplicativo (cliente)</strong> e <strong>ID do diretório (locatário)</strong>.
+  <strong>Anote</strong> dois valores da página "Visão geral": <strong>ID do aplicativo (cliente)</strong> e <strong>ID do diretório (locatário)</strong>.
 </div>
 
 <!-- 2 -->
-<h2>2. Criar o grupo de segurança</h2>
+<h2>2. Expor a API do aplicativo</h2>
+
+<div class="danger">
+  <strong>Obrigatório.</strong> Sem este passo o login não funciona.
+</div>
+
 <ol>
-  <li><strong>Grupos</strong> → <strong>+ Novo grupo</strong></li>
-  <li>Preencha:
+  <li>Ainda no app, em <strong>Gerenciar</strong> → <strong>Expor uma API</strong></li>
+  <li>Clique <strong>Adicionar</strong> ao lado de "URI de ID do Aplicativo" — aceite o valor sugerido e clique <strong>Salvar</strong></li>
+  <li>Clique <strong>+ Adicionar um escopo</strong> e preencha:
     <table>
-      <tr><td>Tipo</td><td><strong>Segurança</strong></td></tr>
-      <tr><td>Nome</td><td><code>SpendAnalysis-Usuarios</code></td></tr>
-      <tr><td>Associação</td><td><strong>Atribuído</strong></td></tr>
+      <tr><td>Nome do escopo</td><td><code>access_as_user</code></td></tr>
+      <tr><td>Quem pode consentir</td><td><strong>Administradores e usuários</strong></td></tr>
+      <tr><td>Nomes de exibição e descrições (4 campos)</td><td>Preencha todos com: <code>Acessar Spend Analysis</code></td></tr>
+      <tr><td>Estado</td><td><strong>Habilitado</strong></td></tr>
     </table>
   </li>
-  <li>Em <strong>Membros</strong>, adicione todos os consultores e admins que devem ter acesso</li>
+  <li>Clique <strong>Adicionar escopo</strong></li>
+  <li>Em <strong>Gerenciar</strong> → <strong>Permissões de API</strong> → confirme que <code>User.Read</code> aparece na lista → clique <strong>Conceder consentimento do administrador</strong> → <strong>Sim</strong></li>
+</ol>
+
+<!-- 3 -->
+<h2>3. Criar grupo de segurança</h2>
+<ol>
+  <li>No menu lateral: <strong>Identidade</strong> → <strong>Grupos</strong> → <strong>Todos os grupos</strong> → <strong>+ Novo grupo</strong></li>
+  <li>Preencha:
+    <table>
+      <tr><td>Tipo de grupo</td><td><strong>Segurança</strong></td></tr>
+      <tr><td>Nome do grupo</td><td><code>SpendAnalysis-Usuarios</code></td></tr>
+      <tr><td>Tipo de associação</td><td><strong>Atribuído</strong></td></tr>
+    </table>
+  </li>
+  <li>Clique em <strong>Membros</strong> → <strong>+ Adicionar</strong> → adicione as pessoas que devem ter acesso</li>
   <li>Clique <strong>Criar</strong></li>
 </ol>
 
 <div class="alert">
-  <strong>Anote</strong> o <strong>ID do objeto</strong> do grupo (na página "Visão geral" do grupo).
+  <strong>Anote</strong> o <strong>ID do objeto</strong> do grupo (página "Visão geral" do grupo).
 </div>
-
-<!-- 3 -->
-<h2>3. Restringir acesso ao grupo</h2>
-
-<div class="danger">
-  <strong>Passo mais importante.</strong> Sem ele, qualquer pessoa do tenant consegue logar.
-</div>
-
-<ol>
-  <li><strong>Aplicativos</strong> → <strong>Aplicativos empresariais</strong> → abra <strong>Spend Analysis v3</strong></li>
-  <li>Em <strong>Propriedades</strong>: mude <strong>"Atribuição de usuário obrigatória?"</strong> para <strong>Sim</strong> → <strong>Salvar</strong></li>
-  <li>Em <strong>Usuários e grupos</strong> → <strong>+ Adicionar</strong> → selecione <code>SpendAnalysis-Usuarios</code> → <strong>Atribuir</strong></li>
-</ol>
 
 <!-- 4 -->
-<h2>4. Incluir grupos no token</h2>
+<h2>4. Restringir acesso ao grupo</h2>
+
+<div class="danger">
+  <strong>Sem este passo qualquer pessoa da organização consegue entrar no sistema.</strong>
+</div>
+
 <ol>
-  <li>Volte em <strong>Registros de aplicativo</strong> → <strong>Spend Analysis v3</strong> → <strong>Manifesto</strong></li>
-  <li>Localize <code>"groupMembershipClaims"</code> e altere de <code>null</code> para <code>"SecurityGroup"</code></li>
-  <li><strong>Salvar</strong></li>
+  <li>No menu lateral: <strong>Identidade</strong> → <strong>Aplicativos</strong> → <strong>Aplicativos empresariais</strong> → <strong>Todos os aplicativos</strong> → abra <strong>Spend Analysis v3</strong></li>
+  <li><strong>Propriedades</strong> → mude <strong>"Atribuição necessária?"</strong> para <strong>Sim</strong> → <strong>Salvar</strong></li>
+  <li><strong>Usuários e grupos</strong> → <strong>+ Adicionar usuário/grupo</strong> → selecione o grupo <code>SpendAnalysis-Usuarios</code> → <strong>Atribuir</strong></li>
 </ol>
 
 <!-- 5 -->
-<h2>5. Enviar para a equipe técnica</h2>
+<h2>5. Incluir grupos no token</h2>
+<ol>
+  <li>Volte em <strong>Identidade</strong> → <strong>Aplicativos</strong> → <strong>Registros de aplicativo</strong> → abra <strong>Spend Analysis v3</strong></li>
+  <li><strong>Gerenciar</strong> → <strong>Configuração de token</strong> → <strong>+ Adicionar declaração de grupos</strong></li>
+  <li>Marque <strong>Grupos de segurança</strong> → <strong>Adicionar</strong></li>
+</ol>
+
+<!-- 6 -->
+<h2>6. Enviar para a equipe técnica</h2>
+
+<p>Preencha e envie os três valores abaixo:</p>
 
 <table>
-  <tr><th>Nome</th><th>Valor</th></tr>
-  <tr><td><code>TENANT_ID</code> (ID do diretório)</td><td class="fill">&nbsp;</td></tr>
-  <tr><td><code>CLIENT_ID</code> (ID do aplicativo)</td><td class="fill">&nbsp;</td></tr>
-  <tr><td><code>GROUP_ID</code> (ID do objeto do grupo)</td><td class="fill">&nbsp;</td></tr>
+  <tr><th>Dado</th><th>Onde encontrar</th><th>Valor</th></tr>
+  <tr><td><code>TENANT_ID</code></td><td>Visão geral do app → "ID do diretório"</td><td class="fill">&nbsp;</td></tr>
+  <tr><td><code>CLIENT_ID</code></td><td>Visão geral do app → "ID do aplicativo"</td><td class="fill">&nbsp;</td></tr>
+  <tr><td><code>GROUP_ID</code></td><td>Visão geral do grupo → "ID do objeto"</td><td class="fill">&nbsp;</td></tr>
 </table>
 
 <!-- GESTÃO -->
@@ -105,7 +131,7 @@
 <p><strong>Adicionar usuário:</strong> Grupos → SpendAnalysis-Usuarios → Membros → + Adicionar</p>
 <p><strong>Remover usuário:</strong> Grupos → SpendAnalysis-Usuarios → Membros → selecione → Remover</p>
 
-<p class="meta">PG Consultoria — AI Team | Spend Analysis v3 | 20/03/2026 | Confidencial</p>
+<p class="meta">PG Consultoria — AI Team | Spend Analysis v3 | 23/03/2026 | Confidencial</p>
 
 </body>
 </html>
