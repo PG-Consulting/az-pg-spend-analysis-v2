@@ -1377,6 +1377,91 @@ class TestBillingErrorInWorker:
 
 
 # ---------------------------------------------------------------------------
+# (d2) Crash path — lease do worker morto limpo ANTES do re-raise
+# ---------------------------------------------------------------------------
+
+
+class TestCrashClearsLease:
+    """Exceção genérica → worker morre, mas limpa o PRÓPRIO lease antes do
+    re-raise: o retry da queue (visibilityTimeout) consegue re-claimar
+    imediatamente, sem esperar LEASE_STALE_SECONDS (10min) nem depender do
+    cleanup timer. Regressão do incidente EACCES (job órfão a 99% por 45min)."""
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_generic_error_clears_own_lease(self, mock_chunk, mock_jobs_dir, tmp_path):
+        """Crash genérico: status fica PROCESSING (retry re-entra), exceção
+        re-levantada, e o lease do worker morto é limpo."""
+        mock_jobs_dir.return_value = str(tmp_path)
+        mock_chunk.side_effect = RuntimeError("transient failure")
+
+        job_id = "test-crash-lease"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        with pytest.raises(RuntimeError, match="transient failure"):
+            psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["status"] == "PROCESSING"  # ERROR fica com o cleanup timer
+        # Lease limpo → o retry da queue passa o guard de lease fresco
+        assert not status.get("processing_worker_id")
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_generic_error_does_not_stomp_foreign_lease(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        """Se outro worker assumiu o lease no meio-tempo (steal legítimo),
+        o worker que morre NÃO pode apagar o lease alheio."""
+        from src.file_lock import locked_status as ls
+
+        mock_jobs_dir.return_value = str(tmp_path)
+
+        def steal_then_fail(job_info, chunk_idx):
+            with ls(job_info["status_path"]) as data:
+                data["processing_worker_id"] = "thief-worker"
+            raise RuntimeError("boom")
+
+        mock_chunk.side_effect = steal_then_fail
+
+        job_id = "test-crash-foreign-lease"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        with pytest.raises(RuntimeError, match="boom"):
+            psj(job_id)
+
+        status = json.loads((tmp_path / job_id / "status.json").read_text())
+        assert status["processing_worker_id"] == "thief-worker"  # intacto
+
+    @patch("src.worker_helpers.get_jobs_dir")
+    @patch("src.worker_helpers.process_single_chunk")
+    def test_lease_clear_failure_does_not_mask_original_error(
+        self, mock_chunk, mock_jobs_dir, tmp_path
+    ):
+        """Falha na limpeza do lease (ex.: o próprio EACCES) não pode engolir
+        nem substituir a exceção original do crash."""
+        mock_jobs_dir.return_value = str(tmp_path)
+
+        def delete_status_then_fail(job_info, chunk_idx):
+            os.remove(job_info["status_path"])  # limpeza do lease vai falhar
+            raise RuntimeError("erro original")
+
+        mock_chunk.side_effect = delete_status_then_fail
+
+        job_id = "test-crash-clear-fails"
+        _create_job_dir(tmp_path, job_id)
+
+        from src.worker_helpers import process_single_job as psj
+
+        with pytest.raises(RuntimeError, match="erro original"):
+            psj(job_id)
+
+
+# ---------------------------------------------------------------------------
 # (e) Pre-check granular de cancelamento por chunk
 # ---------------------------------------------------------------------------
 

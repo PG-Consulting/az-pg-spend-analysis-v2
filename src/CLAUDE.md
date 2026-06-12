@@ -10,7 +10,7 @@
 | `api_helpers.py` | `json_response()`, `error_response()`, `options_response()`, `@handle_errors`, `@rate_limit` decorators + security headers |
 | `types.py` | TypedDict definitions (`KBEntryDict`, `ClassificationResultDict`, `JobStatusDict`, etc.) |
 | `utils.py` | `get_models_dir()`, `safe_json_dumps()`, `friendly_source_label()`, `INCOMPLETE_VALUES` |
-| `file_lock.py` | Thread-safe status.json: `read_status`, `write_status`, `update_status`, `locked_status` (ctx mgr). Usa `filelock` |
+| `file_lock.py` | Thread-safe status.json: `read_status`, `write_status`, `update_status`, `locked_status` (ctx mgr). Usa `filelock` (pinado — ver Problemas Conhecidos no CLAUDE.md raiz). `_acquire_lock()` trata `PermissionError` (EACCES do flock em CIFS) como "lock ocupado" e tenta de novo dentro do budget de 10s; budget esgotado → `filelock.Timeout` (HTTP: 503 + Retry-After via `@handle_errors`) |
 | `project_manager.py` | CRUD setores/projetos, `resolve_hierarchy()`, `delete_sector()` |
 | `knowledge_base.py` | KB class (projeto + setor): CRUD, versões, cobertura, merge, promote |
 | `kb_retriever.py` | TF-IDF cosine similarity para few-shot |
@@ -117,7 +117,7 @@ ML_CONFIDENCE_AMBIGUOUS = 0.25     # legado
 
 ### Worker e Consolidação
 - **Queue trigger**: `ProcessTaxonomyJob` recebe `{job_id}` da queue `taxonomy-jobs`, chama `process_single_job()` que processa 1 job completo (PENDING→CLASSIFIED)
-- **Retry via queue**: erro genérico → `process_single_job()` NÃO escreve ERROR — re-levanta exceção para retry da queue (maxDequeueCount=5) → poison. Exceções que retornam normal: deadline (self-re-enqueue), `BillingError` (ERROR explícito), cancel
+- **Retry via queue**: erro genérico → `process_single_job()` NÃO escreve ERROR — limpa o próprio lease (`processing_worker_id`, guardado por `== worker_id`) e re-levanta exceção para retry da queue (maxDequeueCount=5) → poison. Lease limpo = o retry re-claima imediatamente, sem esperar os 10min de staleness. Atenção: o retry de mensagem falhada só fica visível após o `visibilityTimeout` da queue (45min, host.json). Exceções que retornam normal: deadline (self-re-enqueue), `BillingError` (ERROR explícito), cancel
 - **Deadline cooperativo (25min)**: worker para limpo antes do functionTimeout (40min) — limpa o lease, re-enfileira `{job_id}` e retorna sucesso; o próximo slice retoma via `find_next_chunks`
 - **Lease com heartbeat**: claim grava `processing_worker_id` + `lease_renewed_at`; renovado a cada chunk (`update_job_progress`). Lease >10min stale → outro worker ROUBA e retoma; lease fresco → skip (idempotência preservada)
 - **Billing fail-fast**: pre-flight `check_llm_health()` (GET /v1/models) ao claimar o job + `BillingError` in-flight (401/403, sem retry) → job ERROR imediato com mensagem explícita "créditos xAI esgotados"

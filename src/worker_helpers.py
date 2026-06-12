@@ -704,7 +704,9 @@ def process_single_job(job_id: str) -> None:
     Unlike run_worker_cycle(), this function:
     - Receives job_id directly (no directory scan)
     - Processes 1 job completely (no round-robin)
-    - No time budget — queue visibility timeout (30min Flex Consumption) controls this
+    - Time budget: deadline cooperativo de 25min (WORKER_DEADLINE_SECONDS) sob
+      functionTimeout de 40min (host.json); visibilityTimeout da queue (45min)
+      controla o retry de mensagem com falha
     - Re-raises exceptions so the queue runtime can retry via dequeue count
     """
     import traceback
@@ -849,6 +851,21 @@ def process_single_job(job_id: str) -> None:
         # (maxDequeueCount=5) can re-enter and process remaining chunks.
         # After all retries are exhausted, the message goes to poison queue,
         # and the hourly cleanup timer marks PROCESSING > 1h as ERROR.
+        #
+        # Limpa o PRÓPRIO lease antes do re-raise: sem isso, o retry da queue
+        # chega com lease fresco (<LEASE_STALE_SECONDS) e pula o job sem
+        # retomar — o job fica órfão até o cleanup timer. Guard: só limpa se
+        # o lease ainda pertence a ESTE worker (não pisar em steal legítimo).
+        try:
+            with locked_status(status_path) as data:
+                if data.get("processing_worker_id") == worker_id:
+                    data.pop("processing_worker_id", None)
+        except Exception as clear_err:
+            # Nunca mascarar a exceção original (ex.: o próprio EACCES).
+            logger.warning(
+                f"[Worker] job={job_id} — falha ao limpar lease no crash path "
+                f"(cleanup timer cobre): {clear_err}"
+            )
         raise  # re-raise so queue runtime retries
 
 

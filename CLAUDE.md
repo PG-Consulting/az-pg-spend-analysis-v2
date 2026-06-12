@@ -19,7 +19,7 @@ cp .env.local.example .env.local
 npm run dev                   # http://localhost:3000
 
 # Testes — zero chamadas ao Grok/xAI
-python3 -m pytest tests/ -v                          # Backend (450 testes, ~9s)
+python3 -m pytest tests/ -v                          # Backend (457 testes, ~9s)
 cd frontend && npx jest --verbose                     # Frontend (60 testes, ~3s)
 python3 -m pytest tests/ --cov=src --cov-report=term-missing  # Coverage
 ```
@@ -67,7 +67,7 @@ Promoção para setor = ação separada (PromoteToSectorKB)
 │   ├── sectors/{name}/          # sector_config.json + knowledge_base.json + kb_versions/
 │   ├── projects/{id}/           # project_config.json + knowledge_base.json + kb_versions/
 │   └── taxonomy_jobs/           # Fila de jobs async
-├── tests/                       # pytest (450 testes)
+├── tests/                       # pytest (457 testes)
 └── frontend/                    # Next.js (ver frontend/CLAUDE.md)
 ```
 
@@ -159,3 +159,5 @@ ALLOWED_GROUP_ID=                # ID do grupo de segurança Azure AD (opcional 
 - Cache ML in-memory — não persiste entre instâncias Functions
 - Circuit breaker e rate limiter são in-memory (per-instance) — não distribuídos
 - Python local (3.12) difere do runtime Azure (3.13) — monitorar compatibilidade
+- **flock em CIFS (Azure File Share) pode retornar EACCES** em contenção de lock (POSIX permite "EACCES or EAGAIN") — `src/file_lock.py` trata como "lock ocupado" e re-tenta; `filelock` é **pinado** no requirements.txt porque o build remoto do deploy resolve a versão na hora e versões diferentes tratam EACCES de forma diferente (incidente 2026-06-12, ver `docs/postmortems/`)
+- **`visibilityTimeout` da queue (45min, host.json) é também o delay de retry de mensagem falhada** — worker que morre sem limpar estado deixa o job PROCESSING sem dono por até 45min (UI mostra 99%); locks de KB/config (`knowledge_base.py`, `project_manager.py`) ainda usam `FileLock` cru, sem o retry de EACCES (follow-up pendente)
