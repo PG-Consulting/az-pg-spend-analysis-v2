@@ -128,6 +128,21 @@ def SubmitTaxonomyJob(req: func.HttpRequest) -> func.HttpResponse:
             # No per-job upload: fall back to project hierarchy (may be None for padrao)
             custom_hierarchy_list = resolved_hierarchy
             custom_hierarchy_b64 = None
+
+            # Defense-in-depth: projeto persistido em estado inconsistente
+            # (hierarchy_source="own" sem custom_hierarchy válida) rodaria a
+            # classificação sem taxonomia — 100% fallback e créditos LLM
+            # queimados. Bloquear antes de criar o job.
+            if (
+                project_config.get("hierarchy_source") == "own"
+                and not custom_hierarchy_list
+            ):
+                raise ValidationError(
+                    "Projeto configurado com hierarquia própria, mas a "
+                    "hierarquia está vazia ou inválida. Recrie o projeto "
+                    "re-enviando o arquivo de hierarquia corrigido "
+                    "(colunas N1–N4)."
+                )
     else:
         # Legacy path: sector from body
         sector = safe_resource_id(

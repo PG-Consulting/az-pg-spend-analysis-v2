@@ -133,6 +133,102 @@ class TestOrphanDirectoryCleanup:
         assert len(remaining) == 1
 
 
+class TestSubmitGuardBrokenOwnHierarchy:
+    """Defense-in-depth: projeto persistido no estado inconsistente
+    hierarchy_source='own' + custom_hierarchy=None (bug de produção, projeto
+    "teste") não pode submeter job — rodaria sem taxonomia e queimaria créditos
+    LLM com 100% fallback."""
+
+    def _make_csv_b64(self):
+        import csv
+        import io
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";")
+        writer.writerow(["SKU", "Descricao"])
+        writer.writerow(["001", "Parafuso M8"])
+        writer.writerow(["002", "Porca M10"])
+        return base64.b64encode(buf.getvalue().encode("utf-8")).decode()
+
+    def _write_project(
+        self, models_dir, project_id, hierarchy_source, custom_hierarchy
+    ):
+        proj_dir = os.path.join(models_dir, "projects", project_id)
+        os.makedirs(proj_dir, exist_ok=True)
+        config = {
+            "project_id": project_id,
+            "display_name": project_id,
+            "sector": "naval",
+            "client_context": "",
+            "custom_hierarchy": custom_hierarchy,
+            "hierarchy_source": hierarchy_source,
+            "use_sector_kb": True,
+        }
+        with open(
+            os.path.join(proj_dir, "project_config.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump(config, f)
+
+    def _setup_dirs(self, tmp_path, monkeypatch):
+        models_dir = str(tmp_path / "models")
+        jobs_dir = str(tmp_path / "taxonomy_jobs")
+        os.makedirs(os.path.join(models_dir, "projects"), exist_ok=True)
+        os.makedirs(jobs_dir, exist_ok=True)
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_models_dir", lambda: models_dir
+        )
+        monkeypatch.setattr(
+            "blueprints.classification_bp.get_jobs_dir", lambda: jobs_dir
+        )
+        return models_dir, jobs_dir
+
+    def test_own_source_with_null_hierarchy_returns_400(self, tmp_path, monkeypatch):
+        """Projeto 'own' com custom_hierarchy=None → 400, sem criar job dir."""
+        models_dir, jobs_dir = self._setup_dirs(tmp_path, monkeypatch)
+        self._write_project(models_dir, "teste", "own", None)
+
+        from blueprints.classification_bp import SubmitTaxonomyJob
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {
+            "fileContent": self._make_csv_b64(),
+            "projectId": "teste",
+            "originalFilename": "base.csv",
+        }
+
+        response = SubmitTaxonomyJob(req)
+
+        assert response.status_code == 400
+        payload = json.loads(response.get_body())
+        assert "hierarquia" in payload["error"].lower()
+        # A instrução deve ser executável na UI: o EditProjectModal NÃO tem
+        # campo de upload de hierarquia, então a saída é recriar o projeto.
+        assert "recrie o projeto" in payload["error"].lower()
+        # Nenhum job órfão deve ter sido criado
+        assert os.listdir(jobs_dir) == []
+
+    def test_padrao_with_null_hierarchy_still_accepted(self, tmp_path, monkeypatch):
+        """Comportamento preservado: projeto 'padrao' sem hierarquia submete normal."""
+        models_dir, jobs_dir = self._setup_dirs(tmp_path, monkeypatch)
+        self._write_project(models_dir, "proj-padrao", "padrao", None)
+
+        from blueprints.classification_bp import SubmitTaxonomyJob
+
+        req = MagicMock()
+        req.method = "POST"
+        req.get_json.return_value = {
+            "fileContent": self._make_csv_b64(),
+            "projectId": "proj-padrao",
+            "originalFilename": "base.csv",
+        }
+
+        response = SubmitTaxonomyJob(req)
+
+        assert response.status_code == 202
+        assert len(os.listdir(jobs_dir)) == 1
+
+
 class TestGetJobResults:
     """Testes para o endpoint GetJobResults."""
 

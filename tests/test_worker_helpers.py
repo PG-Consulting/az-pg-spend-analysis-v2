@@ -1044,6 +1044,53 @@ class TestFallbackDetection:
         assert status.get("fallback_pct", 0) == 20.0
         assert "warning" not in status
 
+    def test_total_fallback_sets_error_and_log_does_not_say_classified(
+        self, tmp_path, caplog
+    ):
+        """≥95% fallback → status ERROR e o log final NÃO pode dizer CLASSIFIED.
+
+        Regressão do incidente de produção: App Insights mostrava
+        'ERROR: 100.0% fallback' seguido de 'CLASSIFIED (186 items)' porque o
+        log final de consolidate_job era incondicional — confundiu a forense.
+        """
+        import logging
+
+        results = [
+            {
+                "description": f"item {i}",
+                "N1": "Não Identificado",
+                "N2": "Não Identificado",
+                "N3": "Não Identificado",
+                "N4": "Não Identificado",
+                "source": "None",
+                "confidence": 0.0,
+            }
+            for i in range(10)
+        ]
+
+        job_info = self._make_job(tmp_path, results, 10)
+        with caplog.at_level(logging.INFO, logger="src.worker_helpers"):
+            consolidate_job(job_info)
+
+        from src.file_lock import read_status
+
+        status = read_status(job_info["status_path"])
+        assert status["status"] == "ERROR"
+        assert status["fallback_pct"] == 100.0
+        assert "Classificação falhou" in status.get("error", "")
+
+        # Nenhuma linha de log pode anunciar CLASSIFIED para um job ERROR
+        classified_logs = [
+            r.message for r in caplog.records if "— CLASSIFIED" in r.message
+        ]
+        assert classified_logs == [], (
+            f"Log menciona CLASSIFIED em job ERROR: {classified_logs}"
+        )
+        # O log final deve refletir o status real
+        assert any(
+            "— ERROR" in r.message and "items" in r.message for r in caplog.records
+        )
+
 
 # ---------------------------------------------------------------------------
 # Helpers compartilhados pelos testes de resume/lease/billing

@@ -19,7 +19,7 @@ cp .env.local.example .env.local
 npm run dev                   # http://localhost:3000
 
 # Testes — zero chamadas ao Grok/xAI
-python3 -m pytest tests/ -v                          # Backend (457 testes, ~9s)
+python3 -m pytest tests/ -v                          # Backend (470 testes, ~9s)
 cd frontend && npx jest --verbose                     # Frontend (60 testes, ~3s)
 python3 -m pytest tests/ --cov=src --cov-report=term-missing  # Coverage
 ```
@@ -67,7 +67,7 @@ Promoção para setor = ação separada (PromoteToSectorKB)
 │   ├── sectors/{name}/          # sector_config.json + knowledge_base.json + kb_versions/
 │   ├── projects/{id}/           # project_config.json + knowledge_base.json + kb_versions/
 │   └── taxonomy_jobs/           # Fila de jobs async
-├── tests/                       # pytest (457 testes)
+├── tests/                       # pytest (470 testes)
 └── frontend/                    # Next.js (ver frontend/CLAUDE.md)
 ```
 
@@ -128,6 +128,7 @@ ALLOWED_GROUP_ID=                # ID do grupo de segurança Azure AD (opcional 
 - **`use_sector_kb` condicional em 3 pontos**: worker, reclassificação, cobertura KB
 - **Status CLASSIFIED (não COMPLETED)** no worker — `ApproveClassifications` define COMPLETED
 - **KBRetriever criado 1x por job** — não recriar por chunk (TF-IDF indexing é o custo)
+- **Hierarquia inválida falha alto** — `hierarchy_file_base64` que não parseia → `ValidationError` 400 no Create/UpdateProject; submit bloqueia projeto `own` com hierarquia vazia. Nunca engolir o parse e deixar job rodar sem taxonomia (incidente 2026-06-12, ver `docs/postmortems/`)
 
 > Para gotchas específicos de backend ver `src/CLAUDE.md`, de frontend ver `frontend/CLAUDE.md`
 

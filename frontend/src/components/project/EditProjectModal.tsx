@@ -37,7 +37,8 @@ export function EditProjectModal({ isOpen, project, onClose, onSave }: EditProje
       });
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Erro ao salvar projeto');
+      // Mensagem do backend tem prioridade sobre a genérica do axios
+      setError(e.response?.data?.error || e.message || 'Erro ao salvar projeto');
     } finally {
       setLoading(false);
     }

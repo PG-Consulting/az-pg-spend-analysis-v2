@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List
 
+from src.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -358,7 +359,9 @@ def parse_hierarchy_from_b64(b64_string: str) -> Optional[List[dict]]:
         return None
 
 
-def resolve_hierarchy_from_body(body: dict) -> None:
+def resolve_hierarchy_from_body(
+    body: dict, *, default_source_when_missing: bool = True
+) -> None:
     """Mutate body in-place: if hierarchy_file_base64 is present, parse it
     into custom_hierarchy and set hierarchy_source accordingly.
 
@@ -368,6 +371,18 @@ def resolve_hierarchy_from_body(body: dict) -> None:
       1. custom_hierarchy already provided as list → use as-is
       2. hierarchy_file_base64 (base64 Excel) → parse into custom_hierarchy
       3. Neither → ensure hierarchy_source reflects 'padrao'
+         (somente se default_source_when_missing=True)
+
+    default_source_when_missing:
+      True (CreateProject) → corpo sem hierarquia recebe hierarchy_source="padrao".
+      False (UpdateProject) → corpo sem hierarquia NÃO recebe default — um PUT
+      parcial (ex.: EditProjectModal envia só display_name/client_context/
+      use_sector_kb) seria mesclado no config e rebaixaria silenciosamente um
+      projeto "own" para "padrao".
+
+    Raises:
+      ValidationError: se hierarchy_file_base64 foi enviado mas o parse falhou
+        (cabeçalhos N1-N4 ausentes ou arquivo ilegível).
     """
     # Already have a parsed hierarchy? Nothing to do
     existing = body.get("custom_hierarchy")
@@ -384,11 +399,20 @@ def resolve_hierarchy_from_body(body: dict) -> None:
             body.setdefault("hierarchy_source", "own")
             logger.info(f"Hierarchy parsed from file: {len(parsed)} entries")
             return
-        else:
-            logger.warning("hierarchy_file_base64 provided but parsing failed")
+        # Arquivo enviado mas inválido: falhar alto. Engolir o erro aqui
+        # persistia o projeto como hierarchy_source="own" + custom_hierarchy=None
+        # e o job rodava sem taxonomia (100% fallback, créditos LLM queimados).
+        logger.warning("hierarchy_file_base64 provided but parsing failed")
+        raise ValidationError(
+            "Arquivo de hierarquia inválido: não foi possível encontrar as "
+            "colunas N1–N4. Verifique se a planilha tem uma linha de cabeçalho "
+            "com as colunas N1, N2, N3 e N4 e re-envie o arquivo."
+        )
 
-    # No hierarchy provided — ensure source reflects reality
-    if not body.get("custom_hierarchy"):
+    # No hierarchy provided — ensure source reflects reality (create only;
+    # no update, injetar "padrao" aqui corromperia projetos "own" em qualquer
+    # edição parcial)
+    if default_source_when_missing and not body.get("custom_hierarchy"):
         body.setdefault("hierarchy_source", "padrao")
 
 

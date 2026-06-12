@@ -687,8 +687,10 @@ def consolidate_job(job_info: JobInfoDict) -> None:
             pass
 
     consolidate_duration = time.time() - consolidate_start
+    # Refletir o status final real (pode ser ERROR por fallback excessivo) —
+    # logar "CLASSIFIED" incondicionalmente confundia a forense em produção.
     logger.info(
-        f"[Worker] job={job_id} — CLASSIFIED "
+        f"[Worker] job={job_id} — {current.get('status', 'CLASSIFIED')} "
         f"({len(results_accumulated)} items, consolidate={consolidate_duration:.1f}s)"
     )
 
@@ -892,6 +894,12 @@ def cleanup_old_jobs(jobs_root: str, max_age_days: int = 30) -> int:
             if not created_at:
                 continue
             created_dt = datetime.fromisoformat(created_at)
+            if created_dt.tzinfo is None:
+                # Jobs legados (era datetime.utcnow) têm timestamp naive — eram
+                # UTC. Sem isso a subtração levanta TypeError, o except pula o
+                # job e nenhum legado terminal é deletado (spam horário no
+                # App Insights: "can't subtract offset-naive and offset-aware").
+                created_dt = created_dt.replace(tzinfo=timezone.utc)
             age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
             if age_days > max_age_days:
                 shutil.rmtree(job_dir, ignore_errors=True)

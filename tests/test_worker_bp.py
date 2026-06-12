@@ -131,3 +131,73 @@ class TestJobRetention:
         deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
         assert deleted == 1
         assert not job_dir.exists()
+
+    def test_deletes_legacy_job_with_naive_created_at(self, tmp_path, caplog):
+        """Job legado (era datetime.utcnow) tem created_at NAIVE — deve ser deletado.
+
+        Regressão de produção: `datetime.now(timezone.utc) - created_dt` com
+        created_dt naive levanta TypeError ("can't subtract offset-naive and
+        offset-aware datetimes"); o except logava e pulava → jobs legados
+        terminais NUNCA eram deletados e o App Insights era spammado a cada hora.
+        """
+        import logging
+
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "legacy-naive-completed"
+        job_dir.mkdir()
+        # Timestamp naive (sem offset), como os gerados por datetime.utcnow()
+        old_naive = (
+            (datetime.now(timezone.utc) - timedelta(days=35))
+            .replace(tzinfo=None)
+            .isoformat()
+        )
+        status = {"status": "COMPLETED", "created_at": old_naive}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        with caplog.at_level(logging.ERROR, logger="src.worker_helpers"):
+            deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+
+        assert deleted == 1
+        assert not job_dir.exists()
+        # Nenhum spam "[Retention] Error checking job ..." pode ser logado
+        retention_errors = [
+            r.message for r in caplog.records if "[Retention] Error" in r.message
+        ]
+        assert retention_errors == []
+
+    def test_keeps_recent_legacy_job_with_naive_created_at(self, tmp_path):
+        """Job legado naive recente deve ser mantido (UTC assumido, não local)."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "legacy-naive-recent"
+        job_dir.mkdir()
+        recent_naive = (
+            (datetime.now(timezone.utc) - timedelta(days=5))
+            .replace(tzinfo=None)
+            .isoformat()
+        )
+        status = {"status": "COMPLETED", "created_at": recent_naive}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 0
+        assert job_dir.exists()
+
+    def test_keeps_old_processing_legacy_job_with_naive_created_at(self, tmp_path):
+        """Job legado naive em estado não-terminal nunca é deletado."""
+        from src.worker_helpers import cleanup_old_jobs
+
+        job_dir = tmp_path / "legacy-naive-processing"
+        job_dir.mkdir()
+        old_naive = (
+            (datetime.now(timezone.utc) - timedelta(days=90))
+            .replace(tzinfo=None)
+            .isoformat()
+        )
+        status = {"status": "PROCESSING", "created_at": old_naive}
+        (job_dir / "status.json").write_text(json.dumps(status))
+
+        deleted = cleanup_old_jobs(str(tmp_path), max_age_days=30)
+        assert deleted == 0
+        assert job_dir.exists()

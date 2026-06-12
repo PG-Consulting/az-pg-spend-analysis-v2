@@ -159,7 +159,10 @@ def update_project_endpoint(req: func.HttpRequest) -> func.HttpResponse:
         return options_response(req, "PUT, OPTIONS")
     body = req.get_json()
     project_id = safe_resource_id(body.get("project_id", ""), field="projectId")
-    resolve_hierarchy_from_body(body)
+    # Update parcial (sem campos de hierarquia) não pode injetar
+    # hierarchy_source="padrao" — o merge rebaixaria projetos "own" em
+    # qualquer edição não-relacionada (ex.: EditProjectModal).
+    resolve_hierarchy_from_body(body, default_source_when_missing=False)
     models_dir = get_models_dir()
     project = update_project(project_id, body, models_dir)
     return json_response(project, request=req)

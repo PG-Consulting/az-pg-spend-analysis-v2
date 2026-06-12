@@ -105,7 +105,9 @@ export function CreateProjectModal({
       onCreated(project);
       handleClose();
     } catch (e: any) {
-      setError(e.message || 'Erro ao criar projeto');
+      // Mensagem do backend (ex.: arquivo de hierarquia inválido) tem prioridade
+      // sobre a genérica do axios ("Request failed with status code 400")
+      setError(e.response?.data?.error || e.message || 'Erro ao criar projeto');
     } finally {
       setLoading(false);
     }

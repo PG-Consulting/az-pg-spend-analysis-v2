@@ -130,9 +130,12 @@ ML_CONFIDENCE_AMBIGUOUS = 0.25     # legado
 - **CancelJob**: escreve `CANCELLED` no `status.json`. `process_single_job()` verifica status entre batches de chunks
 - **status.json com file lock** — operações atômicas via `locked_status()` context manager. Nunca ler+escrever status.json sem lock
 - **Excel base64 em arquivo separado** — `ApproveClassifications` salva em `approved_result_b64.txt`, não no `status.json`
+- **`cleanup_old_jobs` assume UTC em `created_at` naive** — jobs legados (era `datetime.utcnow`) têm timestamp sem timezone; sem o `replace(tzinfo=utc)` a subtração levanta `TypeError` e nenhum legado terminal é deletado
 
 ### Projetos e Setores
 - **`resolve_hierarchy()`** busca: (1) hierarquia própria → `"own"`, (2) sem → `"padrao"`. Não existe `"inherited"`
+- **`resolve_hierarchy_from_body()` levanta `ValidationError`** quando `hierarchy_file_base64` é enviado mas o parse falha — nunca voltar a engolir (incidente 2026-06-12: projeto salvo `own`+`null`, job rodou sem taxonomia, 100% fallback)
+- **`resolve_hierarchy_from_body(default_source_when_missing=False)` no UpdateProject** — update parcial (sem campos de hierarquia) não pode injetar `hierarchy_source="padrao"`; o merge rebaixaria projetos `own`
 - **Setor não tem hierarquia** — só KB
 - **`delete_sector(force=False)`** levanta `ValueError` se há projetos. `force=True` deleta projetos primeiro
 - **Compatibilidade legada**: `varejo` e `educacional` usam ML via `use_legacy_ml=True`
